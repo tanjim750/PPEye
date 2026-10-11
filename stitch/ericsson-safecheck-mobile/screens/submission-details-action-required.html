@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "surface-container-lowest": "#ffffff",
+                "tertiary-fixed-dim": "#ffb68e",
+                "surface-container-high": "#e5e8f1",
+                "on-tertiary-fixed": "#331200",
+                "primary-fixed": "#d5e3ff",
+                "secondary": "#015db6",
+                "tertiary-container": "#be5600",
+                "on-secondary-fixed": "#001b3d",
+                "on-tertiary-fixed-variant": "#763300",
+                "on-primary-fixed": "#001c3b",
+                "glass-bg": "rgba(255, 255, 255, 0.95)",
+                "secondary-fixed-dim": "#a9c7ff",
+                "warning-orange": "#984300",
+                "secondary-fixed": "#d6e3ff",
+                "background": "#f9f9ff",
+                "on-secondary-container": "#00376f",
+                "primary": "#005cad",
+                "surface-container": "#ebedf7",
+                "surface-container-highest": "#e0e2ec",
+                "surface-variant": "#e0e2ec",
+                "inverse-primary": "#a6c8ff",
+                "surface": "#f9f9ff",
+                "error-container": "#ffdad6",
+                "on-tertiary": "#ffffff",
+                "primary-container": "#0075d8",
+                "success-green": "#16A34A",
+                "outline": "#717785",
+                "primary-fixed-dim": "#a6c8ff",
+                "on-secondary": "#ffffff",
+                "on-surface-variant": "#404753",
+                "on-tertiary-container": "#fffbff",
+                "error": "#ba1a1a",
+                "error-red": "#ba1a1a",
+                "surface-bright": "#f9f9ff",
+                "on-background": "#181c22",
+                "outline-variant": "#c0c7d5",
+                "tertiary-fixed": "#ffdbca",
+                "on-error": "#ffffff",
+                "inverse-on-surface": "#eef0fa",
+                "on-secondary-fixed-variant": "#00468b",
+                "on-surface": "#181c22",
+                "surface-container-low": "#f1f3fd",
+                "secondary-container": "#64a1fe",
+                "surface-tint": "#005eb1",
+                "on-primary-fixed-variant": "#004787",
+                "surface-dim": "#d7dae3",
+                "tertiary": "#984300",
+                "inverse-surface": "#2d3038",
+                "on-error-container": "#93000a",
+                "on-primary": "#ffffff",
+                "on-primary-container": "#fefcff"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "full": "9999px"
+        },
+        "spacing": {
+                "touch-target-min": "48px",
+                "container-padding": "20px",
+                "unit": "4px",
+                "gutter": "12px",
+                "stack-gap": "16px"
+        },
+        "fontFamily": {
+                "label-md": ["Hanken Grotesk"],
+                "headline-md": ["Hanken Grotesk"],
+                "label-sm": ["Hanken Grotesk"],
+                "body-lg": ["Hanken Grotesk"],
+                "display-lg": ["Hanken Grotesk"],
+                "body-md": ["Hanken Grotesk"],
+                "title-lg": ["Hanken Grotesk"]
+        },
+        "fontSize": {
+                "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                "label-sm": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+                "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                "display-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                "title-lg": ["18px", { "lineHeight": "24px", "fontWeight": "600" }]
+        }
+      }
+    }
+  }
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@100..900&display=swap" rel="stylesheet"/><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface flex flex-col min-h-screen pt-safe pb-safe"><main class="flex flex-col flex-1 relative w-full px-container-padding bg-surface justify-center"><div class="flex flex-col w-full max-w-md mx-auto pb-28">
+<!-- Native App Navigation Bar -->
+<header class="flex items-center justify-between py-2 mb-2">
+<button aria-label="Back to Submissions" class="w-12 h-12 flex items-center justify-center rounded-full bg-surface-container-low text-on-surface hover:bg-surface-container active:scale-95 transition-transform duration-150" type="button">
+<span class="material-symbols-outlined text-xl">arrow_back</span>
+</button>
+<div class="text-center">
+<span class="font-label-sm text-label-sm text-outline uppercase tracking-wider block">Safety Audit</span>
+<h1 class="font-title-lg text-title-lg text-on-surface">Submission Details</h1>
+</div>
+<button aria-label="Help and Guidelines" class="w-12 h-12 flex items-center justify-center rounded-full bg-surface-container-low text-on-surface-variant hover:bg-surface-container active:scale-95 transition-transform" type="button">
+<span class="material-symbols-outlined text-xl">help_outline</span>
+</button>
+</header>
+<!-- Context Metadata Strip -->
+<section class="bg-surface-container-low rounded-xl p-3.5 mb-4 shadow-sm">
+<div class="flex items-center justify-between gap-2 mb-1.5">
+<div class="flex items-center gap-1.5 min-w-0">
+<span class="material-symbols-outlined text-primary text-base shrink-0">cell_tower</span>
+<p class="font-label-md text-label-md text-on-surface truncate">ABC Telecom • Gazipur-ER-102</p>
+</div>
+<span class="font-label-sm text-label-sm px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant shrink-0">ID #88241</span>
+</div>
+<div class="flex items-center justify-between font-label-sm text-label-sm text-on-surface-variant pt-1 border-t border-surface-container">
+<span class="flex items-center gap-1 truncate">
+<span class="material-symbols-outlined text-xs">person</span>
+        Submitted by Rahim Mia
+      </span>
+<span class="shrink-0 text-outline">6 Sep 2026 • 3:42 PM</span>
+</div>
+</section>
+<!-- Section 1: Overall Submission Status Banner -->
+<section class="rounded-xl p-4 bg-tertiary-fixed text-on-tertiary-fixed shadow-sm mb-4">
+<div class="flex items-start gap-3">
+<div class="w-10 h-10 rounded-full bg-warning-orange/15 flex items-center justify-center text-warning-orange shrink-0">
+<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">warning</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center gap-2 mb-0.5">
+<h2 class="font-headline-md text-headline-md text-on-tertiary-fixed font-bold leading-tight">Action Required</h2>
+</div>
+<p class="font-body-md text-body-md text-on-tertiary-fixed-variant">Some items in this submission require adjustment before work clearance can be approved.</p>
+</div>
+</div>
+</section>
+<!-- Section 2: "What needs attention" Problem Summary -->
+<section class="bg-surface-container-lowest rounded-xl p-4 mb-4 shadow-sm">
+<div class="flex items-center justify-between mb-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-warning-orange text-lg">checklist_rtl</span>
+<h3 class="font-title-lg text-title-lg text-on-surface">Items to Correct</h3>
+</div>
+<span class="font-label-md text-label-md px-2.5 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed-variant">2 issues found</span>
+</div>
+<div class="space-y-2.5">
+<!-- Issue 1 -->
+<div class="flex items-start gap-3 p-3 rounded-lg bg-surface-container-low">
+<div class="w-6 h-6 rounded-full bg-error/15 text-error flex items-center justify-center shrink-0 mt-0.5">
+<span class="font-label-sm text-label-sm font-bold">1</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-baseline justify-between gap-1 mb-0.5">
+<h4 class="font-label-md text-label-md text-on-surface truncate">Worker 2 — Unsafe PPE</h4>
+<span class="font-label-sm text-label-sm text-error font-medium">Critical</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant mb-1.5 leading-snug">Harness connection was not properly secured to lifeline.</p>
+<div class="flex flex-wrap gap-1.5">
+<span class="font-label-sm text-label-sm px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">Full-body harness</span>
+<span class="font-label-sm text-label-sm px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">Anchorage point</span>
+</div>
+</div>
+</div>
+<!-- Issue 2 -->
+<div class="flex items-start gap-3 p-3 rounded-lg bg-surface-container-low">
+<div class="w-6 h-6 rounded-full bg-warning-orange/15 text-warning-orange flex items-center justify-center shrink-0 mt-0.5">
+<span class="font-label-sm text-label-sm font-bold">2</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-baseline justify-between gap-1 mb-0.5">
+<h4 class="font-label-md text-label-md text-on-surface truncate">Supporting Evidence</h4>
+<span class="font-label-sm text-label-sm text-warning-orange font-medium">Missing</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-snug">First Aid Box on-site photo was not provided.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 3: Worker PPE Details -->
+<section class="mb-4">
+<div class="flex items-center justify-between mb-2.5 px-0.5">
+<div class="flex items-center gap-1.5">
+<h3 class="font-title-lg text-title-lg text-on-surface">Worker PPE</h3>
+<span class="font-label-sm text-label-sm text-outline">3 workers reviewed</span>
+</div>
+<button class="font-label-md text-label-md text-primary flex items-center gap-0.5 py-1 px-1.5" type="button">
+<span>History</span>
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+</button>
+</div>
+<div class="space-y-2.5">
+<!-- Worker 1: Safe -->
+<div class="bg-surface-container-lowest rounded-xl p-3.5 shadow-sm flex items-center justify-between">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-10 h-10 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center font-label-md text-label-md shrink-0">
+            W1
+          </div>
+<div class="min-w-0">
+<p class="font-label-md text-label-md text-on-surface">Tariqul Islam</p>
+<p class="font-label-sm text-label-sm text-outline truncate">Front + Back verified • Climber</p>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-success-green/10 text-success-green font-label-sm text-label-sm font-semibold shrink-0">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Safe</span>
+</div>
+</div>
+<!-- Worker 2: Unsafe (Expanded Focus) -->
+<div class="bg-surface-container-lowest rounded-xl p-4 shadow-md">
+<!-- Worker Header -->
+<div class="flex items-center justify-between mb-3">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-10 h-10 rounded-full bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center font-label-md text-label-md shrink-0">
+              W2
+            </div>
+<div class="min-w-0">
+<p class="font-label-md text-label-md text-on-surface">Kader Mollah</p>
+<p class="font-label-sm text-label-sm text-error truncate font-medium">Harness connection issue</p>
+</div>
+</div>
+<div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-error/10 text-error font-label-sm text-label-sm font-semibold shrink-0">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">error</span>
+<span>Unsafe</span>
+</div>
+</div>
+<!-- Evidence Thumbnails -->
+<div class="grid grid-cols-2 gap-2 mb-3.5">
+<!-- Front Photo -->
+<div class="relative rounded-lg overflow-hidden bg-surface-container aspect-square group cursor-pointer">
+<img class="w-full h-full object-cover" data-alt="Clear high resolution photograph of a telecommunication worker outdoors wearing a bright neon safety helmet, safety glasses, high visibility yellow vest, and full body safety harness, standing against daylight sky" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDgQU9bHBVHLqpP5L7JengM95PotCLUMm0pYSa5LrM8Tak4Qv7ZN0RbNzGeW5mlq6MGCveBJQQDXEWtSxpzqpzEqzO73hM9VW3OgXi4AkyKod79xg_aPJ9wxOMTPTb6_qUd51H5P1DcSqqEAji7jg9I2Kg465f111W36y-82wOnClR_5LezGuCHcZ0pf1_OvuhGY7GpysiX6hZC7JVN63eZ_gNo4b6GLcrM8yI56LZdN8ToE9jQBAt0"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none"></div>
+<span class="absolute top-2 left-2 font-label-sm text-label-sm bg-black/60 backdrop-blur-md text-white px-1.5 py-0.5 rounded">FRONT</span>
+<button aria-label="Zoom Front Photo" class="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center backdrop-blur-sm" type="button">
+<span class="material-symbols-outlined text-sm">fullscreen</span>
+</button>
+</div>
+<!-- Back Photo (Issue flagged) -->
+<div class="relative rounded-lg overflow-hidden bg-surface-container aspect-square group cursor-pointer ring-2 ring-error/40">
+<img class="w-full h-full object-cover" data-alt="Telecommunication rigger shown from behind wearing industrial fall protection safety harness on a tower platform, highlighting dorsal D-ring clip attachment details with industrial safety equipment" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB-I5Gv4lteN5XsmAXE1_cDPtr_NEzL0F2CWVDwg-sZ1I-sHC0rbP0roxgmqczH7trvuE09iErv3qWPdaBHjcUMQoCkQorKdchMTpc_UUiogIYbMk6JgnOI5qH9IntEebdbZ_cummC-xp7OVKcew1zHrrSby1porfloCpEp9kvEmQQMPGtP2B7Vc8qebXWvsrsMUP_7BXNFUpp_KpYAP-6afKkjDLBTdOpvXOk1EfqXOSazVPOvAIwS"/>
+<div class="absolute inset-0 bg-gradient-to-t from-error/60 via-transparent to-black/20 pointer-events-none"></div>
+<span class="absolute top-2 left-2 font-label-sm text-label-sm bg-error text-white px-1.5 py-0.5 rounded font-bold">BACK • FLAG</span>
+<button aria-label="Zoom Back Photo" class="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center backdrop-blur-sm" type="button">
+<span class="material-symbols-outlined text-sm">fullscreen</span>
+</button>
+<div class="absolute bottom-2 left-2 flex items-center gap-1 text-white font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-sm text-error-container">warning</span>
+<span class="drop-shadow">Inspect D-ring</span>
+</div>
+</div>
+</div>
+<!-- Reviewer Feedback Callout -->
+<div class="bg-surface-container-low rounded-lg p-3 space-y-1.5">
+<div class="flex items-center gap-1.5 text-warning-orange font-label-sm text-label-sm font-semibold">
+<span class="material-symbols-outlined text-sm">rate_review</span>
+<span>Reviewer Note</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+            "The rear lanyard connection point was not clearly attached to the vertical lifeline carabiner. Please re-photograph Worker 2 with hook visibly engaged."
+          </p>
+<div class="pt-1 flex items-center gap-1.5 text-outline font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-xs">label</span>
+<span>Tags: Full-body harness • Anchorage point</span>
+</div>
+</div>
+</div>
+<!-- Worker 3: Safe -->
+<div class="bg-surface-container-lowest rounded-xl p-3.5 shadow-sm flex items-center justify-between">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-10 h-10 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center font-label-md text-label-md shrink-0">
+            W3
+          </div>
+<div class="min-w-0">
+<p class="font-label-md text-label-md text-on-surface">Shahinur Rahman</p>
+<p class="font-label-sm text-label-sm text-outline truncate">Front + Back verified • Groundsman</p>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-success-green/10 text-success-green font-label-sm text-label-sm font-semibold shrink-0">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Safe</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 4: Supporting Evidence ("Others") Section -->
+<section class="bg-surface-container-lowest rounded-xl p-4 mb-4 shadow-sm">
+<div class="flex items-center justify-between mb-3">
+<div>
+<h3 class="font-title-lg text-title-lg text-on-surface">Supporting Evidence</h3>
+<p class="font-label-sm text-label-sm text-outline">1 of 2 required photos verified</p>
+</div>
+<span class="font-label-sm text-label-sm px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-semibold">Needs Attention</span>
+</div>
+<!-- Uploads Grid -->
+<div class="grid grid-cols-2 gap-2.5 mb-3">
+<!-- Present photo: Toolbox talk -->
+<div class="relative rounded-lg overflow-hidden bg-surface-container aspect-video">
+<img class="w-full h-full object-cover" data-alt="Outdoor telecom worksite morning toolbox safety briefing showing workers in safety helmets and vests gathered around a clipboard documentation sheet in clear daylight" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDM1AWQuL-6QHryo-dNR2MVY1VYvY3vBWVMl7of8ulRF_ik6eL49ety5FWDvBUZTCEUXu5yqcULmP6KjjM7WkVrg2D_iRe77GvUJJWyGa7vb3--AiT1IptDJ_GzntaGXBLeV8LNfZlW1cURZlmWhEKS3kgK3eUaBUl4WA7KSfMK6QFLdKHkAaKzeDX885fiKX5ifvyiK0W3enHoDTU6R40023Kw1vsgBbYoVeToSPObjGcxCaRi_TFL"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none"></div>
+<span class="absolute bottom-1.5 left-2 font-label-sm text-label-sm text-white flex items-center gap-1">
+<span class="material-symbols-outlined text-xs text-success-green">check_circle</span>
+          Toolbox Talk
+        </span>
+</div>
+<!-- Missing photo placeholder -->
+<div class="rounded-lg bg-surface-container-low flex flex-col items-center justify-center p-3 text-center aspect-video cursor-pointer hover:bg-surface-container transition-colors">
+<div class="w-7 h-7 rounded-full bg-tertiary-fixed flex items-center justify-center text-warning-orange mb-1">
+<span class="material-symbols-outlined text-base">add_a_photo</span>
+</div>
+<span class="font-label-sm text-label-sm font-semibold text-on-surface">First Aid Box</span>
+<span class="font-label-sm text-label-sm text-warning-orange">Missing</span>
+</div>
+</div>
+<!-- Alert Box for Evidence -->
+<div class="rounded-lg bg-tertiary-fixed/30 p-2.5 flex items-start gap-2 text-on-tertiary-fixed">
+<span class="material-symbols-outlined text-base text-warning-orange shrink-0 mt-0.5">info</span>
+<p class="font-label-sm text-label-sm text-on-surface-variant">
+        The reviewer requires a clear photograph of the open First Aid Box on site showing emergency kit readiness.
+      </p>
+</div>
+</section>
+<!-- Section 5: Reviewer Decision Summary -->
+<section class="bg-surface-container-low rounded-xl p-4 mb-3">
+<span class="font-label-sm text-label-sm text-outline uppercase tracking-wider block mb-1">Why this was not approved</span>
+<blockquote class="font-body-md text-body-md text-on-surface italic mb-3 pl-2.5 border-l-2 border-primary">
+      "Worker 2 PPE was unsafe and required First Aid Box evidence was missing. Please update Worker 2 images and attach First Aid Box photo to resubmit."
+    </blockquote>
+<div class="flex items-center gap-2.5 text-on-surface-variant font-label-sm text-label-sm pt-2 border-t border-surface-container">
+<div class="w-7 h-7 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-bold">
+        MH
+      </div>
+<div class="min-w-0 flex-1">
+<span class="font-semibold text-on-surface">Mahmud Hasan</span> • EHS Representative
+      </div>
+<span class="text-outline shrink-0">Today 4:15 PM</span>
+</div>
+</section>
+<!-- Section 6: Sticky Bottom Action Bar -->
+<div class="fixed bottom-0 left-0 right-0 max-w-md mx-auto px-container-padding py-3 bg-glass-bg backdrop-blur-md border-t border-outline-variant/30 flex flex-col gap-2 z-50">
+<button class="w-full h- touch-target-min min-h-[48px] px-6 rounded-xl bg-primary text-on-primary font-label-md text-label-md flex items-center justify-center gap-2 shadow-md hover:bg-primary-container active:scale-98 transition-transform" id="fix-btn" type="button">
+<span class="material-symbols-outlined text-lg">refresh</span>
+<span>Fix & Resubmit (2 Items)</span>
+</button>
+<button class="w-full h-8 text-secondary font-label-sm text-label-sm hover:underline text-center" type="button">
+      View Original Submission Data
+    </button>
+</div>
+</div>
+<script>
+  // Simple micro-interaction for tactile feedback on the primary action
+  document.getElementById('fix-btn')?.addEventListener('click', function() {
+    this.classList.add('scale-95');
+    setTimeout(() => {
+      this.classList.remove('scale-95');
+    }, 150);
+  });
+</script></main></body></html>

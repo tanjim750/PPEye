@@ -1,0 +1,152 @@
+{
+  "capture": "PPE ক্যাপচার",
+  "history": "জমার ইতিহাস",
+  "othersCaptureScreen": {
+    "title": "অন্যান্য ক্যাপচার",
+    "photo": "ছবি {{number}}",
+    "photoChip": "ছবি {{number}}",
+    "instruction": "সাইট সেফটির সহায়ক ছবি তুলুন",
+    "instructionChecklistTitle": "প্রয়োজনীয় ছবি",
+    "instructionChecklistClose": "নির্দেশনা বন্ধ করুন",
+    "instructions": {
+      "accessId": "Access ID পরিষ্কারভাবে তুলুন",
+      "roofTop": "রুফটপ কাজের এলাকা তুলুন",
+      "safetyBanners": "সেফটি ব্যানারের ছবি তুলুন",
+      "firstAidBox": "ফার্স্ট এইড বক্সের ছবি তুলুন",
+      "additional": "আরেকটি সহায়ক সেফটি ছবি তুলুন"
+    }
+  },
+  "reviewScreen": {
+    "title": "ছবি জমা দিন",
+    "back": "ফিরে যান",
+    "currentSite": "বর্তমান সাইট",
+    "change": "পরিবর্তন",
+    "save": "সংরক্ষণ",
+    "cancel": "বাতিল",
+    "sitePlaceholder": "সাইট কোড লিখুন",
+    "noSiteSelected": "কোনো সাইট নির্বাচন করা হয়নি",
+    "siteReadyHint": "জমাটি এই সাইটের সাথে যুক্ত হবে।",
+    "siteEmptyHint": "জমা দেওয়ার আগে টাওয়ার বা সাইট কোড যোগ করুন।",
+    "siteRequired": "সাইট কোড প্রয়োজন।",
+    "locationServicesTitle": "লোকেশন বন্ধ আছে",
+    "locationServicesMessage": "এই সাবমিশনে আবহাওয়ার তথ্য যুক্ত করতে লোকেশন চালু করুন।",
+    "turnOnLocation": "চালু করুন",
+    "ppePhotos": "PPE ছবি",
+    "ppeSummary": "{{workers}} জন কর্মী • {{photos}}টি PPE ছবি",
+    "worker": "কর্মী {{number}}",
+    "photoPairReady": "সামনে ও পেছনের ছবি প্রস্তুত",
+    "retake": "আবার তুলুন",
+    "remove": "সরান",
+    "continueCapture": "PPE ক্যাপচার চালিয়ে যান",
+    "others": "অন্যান্য",
+    "otherSummary": "{{photos}}টি ছবি",
+    "addPhoto": "ছবি যোগ করুন",
+    "submit": "জমা দিন",
+    "exitConfirmTitle": "এই রিভিউ ছেড়ে যাবেন?",
+    "exitConfirmMessage": "এখন বের হলে সংরক্ষণ না করা অগ্রগতি বাতিল হয়ে যাবে।",
+    "keepReviewing": "রিভিউ চালিয়ে যান",
+    "discardAndLeave": "বের হন"
+  },
+  "detailScreen": {
+    "back": "সাবমিশনে ফিরে যান",
+    "help": "সহায়তা ও নির্দেশিকা",
+    "eyebrow": "সেফটি অডিট",
+    "title": "সাবমিশন বিস্তারিত",
+    "site": "ABC Telecom • Gazipur-ER-102",
+    "submissionId": "ID #88241",
+    "submittedBy": "Rahim Mia জমা দিয়েছেন",
+    "submittedAt": "৬ সেপ্টেম্বর ২০২৬ • ৩:৪২ PM",
+    "actionRequired": "পদক্ষেপ প্রয়োজন",
+    "actionRequiredBody": "ওয়ার্ক ক্লিয়ারেন্স অনুমোদনের আগে এই সাবমিশনের কিছু বিষয় সংশোধন করা দরকার।",
+    "itemsToCorrect": "সংশোধনের বিষয়",
+    "issueCount": "২টি সমস্যা পাওয়া গেছে",
+    "severity": {
+      "critical": "গুরুতর",
+      "missing": "অনুপস্থিত"
+    },
+    "issues": {
+      "workerHarness": {
+        "title": "কর্মী ২ - অনিরাপদ PPE",
+        "message": "হারনেস সংযোগ লাইফলাইনের সাথে সঠিকভাবে সুরক্ষিত ছিল না।"
+      },
+      "firstAidMissing": {
+        "title": "সহায়ক প্রমাণ",
+        "message": "সাইটের ফার্স্ট এইড বক্সের ছবি দেওয়া হয়নি।"
+      }
+    },
+    "tags": {
+      "harness": "ফুল-বডি হারনেস",
+      "anchorage": "অ্যাঙ্করেজ পয়েন্ট"
+    },
+    "workerPpe": "কর্মীর PPE",
+    "workerSummary": "৩ জন কর্মী রিভিউ করা হয়েছে",
+    "history": "ইতিহাস",
+    "frontBackVerified": "সামনে + পেছন যাচাই করা হয়েছে",
+    "status": {
+      "safe": "নিরাপদ",
+      "unsafe": "অনিরাপদ"
+    },
+    "workers": {
+      "worker1": {
+        "name": "Tariqul Islam",
+        "role": "ক্লাইম্বার"
+      },
+      "worker2": {
+        "name": "Kader Mollah",
+        "role": "ক্লাইম্বার",
+        "issue": "হারনেস সংযোগে সমস্যা"
+      },
+      "worker3": {
+        "name": "Shahinur Rahman",
+        "role": "গ্রাউন্ডসম্যান"
+      }
+    },
+    "reviewerNote": "রিভিউয়ারের নোট",
+    "reviewerNoteBody": "পেছনের ল্যানিয়ার্ড সংযোগ পয়েন্টটি ভার্টিক্যাল লাইফলাইন ক্যারাবাইনারে পরিষ্কারভাবে যুক্ত দেখা যায়নি। Worker 2-এর হুক স্পষ্টভাবে যুক্ত অবস্থায় আবার ছবি তুলুন।",
+    "noteTags": "ট্যাগ: ফুল-বডি হারনেস • অ্যাঙ্করেজ পয়েন্ট",
+    "supportingEvidence": "সহায়ক প্রমাণ",
+    "evidenceSummary": "প্রয়োজনীয় ২টির মধ্যে ১টি ছবি যাচাই হয়েছে",
+    "needsAttention": "মনোযোগ প্রয়োজন",
+    "toolboxTalk": "টুলবক্স টক",
+    "firstAidBox": "ফার্স্ট এইড বক্স",
+    "missing": "অনুপস্থিত",
+    "evidenceNote": "ইমার্জেন্সি কিট প্রস্তুত আছে তা দেখানোর জন্য সাইটের খোলা ফার্স্ট এইড বক্সের পরিষ্কার ছবি দরকার।",
+    "decisionLabel": "কেন এটি অনুমোদিত হয়নি",
+    "decisionQuote": "Worker 2-এর PPE অনিরাপদ ছিল এবং ফার্স্ট এইড বক্সের প্রয়োজনীয় প্রমাণ অনুপস্থিত ছিল। রিসাবমিট করতে Worker 2-এর ছবি আপডেট করুন এবং ফার্স্ট এইড বক্সের ছবি যুক্ত করুন।",
+    "reviewerName": "Mahmud Hasan",
+    "reviewerRole": "EHS Representative",
+    "reviewedAt": "আজ ৪:১৫ PM",
+    "fixAndResubmit": "সংশোধন করে রিসাবমিট করুন (২টি বিষয়)",
+    "viewOriginal": "মূল সাবমিশন ডেটা দেখুন"
+  },
+  "captureScreen": {
+    "title": "PPE ক্যাপচার",
+    "done": "সম্পন্ন",
+    "close": "ক্যাপচার বন্ধ করুন",
+    "worker": "কর্মী {{number}}",
+    "workerSide": "কর্মী {{worker}} • {{side}}",
+    "position": "সামনে",
+    "instruction": "সামনের দিক থেকে পুরো শরীর ক্যাপচার করুন",
+    "frontInstruction": "সামনের দিক থেকে পুরো শরীর ক্যাপচার করুন",
+    "backInstruction": "পেছনের দিক থেকে পুরো শরীর ক্যাপচার করুন",
+    "completedWorker": "ক{{number}}",
+    "selectWorker": "কর্মী {{worker}} নির্বাচন করুন",
+    "recentPhoto": "সাম্প্রতিক ছবির প্রিভিউ",
+    "takePhoto": "ছবি তুলুন",
+    "flash": "ফ্ল্যাশ চালু/বন্ধ করুন",
+    "grantPermission": "ক্যামেরা অ্যাক্সেস দিন",
+    "permissionDenied": "PPE ছবি তুলতে ক্যামেরার অনুমতি দরকার।",
+    "cameraLoading": "ক্যামেরা প্রস্তুত হচ্ছে...",
+    "cameraUnavailable": "এই ডিভাইসে ক্যামেরা পাওয়া যাচ্ছে না।",
+    "backRequired": "কর্মী {{worker}}-এর BACK ছবি এখনও দরকার।",
+    "takeBackPhoto": "Back ছবি তুলুন",
+    "removeCurrentWorker": "বর্তমান কর্মী সরান",
+    "localStateTitle": "লোকাল ক্যাপচার স্টেট",
+    "retake": "আবার তুলুন",
+    "keepPhoto": "ছবিটি রাখুন",
+    "sides": {
+      "FRONT": "FRONT",
+      "BACK": "BACK"
+    }
+  }
+}

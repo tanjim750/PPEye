@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PPE Capture</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary-fixed-dim": "#ffb68e",
+                      "on-secondary-container": "#00376f",
+                      "surface-container-high": "#eae7e7",
+                      "on-tertiary-fixed": "#331200",
+                      "surface-bright": "#fcf9f8",
+                      "error-container": "#ffdad6",
+                      "on-primary-container": "#fefcff",
+                      "on-secondary-fixed-variant": "#00468c",
+                      "surface-tint": "#005eb1",
+                      "border-subtle": "#E4E7EC",
+                      "secondary": "#005db6",
+                      "surface-container-highest": "#e5e2e1",
+                      "surface-container": "#f0eded",
+                      "on-tertiary": "#ffffff",
+                      "on-error-container": "#93000a",
+                      "on-surface": "#1c1b1b",
+                      "status-unsafe": "#DC2626",
+                      "primary-container": "#0075d8",
+                      "on-secondary-fixed": "#001b3d",
+                      "primary": "#005cad",
+                      "tertiary-fixed": "#ffdbca",
+                      "surface-light": "#E6F3FE",
+                      "background": "#fcf9f8",
+                      "on-error": "#ffffff",
+                      "primary-fixed-dim": "#a6c8ff",
+                      "background-app": "#F7F8FA",
+                      "outline": "#717785",
+                      "text-secondary": "#667085",
+                      "status-safe": "#16A34A",
+                      "on-primary-fixed-variant": "#004787",
+                      "primary-fixed": "#d5e3ff",
+                      "on-background": "#1c1b1b",
+                      "secondary-fixed": "#d6e3ff",
+                      "inverse-primary": "#a6c8ff",
+                      "error": "#ba1a1a",
+                      "secondary-container": "#63a1ff",
+                      "inverse-surface": "#313030",
+                      "on-secondary": "#ffffff",
+                      "surface-dim": "#dcd9d9",
+                      "surface-container-low": "#f6f3f2",
+                      "secondary-fixed-dim": "#a9c7ff",
+                      "on-surface-variant": "#404753",
+                      "on-primary-fixed": "#001c3b",
+                      "tertiary": "#984300",
+                      "on-primary": "#ffffff",
+                      "status-pending": "#F59E0B",
+                      "tertiary-container": "#be5600",
+                      "inverse-on-surface": "#f3f0ef",
+                      "on-tertiary-fixed-variant": "#763300",
+                      "outline-variant": "#c0c7d5",
+                      "on-tertiary-container": "#fffbff",
+                      "surface-variant": "#e5e2e1",
+                      "surface": "#fcf9f8"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "gutter": "12px",
+                      "stack-lg": "24px",
+                      "margin-tablet": "24px",
+                      "margin-mobile": "16px",
+                      "stack-md": "16px",
+                      "base": "4px",
+                      "touch-target": "48px",
+                      "stack-sm": "8px"
+              },
+              "fontFamily": {
+                      "headline-md": ["Hanken Grotesk"],
+                      "label-md": ["Hanken Grotesk"],
+                      "code-mono": ["monospace"],
+                      "headline-lg-mobile": ["Hanken Grotesk"],
+                      "headline-lg": ["Hanken Grotesk"],
+                      "body-md": ["Hanken Grotesk"],
+                      "label-sm": ["Hanken Grotesk"],
+                      "body-lg": ["Hanken Grotesk"]
+              },
+              "fontSize": {
+                      "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                      "code-mono": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "headline-lg-mobile": ["26px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                      "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                      "body-lg": ["18px", {"lineHeight": "26px", "fontWeight": "400"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        body { font-family: 'Hanken Grotesk', sans-serif; background-color: #101214; }
+        .silhouette-guide {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 200"><path d="M50 10 C60 10 65 18 65 28 C65 38 60 45 50 45 C40 45 35 38 35 28 C35 18 40 10 50 10 Z M30 50 L70 50 L75 90 L85 140 L70 140 L65 95 L55 95 L55 190 L45 190 L45 95 L35 95 L30 140 L15 140 L25 90 Z" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="2" stroke-dasharray="5,5"/></svg>');
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: contain;
+        }
+        .shutter-btn {
+            box-shadow: 0 0 0 4px #ffffff, 0 0 0 8px rgba(0, 92, 173, 0.2);
+        }
+    </style>
+</head>
+<body class="h-screen w-full overflow-hidden flex flex-col text-on-surface">
+<!-- TopAppBar Component -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-mobile h-touch-target bg-surface/80 backdrop-blur-md border-b border-border-subtle">
+<button class="w-touch-target h-touch-target flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-transform duration-150 active:scale-95 rounded-full">
+<span class="material-symbols-outlined" data-icon="close">close</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface">PPE Capture</h1>
+<button class="font-label-md text-label-md text-primary font-semibold hover:bg-surface-container-high transition-transform duration-150 active:scale-95 px-4 h-touch-target flex items-center rounded-lg">
+            Done
+        </button>
+</header>
+<!-- Main Content Area -->
+<main class="flex-grow relative mt-touch-target flex flex-col">
+<!-- Live Camera View (75% height) -->
+<div class="relative w-full flex-grow bg-black overflow-hidden" style="flex-basis: 75%;">
+<!-- Camera Feed Image -->
+<img alt="" class="absolute inset-0 w-full h-full object-cover opacity-90" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAjdoV4X_IzIszJ5Q7Ys0_A7z9Alc1L1mZMH9GGRrmsvqeCpuSDl1Az_X0d7otoeUojdCqhR1O2Gr0mqZ9z3sKPo7-m1nbguaMKGm5fuvZ_TfTgJGm-SceaB13OXXMfs92lKT7Ozps-kBLmCQWfeX5krh64l7tYXTJ-V0y-65KW-OOhXBodact3ju0SGrN3mcwjSC96cNAt9KzuQhaXf3D1CsJK7psBprZoE3Wtcac0rxpknzSBdAVf"/>
+<!-- Silhouette Guide -->
+<div class="absolute inset-0 w-full h-full silhouette-guide pointer-events-none"></div>
+<!-- Overlay Typography -->
+<div class="absolute top-stack-lg left-0 w-full text-center px-margin-mobile drop-shadow-md">
+<span class="font-label-md text-label-md text-white bg-black/40 px-3 py-1 rounded-full uppercase tracking-wider inline-block mb-stack-sm backdrop-blur-sm">Worker 4</span>
+<h2 class="font-headline-lg-mobile text-headline-lg-mobile text-white uppercase tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">FRONT</h2>
+<p class="font-body-md text-body-md text-white/90 mt-base drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">Capture the full body from the front</p>
+</div>
+</div>
+<!-- Bottom Controls Area (25% height) -->
+<div class="w-full bg-[#101214] pb-safe flex flex-col justify-end" style="flex-basis: 25%; min-height: 180px;">
+<!-- Progress Strip -->
+<div class="w-full px-margin-mobile py-stack-sm flex justify-center gap-2 items-center mb-stack-md overflow-x-auto no-scrollbar">
+<div class="flex items-center gap-1 bg-surface-container-lowest/10 text-white font-label-sm text-label-sm px-3 py-1.5 rounded-full whitespace-nowrap">
+                    W1 <span class="material-symbols-outlined text-[14px] text-status-safe">check</span>
+</div>
+<div class="flex items-center gap-1 bg-surface-container-lowest/10 text-white font-label-sm text-label-sm px-3 py-1.5 rounded-full whitespace-nowrap">
+                    W2 <span class="material-symbols-outlined text-[14px] text-status-safe">check</span>
+</div>
+<div class="flex items-center gap-1 bg-surface-container-lowest/10 text-white font-label-sm text-label-sm px-3 py-1.5 rounded-full whitespace-nowrap">
+                    W3 <span class="material-symbols-outlined text-[14px] text-status-safe">check</span>
+</div>
+<div class="flex items-center gap-1 bg-primary text-white font-label-sm text-label-sm px-4 py-2 rounded-full font-bold whitespace-nowrap shadow-md border border-primary-container">
+                    Worker 4
+                </div>
+</div>
+<!-- Camera Controls -->
+<div class="w-full px-margin-tablet pb-stack-lg flex justify-between items-center h-24">
+<!-- Recent Photo Preview -->
+<button class="w-[48px] h-[48px] rounded-lg overflow-hidden border border-border-subtle bg-surface-container-highest active:scale-95 transition-transform flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="A small thumbnail showing a previous photo of a construction worker wearing a hardhat and high-visibility vest standing near a tower structure. Bright daylight, clear image." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAawQTaUSsqdJed6ckTRPFW3WzLHtGZDvkUXyfOibxsw8IY7ZNLe40iNT2lbqHlZn022-9M_iOh3JnA78NScROkoWsR7eCFm_l7eUMqW9e_1MufD6yn2UVFYtVBR95dXFpCiG1rbdErPxGyFz4y2Vd088p-vKzu3NwdC3JEJaTHnYvObCoIrCe8O32XD8_3DDDAzqQSvHX1NkZLAXaCn6Rmt2_PiPmcqKNDh17S39PNbLAXmmiGs-WL"/>
+</button>
+<!-- Shutter Button -->
+<button class="w-[72px] h-[72px] rounded-full bg-primary shutter-btn flex items-center justify-center active:scale-95 active:bg-primary-container transition-all duration-150 flex-shrink-0">
+<div class="w-[60px] h-[60px] rounded-full bg-white flex items-center justify-center">
+<div class="w-[52px] h-[52px] rounded-full bg-primary border-2 border-white"></div>
+</div>
+</button>
+<!-- Flash Toggle -->
+<button class="w-[48px] h-[48px] rounded-full flex items-center justify-center text-white/80 hover:bg-white/10 active:scale-95 transition-all flex-shrink-0">
+<span class="material-symbols-outlined text-[28px]" data-icon="flash_on">flash_on</span>
+</button>
+</div>
+</div>
+</main>
+</body></html>

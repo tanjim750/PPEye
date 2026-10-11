@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>SafetyNet EHS - Unsafe Reason</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "on-primary-container": "#fefcff",
+                        "surface-container-high": "#e5e8f1",
+                        "surface-dim": "#d7dae3",
+                        "surface-container-highest": "#e0e2ec",
+                        "on-surface-variant": "#404753",
+                        "secondary": "#015db6",
+                        "on-secondary-fixed-variant": "#00468b",
+                        "surface": "#f9f9ff",
+                        "surface-bright": "#f9f9ff",
+                        "on-background": "#181c22",
+                        "warning-orange": "#984300",
+                        "on-error": "#ffffff",
+                        "inverse-primary": "#a6c8ff",
+                        "error-container": "#ffdad6",
+                        "inverse-surface": "#2d3038",
+                        "tertiary": "#984300",
+                        "error-red": "#ba1a1a",
+                        "on-primary-fixed": "#001c3b",
+                        "on-error-container": "#93000a",
+                        "secondary-container": "#64a1fe",
+                        "primary": "#005cad",
+                        "tertiary-container": "#be5600",
+                        "surface-tint": "#005eb1",
+                        "success-green": "#16A34A",
+                        "background": "#f9f9ff",
+                        "surface-variant": "#e0e2ec",
+                        "on-tertiary-fixed-variant": "#763300",
+                        "tertiary-fixed": "#ffdbca",
+                        "on-primary-fixed-variant": "#004787",
+                        "secondary-fixed-dim": "#a9c7ff",
+                        "secondary-fixed": "#d6e3ff",
+                        "surface-container": "#ebedf7",
+                        "on-tertiary-container": "#fffbff",
+                        "on-secondary-container": "#00376f",
+                        "on-surface": "#181c22",
+                        "surface-container-low": "#f1f3fd",
+                        "inverse-on-surface": "#eef0fa",
+                        "on-tertiary": "#ffffff",
+                        "glass-bg": "rgba(255, 255, 255, 0.95)",
+                        "primary-fixed-dim": "#a6c8ff",
+                        "tertiary-fixed-dim": "#ffb68e",
+                        "primary-fixed": "#d5e3ff",
+                        "on-tertiary-fixed": "#331200",
+                        "primary-container": "#0075d8",
+                        "outline": "#717785",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed": "#001b3d",
+                        "on-primary": "#ffffff",
+                        "outline-variant": "#c0c7d5"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px",
+                        "3xl": "1.5rem"
+                    },
+                    spacing: {
+                        "unit": "4px",
+                        "container-padding": "20px",
+                        "gutter": "12px",
+                        "touch-target-min": "48px",
+                        "stack-gap": "16px"
+                    },
+                    fontFamily: {
+                        "body-md": ["Hanken Grotesk"],
+                        "label-md": ["Hanken Grotesk"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "display-lg": ["Hanken Grotesk"],
+                        "title-lg": ["Hanken Grotesk"],
+                        "label-sm": ["Hanken Grotesk"],
+                        "headline-md": ["Hanken Grotesk"]
+                    },
+                    fontSize: {
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "display-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "title-lg": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "label-sm": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    },
+                    boxShadow: {
+                        'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.08)',
+                        'sheet': '0 -8px 24px -4px rgba(0, 0, 0, 0.1)',
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Hanken Grotesk', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        .material-symbols-outlined.filled {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        /* Bottom Sheet Animation */
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .sheet-animate-up {
+            animation: slideUp 0.3s cubic-bezier(0.2, 0, 0, 1) forwards;
+        }
+        
+        .overlay-animate-in {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+
+        /* Checkbox styling */
+        .reason-checkbox {
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--tw-colors-outline-variant);
+            border-radius: 50%;
+            outline: none;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+
+        .reason-checkbox:checked {
+            border-color: var(--tw-colors-error);
+            background-color: var(--tw-colors-error);
+        }
+
+        .reason-checkbox:checked::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 12px;
+            height: 12px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z'/%3E%3C/svg%3E");
+            background-size: contain;
+            background-repeat: no-repeat;
+        }
+
+        /* Row selected state */
+        .reason-row.selected {
+            background-color: var(--tw-colors-error-container);
+            border-color: transparent;
+        }
+        
+        .reason-row.selected .reason-text {
+            color: var(--tw-colors-on-error-container);
+            font-weight: 600;
+        }
+
+        .reason-row.selected .reason-icon {
+            color: var(--tw-colors-error);
+        }
+        
+        /* Hide scrollbar but keep functionality */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface h-screen w-full overflow-hidden flex justify-center items-end bg-black/40 overlay-animate-in relative">
+<!-- Background Context (Simulated dimmed screen) -->
+<div class="absolute inset-0 z-0 flex flex-col pointer-events-none opacity-80 mix-blend-multiply" data-alt="A blurred, darkened view of an industrial safety app interface, showing a high-resolution photo of a construction worker wearing a high-visibility vest and a safety harness, viewed from the back. The interface behind the blur features technical UI elements and a large 'UNSAFE' status indicator. The setting implies a modern, high-tech industrial environment." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAX0z2GcgfqJoE7XrB6mjjmMxkBHOS7ysiGd3Zk18TH3_mL68k0Rv9kWJNe-lJkjzEzsziCXnpZGJ-JM-YarCR7OI2-5Kd6A9n2xLbAr94Nt6i544H5ZSOhecYtVYxHVA4ad2wFhsOhK0rB8yOnEA2BLj-bJSjBRDZtRk11M7XSkt9fNUFxAxRZUXcQ6oL1kIbyTeo2WMB9I13nf9mMhK3okcqq6DfHz39lQuga2BjeuTEdKF68sCc3'); background-size: cover; background-position: center;">
+</div>
+<!-- Bottom Sheet Container -->
+<main class="w-full max-w-[448px] bg-surface-container-lowest rounded-t-3xl shadow-sheet z-10 flex flex-col sheet-animate-up" style="max-height: 90vh;">
+<!-- Drag Handle Area -->
+<div class="w-full pt-4 pb-2 flex justify-center items-center touch-none">
+<div class="w-12 h-1.5 bg-outline-variant/50 rounded-full"></div>
+</div>
+<!-- Header -->
+<div class="px-container-padding pb-4">
+<h1 class="font-headline-md text-headline-md text-on-surface mb-1">Why is this unsafe?</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">Select all that apply</p>
+</div>
+<!-- Scrollable List Content -->
+<div class="px-container-padding flex-1 overflow-y-auto no-scrollbar pb-24">
+<div class="flex flex-col gap-stack-gap">
+<!-- Reason 1: Helmet -->
+<label class="reason-row flex items-center p-3 rounded-xl border border-outline-variant/40 bg-surface-container-lowest transition-colors min-h-touch-target-min cursor-pointer">
+<span class="reason-icon material-symbols-outlined text-on-surface-variant mr-3 text-[24px]">construction</span>
+<span class="reason-text font-body-lg text-body-lg text-on-surface flex-1">Helmet</span>
+<input class="reason-checkbox" name="unsafe_reason" onchange="handleSelection(this)" type="checkbox" value="helmet"/>
+</label>
+<!-- Reason 2: Full-body harness -->
+<label class="reason-row flex items-center p-3 rounded-xl border border-outline-variant/40 bg-surface-container-lowest transition-colors min-h-touch-target-min cursor-pointer">
+<span class="reason-icon material-symbols-outlined text-on-surface-variant mr-3 text-[24px]">accessibility_new</span>
+<span class="reason-text font-body-lg text-body-lg text-on-surface flex-1">Full-body harness</span>
+<input class="reason-checkbox" name="unsafe_reason" onchange="handleSelection(this)" type="checkbox" value="harness"/>
+</label>
+<!-- Reason 3: Lanyard -->
+<label class="reason-row flex items-center p-3 rounded-xl border border-outline-variant/40 bg-surface-container-lowest transition-colors min-h-touch-target-min cursor-pointer">
+<span class="reason-icon material-symbols-outlined text-on-surface-variant mr-3 text-[24px]">link</span>
+<span class="reason-text font-body-lg text-body-lg text-on-surface flex-1">Lanyard</span>
+<input class="reason-checkbox" name="unsafe_reason" onchange="handleSelection(this)" type="checkbox" value="lanyard"/>
+</label>
+<!-- Reason 4: Anchorage -->
+<label class="reason-row flex items-center p-3 rounded-xl border border-outline-variant/40 bg-surface-container-lowest transition-colors min-h-touch-target-min cursor-pointer">
+<span class="reason-icon material-symbols-outlined text-on-surface-variant mr-3 text-[24px]">anchor</span>
+<span class="reason-text font-body-lg text-body-lg text-on-surface flex-1">Anchorage / connection</span>
+<input class="reason-checkbox" name="unsafe_reason" onchange="handleSelection(this)" type="checkbox" value="anchorage"/>
+</label>
+<!-- Reason 5: Shoes -->
+<label class="reason-row flex items-center p-3 rounded-xl border border-outline-variant/40 bg-surface-container-lowest transition-colors min-h-touch-target-min cursor-pointer">
+<span class="reason-icon material-symbols-outlined text-on-surface-variant mr-3 text-[24px]">directions_walk</span>
+<span class="reason-text font-body-lg text-body-lg text-on-surface flex-1">Safety shoes</span>
+<input class="reason-checkbox" name="unsafe_reason" onchange="handleSelection(this)" type="checkbox" value="shoes"/>
+</label>
+<!-- Reason 6: Other -->
+<div class="flex flex-col gap-2">
+<label class="reason-row flex items-center p-3 rounded-xl border border-outline-variant/40 bg-surface-container-lowest transition-colors min-h-touch-target-min cursor-pointer" id="other-row">
+<span class="reason-icon material-symbols-outlined text-on-surface-variant mr-3 text-[24px]">more_horiz</span>
+<span class="reason-text font-body-lg text-body-lg text-on-surface flex-1">Other</span>
+<input class="reason-checkbox" id="other-checkbox" name="unsafe_reason" onchange="handleOtherSelection(this)" type="checkbox" value="other"/>
+</label>
+<!-- Conditional Text Area for 'Other' -->
+<div class="hidden pl-12 pr-3 pb-2 transition-all duration-300" id="other-text-container">
+<label class="block font-label-sm text-label-sm text-on-surface-variant mb-1" for="other_description">Describe the issue</label>
+<textarea class="w-full bg-surface-container-low border border-outline-variant/50 rounded-lg p-3 font-body-md text-body-md text-on-surface placeholder:text-outline focus:border-error focus:ring-1 focus:ring-error transition-colors resize-none" id="other_description" placeholder="Add a short note..." rows="2"></textarea>
+</div>
+</div>
+</div>
+</div>
+<!-- Sticky Bottom Action -->
+<div class="absolute bottom-0 w-full p-container-padding bg-surface-container-lowest border-t border-outline-variant/20 pb-8">
+<button class="w-full h-touch-target-min rounded-xl font-title-lg text-title-lg flex items-center justify-center transition-all duration-200 bg-surface-container-high text-on-surface-variant cursor-not-allowed opacity-70" disabled="" id="confirm-btn">
+                Confirm Unsafe
+            </button>
+</div>
+</main>
+<script>
+        function updateConfirmButton() {
+            const checkboxes = document.querySelectorAll('input[name="unsafe_reason"]');
+            const confirmBtn = document.getElementById('confirm-btn');
+            
+            let isChecked = false;
+            checkboxes.forEach(cb => {
+                if (cb.checked) isChecked = true;
+            });
+
+            if (isChecked) {
+                confirmBtn.removeAttribute('disabled');
+                confirmBtn.classList.remove('bg-surface-container-high', 'text-on-surface-variant', 'cursor-not-allowed', 'opacity-70');
+                confirmBtn.classList.add('bg-error', 'text-on-error', 'active:scale-95');
+                // Ensure a nice shadow when active
+                confirmBtn.style.boxShadow = "0 4px 12px rgba(186, 26, 26, 0.2)";
+            } else {
+                confirmBtn.setAttribute('disabled', 'true');
+                confirmBtn.classList.add('bg-surface-container-high', 'text-on-surface-variant', 'cursor-not-allowed', 'opacity-70');
+                confirmBtn.classList.remove('bg-error', 'text-on-error', 'active:scale-95');
+                confirmBtn.style.boxShadow = "none";
+            }
+        }
+
+        function handleSelection(checkbox) {
+            const row = checkbox.closest('.reason-row');
+            if (checkbox.checked) {
+                row.classList.add('selected');
+                row.querySelector('.material-symbols-outlined').classList.add('filled');
+            } else {
+                row.classList.remove('selected');
+                row.querySelector('.material-symbols-outlined').classList.remove('filled');
+            }
+            updateConfirmButton();
+        }
+
+        function handleOtherSelection(checkbox) {
+            handleSelection(checkbox);
+            const textContainer = document.getElementById('other-text-container');
+            const textArea = document.getElementById('other_description');
+            
+            if (checkbox.checked) {
+                textContainer.classList.remove('hidden');
+                // Focus slightly after to allow display to set
+                setTimeout(() => textArea.focus(), 50);
+            } else {
+                textContainer.classList.add('hidden');
+            }
+        }
+    </script>
+</body></html>

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PPE Review</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "warning-orange": "#984300",
+                    "error-red": "#ba1a1a",
+                    "on-primary-fixed": "#001c3b",
+                    "on-secondary-fixed-variant": "#00468b",
+                    "on-error": "#ffffff",
+                    "primary": "#005cad",
+                    "surface-bright": "#f9f9ff",
+                    "on-surface": "#181c22",
+                    "success-green": "#16A34A",
+                    "background": "#f9f9ff",
+                    "secondary-container": "#64a1fe",
+                    "on-error-container": "#93000a",
+                    "inverse-primary": "#a6c8ff",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary": "#984300",
+                    "primary-fixed": "#d5e3ff",
+                    "on-tertiary-fixed-variant": "#763300",
+                    "on-surface-variant": "#404753",
+                    "error-container": "#ffdad6",
+                    "on-primary": "#ffffff",
+                    "inverse-surface": "#2d3038",
+                    "surface-container-high": "#e5e8f1",
+                    "secondary": "#015db6",
+                    "outline": "#717785",
+                    "on-tertiary": "#ffffff",
+                    "primary-fixed-dim": "#a6c8ff",
+                    "on-primary-container": "#fefcff",
+                    "tertiary-fixed": "#ffdbca",
+                    "error": "#ba1a1a",
+                    "tertiary-fixed-dim": "#ffb68e",
+                    "surface-container-low": "#f1f3fd",
+                    "surface-tint": "#005eb1",
+                    "on-tertiary-container": "#fffbff",
+                    "surface-variant": "#e0e2ec",
+                    "secondary-fixed": "#d6e3ff",
+                    "on-secondary-fixed": "#001b3d",
+                    "primary-container": "#0075d8",
+                    "on-tertiary-fixed": "#331200",
+                    "surface": "#f9f9ff",
+                    "on-background": "#181c22",
+                    "on-secondary-container": "#00376f",
+                    "tertiary-container": "#be5600",
+                    "surface-dim": "#d7dae3",
+                    "surface-container": "#ebedf7",
+                    "secondary-fixed-dim": "#a9c7ff",
+                    "surface-container-highest": "#e0e2ec",
+                    "on-primary-fixed-variant": "#004787",
+                    "glass-bg": "rgba(255, 255, 255, 0.95)",
+                    "inverse-on-surface": "#eef0fa",
+                    "outline-variant": "#c0c7d5",
+                    "on-secondary": "#ffffff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "unit": "4px",
+                    "stack-gap": "16px",
+                    "gutter": "12px",
+                    "container-padding": "20px",
+                    "touch-target-min": "48px"
+            },
+            "fontFamily": {
+                    "headline-md": [
+                            "Hanken Grotesk"
+                    ],
+                    "label-md": [
+                            "Hanken Grotesk"
+                    ],
+                    "display-lg": [
+                            "Hanken Grotesk"
+                    ],
+                    "body-md": [
+                            "Hanken Grotesk"
+                    ],
+                    "title-lg": [
+                            "Hanken Grotesk"
+                    ],
+                    "body-lg": [
+                            "Hanken Grotesk"
+                    ],
+                    "label-sm": [
+                            "Hanken Grotesk"
+                    ]
+            },
+            "fontSize": {
+                    "headline-md": [
+                            "24px",
+                            {
+                                    "lineHeight": "32px",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "label-md": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "letterSpacing": "0.02em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "display-lg": [
+                            "32px",
+                            {
+                                    "lineHeight": "40px",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "body-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "20px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "title-lg": [
+                            "18px",
+                            {
+                                    "lineHeight": "24px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-lg": [
+                            "16px",
+                            {
+                                    "lineHeight": "24px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "label-sm": [
+                            "11px",
+                            {
+                                    "lineHeight": "14px",
+                                    "fontWeight": "500"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col">
+<!-- Suppressed TopAppBar & BottomNavBar as this is a focused task/transactional screen -->
+<!-- Top Nav / Header -->
+<header class="w-full top-0 sticky bg-background/95 backdrop-blur-md z-40 flex justify-between items-center px-container-padding py-4 max-w-[448px] mx-auto border-b border-outline-variant/20">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-variant/50 transition-colors active:scale-95 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-title-lg text-title-lg text-primary flex-1 text-center font-bold mr-10">PPE Review</h1>
+</header>
+<main class="flex-1 w-full max-w-[448px] mx-auto pb-[100px] flex flex-col pt-2">
+<!-- Context Section -->
+<section class="px-container-padding py-3 flex flex-col gap-1">
+<h2 class="font-title-lg text-title-lg text-on-surface">ABC Telecom <span class="text-outline-variant font-normal px-1">•</span> Rahim Mia</h2>
+<div class="flex items-center gap-2 text-on-surface-variant font-body-md text-body-md">
+<span class="material-symbols-outlined text-[16px]" data-icon="location_on">location_on</span>
+<span>Gazipur-ER-102</span>
+<span class="text-outline-variant">•</span>
+<span>Today, 10:42 AM</span>
+</div>
+</section>
+<!-- Progress -->
+<div class="px-container-padding py-2 flex flex-col gap-2">
+<div class="flex justify-between items-end">
+<span class="font-label-md text-label-md text-primary uppercase tracking-wider">Worker 2 of 4</span>
+</div>
+<div class="w-full h-1 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-primary w-1/2 rounded-full"></div>
+</div>
+</div>
+<!-- Primary Visuals -->
+<section class="px-container-padding py-stack-gap flex-1 flex flex-col">
+<div class="flex gap-3 flex-1 min-h-[300px]">
+<!-- FRONT Image -->
+<div class="flex-1 relative rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container-lowest">
+<div class="absolute top-2 left-2 z-10 bg-glass-bg backdrop-blur-md px-2 py-1 rounded shadow-soft">
+<span class="font-label-sm text-label-sm text-on-surface uppercase tracking-widest">FRONT</span>
+</div>
+<img alt="Front view of worker in full PPE" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida/AEtjO1U7K_FAZ2HeXCCuL2GQebrq1USmx1KtyBTKUh84qCcposq_rfrMO_mGEt5NKO_tE0vD_1YOU7KmDn5OKbRgdPKBlaDDg_N_qlBu6Q7nyji0utCKG1CwE_luLM5-0Dj5Ymhp8yHlplc6Hwc_85tfJxvub3rfYZypubfAXG06ivU3WmhMIqCx-fgeN0WTm-oHDpqIITmW0HF-yRkRSG5MFJlfIiKHtfRhlADTEVgkHnPj7fst2ftVOLRAkC0"/>
+</div>
+<!-- BACK Image -->
+<div class="flex-1 relative rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container-lowest">
+<div class="absolute top-2 left-2 z-10 bg-glass-bg backdrop-blur-md px-2 py-1 rounded shadow-soft">
+<span class="font-label-sm text-label-sm text-on-surface uppercase tracking-widest">BACK</span>
+</div>
+<div class="w-full h-full bg-cover bg-center" data-alt="A detailed portrait oriented photograph of a male industrial telecommunications worker seen from the back, wearing a bright yellow high-visibility safety shirt with reflective orange stripes, a dark green full-body safety harness with multiple straps and heavy metal D-rings. The worker is wearing blue jeans and heavy brown leather safety boots. He is standing on a dirt path in a sunny, bright outdoor environment near an industrial facility with subtle green foliage in the background. The style is highly realistic, high-resolution, industrial safety focus, natural daylight." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDLqFzE6CxZpMDxOPjrCKNrkJcexVG0rL9KO3J_J2Jiwt4Nxa73zhaXuONjNw86T1bq3WSkJij6AAkX2PAMtNJTNB4YK3BJHqwdKzo-e5UtPVpTnqYqM6Q5p2l2XCgX0cEwS2tJdy-DJ90HaLnwpRGrznZ4r3xXHXPA_nyi04JMxDsiw1KPFEM1ci-ChfqzkVFTe1R3LilquI59JmU31U0bJGhL83SNUUKoQF30-Y0Qv6ilBmbMHbjH')"></div>
+</div>
+</div>
+</section>
+<!-- Decision Area & Actions -->
+<section class="px-container-padding py-stack-gap mt-auto flex flex-col gap-4">
+<h3 class="font-headline-md text-headline-md text-center text-on-surface mb-2">Is this worker PPE safe?</h3>
+<div class="flex gap-4">
+<button class="flex-1 h-touch-target-min bg-error-red text-on-error rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-title-lg text-title-lg shadow-soft relative overflow-hidden group">
+<div class="absolute inset-0 bg-black/10 opacity-0 group-active:opacity-100 transition-opacity"></div>
+<span class="material-symbols-outlined" data-icon="close">close</span>
+<span>UNSAFE</span>
+</button>
+<button class="flex-1 h-touch-target-min bg-success-green text-white rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-title-lg text-title-lg shadow-soft relative overflow-hidden group">
+<div class="absolute inset-0 bg-black/10 opacity-0 group-active:opacity-100 transition-opacity"></div>
+<span class="material-symbols-outlined" data-icon="check">check</span>
+<span>SAFE</span>
+</button>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation / Secondary Actions -->
+<div class="fixed bottom-0 w-full z-30 h-[64px] bg-glass-bg backdrop-blur-md border-t border-outline-variant/30">
+<div class="flex justify-between items-center px-container-padding h-full max-w-[448px] mx-auto">
+<button class="h-touch-target-min px-4 flex items-center gap-2 text-primary font-body-lg text-body-lg active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]" data-icon="chevron_left">chevron_left</span>
+                Previous
+            </button>
+<button class="h-touch-target-min px-4 flex items-center gap-2 text-primary font-body-lg text-body-lg font-semibold active:scale-95 transition-transform">
+                Next Worker
+                <span class="material-symbols-outlined text-[20px]" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+</body></html>

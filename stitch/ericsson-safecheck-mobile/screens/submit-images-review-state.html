@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Submit Images - SafetyCore</title>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary": "#005cad",
+                        "on-tertiary": "#ffffff",
+                        "background": "#fcf9f8",
+                        "primary-fixed-dim": "#a6c8ff",
+                        "on-primary-fixed-variant": "#004787",
+                        "background-app": "#F7F8FA",
+                        "on-secondary-fixed": "#001b3d",
+                        "primary-fixed": "#d5e3ff",
+                        "status-safe": "#16A34A",
+                        "tertiary": "#984300",
+                        "on-primary": "#ffffff",
+                        "secondary": "#005db6",
+                        "outline": "#717785",
+                        "surface-container-low": "#f6f3f2",
+                        "error-container": "#ffdad6",
+                        "secondary-fixed": "#d6e3ff",
+                        "surface-container-highest": "#e5e2e1",
+                        "surface-light": "#E6F3FE",
+                        "surface-bright": "#fcf9f8",
+                        "outline-variant": "#c0c7d5",
+                        "border-subtle": "#E4E7EC",
+                        "on-secondary-container": "#00376f",
+                        "on-background": "#1c1b1b",
+                        "secondary-fixed-dim": "#a9c7ff",
+                        "surface": "#fcf9f8",
+                        "surface-tint": "#005eb1",
+                        "inverse-on-surface": "#f3f0ef",
+                        "on-tertiary-container": "#fffbff",
+                        "on-surface-variant": "#404753",
+                        "on-primary-container": "#fefcff",
+                        "on-error-container": "#93000a",
+                        "surface-variant": "#e5e2e1",
+                        "on-tertiary-fixed-variant": "#763300",
+                        "on-secondary-fixed-variant": "#00468c",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-high": "#eae7e7",
+                        "status-unsafe": "#DC2626",
+                        "inverse-surface": "#313030",
+                        "error": "#ba1a1a",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb68e",
+                        "on-tertiary-fixed": "#331200",
+                        "status-pending": "#F59E0B",
+                        "surface-dim": "#dcd9d9",
+                        "secondary-container": "#63a1ff",
+                        "tertiary-container": "#be5600",
+                        "surface-container": "#f0eded",
+                        "on-primary-fixed": "#001c3b",
+                        "tertiary-fixed": "#ffdbca",
+                        "text-secondary": "#667085",
+                        "inverse-primary": "#a6c8ff",
+                        "on-secondary": "#ffffff",
+                        "on-surface": "#1c1b1b",
+                        "primary-container": "#0075d8"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "12px",
+                        "touch-target": "48px",
+                        "margin-mobile": "16px",
+                        "stack-sm": "8px",
+                        "stack-lg": "24px",
+                        "base": "4px",
+                        "margin-tablet": "24px",
+                        "stack-md": "16px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Hanken Grotesk"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "code-mono": ["monospace"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "label-sm": ["Hanken Grotesk"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "label-md": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "code-mono": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-lg": ["18px", { "lineHeight": "26px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-background-app text-on-surface font-body-md min-h-screen pb-24">
+<!-- Top Navigation (Transactional intent -> no full TopAppBar/BottomNav) -->
+<header class="fixed top-0 w-full z-50 bg-surface border-b border-border-subtle h-14 flex items-center px-margin-mobile">
+<button class="h-touch-target w-touch-target flex items-center justify-start -ml-2 text-on-surface hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md flex-1 text-center pr-10">Submit Images</h1>
+</header>
+<main class="pt-[72px] px-margin-mobile flex flex-col gap-stack-lg max-w-2xl mx-auto">
+<!-- Site Context -->
+<section class="bg-surface rounded-xl border border-border-subtle p-stack-md flex justify-between items-center shadow-[0px_2px_4px_rgba(26,26,26,0.02)]">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-light flex items-center justify-center text-primary">
+<span class="material-symbols-outlined" data-icon="cell_tower">cell_tower</span>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-text-secondary">Current Site</p>
+<p class="font-label-md text-label-md text-on-surface">Gazipur-ER-102</p>
+</div>
+</div>
+<button class="font-label-md text-label-md text-primary hover:text-primary-container h-10 px-2">Change</button>
+</section>
+<!-- PPE Photos Section -->
+<section>
+<div class="mb-stack-sm flex justify-between items-end">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">PPE Photos</h2>
+<p class="font-label-sm text-label-sm text-text-secondary">4 workers • 8 PPE photos</p>
+</div>
+</div>
+<!-- Worker List -->
+<div class="flex flex-col gap-stack-md">
+<!-- Worker 1 -->
+<div class="bg-surface border border-border-subtle rounded-xl p-stack-md">
+<div class="flex justify-between items-center mb-3">
+<span class="font-label-md text-label-md flex items-center gap-2">
+                            Worker 1
+                            <span class="material-symbols-outlined text-status-safe text-[18px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</span>
+</div>
+<div class="grid grid-cols-2 gap-3">
+<div class="relative aspect-[9/16] rounded-lg overflow-hidden border border-border-subtle bg-surface-container-low">
+<img alt="Worker 1 Front PPE" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida/AEtjO1U7K_FAZ2HeXCCuL2GQebrq1USmx1KtyBTKUh84qCcposq_rfrMO_mGEt5NKO_tE0vD_1YOU7KmDn5OKbRgdPKBlaDDg_N_qlBu6Q7nyji0utCKG1CwE_luLM5-0Dj5Ymhp8yHlplc6Hwc_85tfJxvub3rfYZypubfAXG06ivU3WmhMIqCx-fgeN0WTm-oHDpqIITmW0HF-yRkRSG5MFJlfIiKHtfRhlADTEVgkHnPj7fst2ftVOLRAkC0"/>
+<div class="absolute bottom-2 left-2 bg-inverse-surface/80 text-on-tertiary font-label-sm text-[10px] px-2 py-0.5 rounded backdrop-blur-sm">FRONT</div>
+</div>
+<div class="relative aspect-[9/16] rounded-lg overflow-hidden border border-border-subtle bg-surface-container-low">
+<img class="w-full h-full object-cover" data-alt="A rear view of a male telecom field worker wearing full-body high-visibility PPE, including a safety vest with reflective stripes, harness, and helmet. The worker is facing away from the camera towards a telecom tower base. Outdoor daylight, professional lighting, high resolution, modern industrial aesthetic. Clean, clear visual focus on safety equipment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCACqY_pWKKerdF_sB7Hn1kXmpmze_vsM9Q87ByZ-aJv5Ha2Z8QuMUb576RhSLwX7QvXn-YSAcbFDbABHSu8qOec2YFZd_GCjCigDQbej6SFNFFDIryMUYL-MYdfm0Y230WrZ3wggUC3108k7xbp3bJZGgDQa0Rvzy-WEpHRk4zzqFsWYytmrt5Sw_SRZ8sceBzy8HuLNjeuQVk1kJ4qaxQa28BcIR8WAfC8uvlL0bazXbfTuf9vHI"/>
+<div class="absolute bottom-2 left-2 bg-inverse-surface/80 text-on-tertiary font-label-sm text-[10px] px-2 py-0.5 rounded backdrop-blur-sm">BACK</div>
+</div>
+</div>
+</div>
+<!-- Worker 2 -->
+<div class="bg-surface border border-border-subtle rounded-xl p-stack-md">
+<div class="flex justify-between items-center mb-3">
+<span class="font-label-md text-label-md flex items-center gap-2">
+                            Worker 2
+                            <span class="material-symbols-outlined text-status-safe text-[18px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</span>
+</div>
+<div class="grid grid-cols-2 gap-3">
+<div class="relative aspect-[9/16] rounded-lg overflow-hidden border border-border-subtle bg-surface-container-low flex items-center justify-center">
+<img class="w-full h-full object-cover absolute inset-0" data-alt="A front view of a female telecom field worker wearing high-visibility PPE, safety helmet, and climbing harness. Standing in an industrial field site environment. Clear daylight, professional photography, modern corporate minimalist style. High signal-to-noise ratio, crisp focus on the person and safety gear." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuZxy0Q311kBgLiTS7t5-_L7uaLXsi9HlYUAmSZQECsMALWF-aLrkfYbyn8kf4UqSt_uHq1IhY8uCvjb2N6NKBXCHkv98ED-ffl-lpbEV6W-L7WM-Hn-2dQ5-7tNlgN_hkH0oMEIeKREYM68xHcjdLHd-ikZQWrKvONiJk3x11DK7eJwD75uhgkoHLY6ckPThpYZCuk2t4FRVyenFpUB89i-0dsc5xiJv4TOclt_-JhmesV6uugg9W"/>
+<div class="absolute bottom-2 left-2 bg-inverse-surface/80 text-on-tertiary font-label-sm text-[10px] px-2 py-0.5 rounded backdrop-blur-sm z-10">FRONT</div>
+</div>
+<div class="relative aspect-[9/16] rounded-lg overflow-hidden border border-border-subtle bg-surface-container-low flex items-center justify-center">
+<img class="w-full h-full object-cover absolute inset-0" data-alt="A rear view of a female telecom field worker wearing high-visibility PPE, safety helmet, and climbing harness. Standing in an industrial field site environment, facing away from the camera. Clear daylight, professional photography, modern corporate minimalist style. Crisp focus on the back of the safety gear and harness connections." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCUqFlp6mW8hgXcWvLNWmYC53C2Er97cazwOTfMvEVNUPj6DbE4oykqDPIG8kxu5qmgT4jU46fu4-sbK6yhZ4aqJJGehkIqDsjLECr4q10RMx_XWtnU1v1SiRnghGvBFu_XkZeP9Pb5vXuMNyVRNM4Q0vtx2WzUIZIhl9oCSkdsGHyRcQsFAysgEyq5Hifp7mFEpEUhT2rl5_E2rsxArAgkPyJF7xj0A8DOrTPfxUEvUfcAr4sdSOWz"/>
+<div class="absolute bottom-2 left-2 bg-inverse-surface/80 text-on-tertiary font-label-sm text-[10px] px-2 py-0.5 rounded backdrop-blur-sm z-10">BACK</div>
+</div>
+</div>
+</div>
+</div>
+<button class="w-full mt-stack-md h-12 rounded-xl border-2 border-[#0082F0] text-[#0082F0] font-label-md text-label-md flex items-center justify-center gap-2 hover:bg-surface-light transition-colors active:scale-[0.98]">
+<span class="material-symbols-outlined" data-icon="add_a_photo">add_a_photo</span>
+                Continue PPE Capture
+            </button>
+</section>
+<!-- Others Section -->
+<section>
+<div class="mb-stack-sm">
+<h2 class="font-headline-md text-headline-md text-on-surface">Others</h2>
+<p class="font-label-sm text-label-sm text-text-secondary">3 photos</p>
+</div>
+<div class="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-margin-mobile px-margin-mobile">
+<div class="min-w-[120px] aspect-square rounded-xl overflow-hidden border border-border-subtle relative shrink-0">
+<img class="w-full h-full object-cover" data-alt="A close-up shot of an electrical grounding connection on a telecom tower base. The copper wire and grounding lug are clearly visible against the gray galvanized steel. Professional lighting, crisp detail, industrial setting, modern minimalist aesthetic. Taken during daylight." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCf2AKu3NBPCI5rsXG3GKyKFmq0oKMdTlIQfC1EPrMumF40E8pP3jRulW5VoGNoFUr07b9xgjNyFrsyhwLr_mXVdyQVvvKTUSU2rpMI3jYITF5ay5I4x3vLvLwIUkNMl_q4D9whlCYul730xVplALk9rqX0K8R4TF9dea1tEHiif1nlzWYA8hppwK8IUrTr_PFhzFN-i_vdNssR_t_FqpcwnQOpuaufR5kogpyjCPUVVYPniC5o7fn2"/>
+</div>
+<div class="min-w-[120px] aspect-square rounded-xl overflow-hidden border border-border-subtle relative shrink-0">
+<img class="w-full h-full object-cover" data-alt="A photo showing hazard tape and safety cones set up around an open trench near a telecom site. The bright orange and yellow safety markers contrast against the gravel ground. Clear daylight, sharp focus, professional industrial safety documentation style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBKif2yu2ah6bDQAXQEIXOTgDuNzMR05Mc4Rjh47HoIHi_LTpXP45FMWzhTp2ROSVcuBhKvUoDLdpBMguySr40kumgpC8QqZzABDBHhuYcwUs5JlFmNAjeiKbDaQHLieZHGzC5uaYfclLPd6L2uUTkv-5X9GhKaWOt9O8lgfC_ZdA7UWC7pkALqLSvscoD5Kq32RIxOcAKiUMfAoA8tgqzD9APqUXUp2lPEZd2NnzMMO3ehN20Ga8IP"/>
+</div>
+<div class="min-w-[120px] aspect-square rounded-xl overflow-hidden border border-border-subtle relative shrink-0">
+<img class="w-full h-full object-cover" data-alt="A wide shot of a neatly organized tool staging area on a blue tarp at a telecom construction site. Hard hats, gloves, and specialized tools are laid out methodically. High-key lighting, bright daylight, clean and orderly industrial aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA0YYHYCRdNrec-_eAKZvYAkB4Qlz2td8nzi5mt6nRL63VHMdebkBH-GAOoM_pDSXsm_ex12REyLoxDIotoHQBTYo6p3hx4tJ65xQKnZpgALMnXAnQpqFFo8dzTN8MuxcSxYz-5Z9o_FFrvbNufLn7Kll78nohMmfVdfdh1JqoY_-4GWhw5BlrMjBKTYIxmsT_3BNyDRSANFsW2YBaYFnebfwaDtgHB2oDeRXAfUweO2GFJB4nEKBur"/>
+</div>
+<button class="min-w-[120px] aspect-square rounded-xl border-2 border-dashed border-border-subtle bg-surface-container-low flex flex-col items-center justify-center text-text-secondary hover:bg-surface-container-high transition-colors shrink-0">
+<span class="material-symbols-outlined mb-1 text-[28px]" data-icon="add">add</span>
+<span class="font-label-sm text-label-sm">Add Photo</span>
+</button>
+</div>
+</section>
+</main>
+<!-- Sticky Submit Button -->
+<div class="fixed bottom-0 left-0 w-full p-margin-mobile bg-surface/90 backdrop-blur-md border-t border-border-subtle z-50">
+<button class="w-full h-12 bg-[#0082F0] hover:bg-primary text-on-primary rounded-xl font-label-md text-label-md flex items-center justify-center shadow-[0px_2px_4px_rgba(26,26,26,0.08)] transition-all active:scale-[0.98]">
+            Submit
+        </button>
+</div>
+</body></html>

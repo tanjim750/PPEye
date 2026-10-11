@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>PPE Safety App - Home</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-fixed-variant": "#763300",
+                      "surface-container": "#ebedf7",
+                      "secondary-fixed": "#d6e3ff",
+                      "on-primary-container": "#fefcff",
+                      "on-secondary": "#ffffff",
+                      "surface-container-low": "#f1f3fd",
+                      "surface": "#f9f9ff",
+                      "surface-dim": "#d7dae3",
+                      "primary-fixed": "#d5e3ff",
+                      "tertiary": "#984300",
+                      "secondary": "#005db6",
+                      "surface-tint": "#005eb1",
+                      "on-primary": "#ffffff",
+                      "inverse-surface": "#2d3038",
+                      "tertiary-fixed-dim": "#ffb68e",
+                      "inverse-primary": "#a6c8ff",
+                      "on-primary-fixed-variant": "#004787",
+                      "outline": "#717785",
+                      "primary": "#005cad",
+                      "tertiary-container": "#be5600",
+                      "secondary-container": "#63a1ff",
+                      "tertiary-fixed": "#ffdbca",
+                      "inverse-on-surface": "#eef0fa",
+                      "on-surface": "#181c22",
+                      "background": "#f9f9ff",
+                      "on-error-container": "#93000a",
+                      "on-tertiary-fixed": "#331200",
+                      "on-tertiary-container": "#fffbff",
+                      "on-secondary-container": "#00376f",
+                      "surface-container-high": "#e5e8f1",
+                      "surface-bright": "#f9f9ff",
+                      "on-tertiary": "#ffffff",
+                      "primary-fixed-dim": "#a6c8ff",
+                      "on-surface-variant": "#404753",
+                      "error": "#ba1a1a",
+                      "on-error": "#ffffff",
+                      "outline-variant": "#c0c7d5",
+                      "on-background": "#181c22",
+                      "primary-container": "#0075d8",
+                      "secondary-fixed-dim": "#a9c7ff",
+                      "surface-container-highest": "#e0e2ec",
+                      "on-secondary-fixed-variant": "#00468c",
+                      "surface-container-lowest": "#ffffff",
+                      "error-container": "#ffdad6",
+                      "surface-variant": "#e0e2ec",
+                      "on-primary-fixed": "#001c3b",
+                      "on-secondary-fixed": "#001b3d"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "gutter": "12px",
+                      "stack-gap": "16px",
+                      "container-padding": "20px",
+                      "touch-target-min": "48px",
+                      "unit": "4px"
+              },
+              "fontFamily": {
+                      "body-lg": ["Hanken Grotesk"],
+                      "display-lg": ["Hanken Grotesk"],
+                      "label-sm": ["Hanken Grotesk"],
+                      "body-md": ["Hanken Grotesk"],
+                      "headline-md": ["Hanken Grotesk"],
+                      "title-lg": ["Hanken Grotesk"],
+                      "headline-sm": ["Hanken Grotesk"],
+                      "label-md": ["Hanken Grotesk"]
+              },
+              "fontSize": {
+                      "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                      "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "title-lg": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                      "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600"}]
+              }
+            },
+          }
+        }
+    </script>
+<style>
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+        .safe-area-pb {
+            padding-bottom: env(safe-area-inset-bottom, 20px);
+        }
+        
+        /* Custom Utilities for the specific design specs */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid #E4E7EC;
+        }
+        
+        .shadow-soft {
+            box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.08);
+        }
+        
+        /* Interactive states */
+        .active-scale:active {
+            transform: scale(0.98);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background antialiased min-h-screen flex flex-col w-full mx-auto md:max-w-md md:shadow-2xl md:border md:border-outline-variant md:my-8 md:rounded-[2rem] overflow-hidden relative">
+<!-- Header Section -->
+<header class="px-container-padding pt-8 pb-4 flex justify-between items-start z-10 relative">
+<div class="flex flex-col gap-1">
+<h1 class="font-display-lg text-display-lg text-on-background tracking-tight">
+                Good morning,<br/>Rahim
+            </h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant flex items-center gap-2 mt-1">
+<span class="material-symbols-outlined text-[18px]">business</span>
+                ABC Telecom • Team 07
+            </p>
+</div>
+<div class="w-12 h-12 rounded-full overflow-hidden border-2 border-surface shadow-sm shrink-0">
+<img alt="User Avatar" class="w-full h-full object-cover" data-alt="A professional headshot of a male telecommunications field worker in a bright, outdoor setting. The man is wearing a high-visibility yellow vest over a clean blue polo shirt. He has a warm, confident expression. The background is slightly blurred showing an industrial site. High resolution, bright natural lighting, modern corporate style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCE52693_5a4O_wD4sBIUYL1YbrO3bETb-y2dv1Xcgcp4tAqczkPqWAKLR-wRXK_73DERMymRkc4xu4YFBcnLWXH8gVNZFSYUcVC9GhkAwqDCNggZvzzMLNgK8TI0LieA8mGgc8iaXA9KH-4tUyO7FEpWO6g1z1Ps92AQ6gNgtiN6482Tc-oZw3bRUOtueT73ePQ2DV9OIJ8TxEndOo3uPoi8CiZ9cbpfDzk4ECNANY2oYsWsYv5N3g"/>
+</div>
+</header>
+<!-- Main Content Scrollable Area -->
+<main class="flex-1 overflow-y-auto px-container-padding pb-32 flex flex-col gap-stack-gap z-10 relative scroll-smooth">
+<!-- Primary Action Card -->
+<button class="w-full bg-[#0082F0] text-white rounded-2xl p-6 flex flex-col justify-between items-start text-left min-h-[160px] active-scale transition-transform duration-200 shadow-soft overflow-hidden relative group">
+<!-- Decorative background element -->
+<div class="absolute right-[-10%] top-[-10%] w-48 h-48 bg-white/10 rounded-full blur-2xl group-hover:scale-110 transition-transform duration-500"></div>
+<div class="bg-white/20 p-3 rounded-xl mb-4 backdrop-blur-sm border border-white/10">
+<span class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">photo_camera</span>
+</div>
+<div>
+<h2 class="font-title-lg text-title-lg text-white mb-1">Submit PPE Check</h2>
+<p class="font-body-md text-body-md text-white/90">Add front, back and other site photos</p>
+</div>
+</button>
+<!-- Stats/Info Row (Optional addition for visual balance, keeping it minimal) -->
+<div class="grid grid-cols-2 gap-3 mt-2">
+<div class="glass-card rounded-xl p-4 flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Today's Checks</span>
+<span class="font-headline-md text-headline-md text-on-surface">12</span>
+</div>
+<div class="glass-card rounded-xl p-4 flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Compliance</span>
+<span class="font-headline-md text-headline-md text-on-surface flex items-baseline gap-1">
+                    98<span class="font-body-lg text-body-lg text-on-surface-variant">%</span>
+</span>
+</div>
+</div>
+<!-- Recent Activity Section -->
+<section class="mt-4 flex flex-col gap-4">
+<div class="flex justify-between items-center">
+<h3 class="font-title-lg text-title-lg text-on-background">Recent Checks</h3>
+<a class="font-label-md text-label-md text-primary hover:underline flex items-center" href="#">
+                    View all
+                    <span class="material-symbols-outlined text-[16px] ml-1">arrow_forward</span>
+</a>
+</div>
+<div class="flex flex-col bg-surface rounded-2xl border border-outline-variant overflow-hidden">
+<!-- Feed Item 1: Safe -->
+<button class="flex items-center gap-gutter p-4 border-b border-outline-variant hover:bg-surface-container-low transition-colors w-full text-left group">
+<div class="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-surface-container relative">
+<img class="w-full h-full object-cover" data-alt="A close-up photograph of a construction worker wearing a pristine white hard hat and yellow high-visibility safety vest. The photo is taken outdoors in bright daylight, showing clear compliance with safety standards. Modern industrial aesthetic, high contrast." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDUvip0DvqnuqYUuf3lJns9RFzI8HXrHEOSv87QvdvEeHrbCkBC9CE2zGt8Aw9jZbTpeHOmDONcMfH1anGOyke0tq4IsABAP13pj5R4-oOMOccwh_9crfloHM7UDp6ynhGAv-9ZppHNahMIzdXmD9A-I-AEFF1KnZ8-BAUcwyi-x6usOPtdwaezT_yfYyHQy6YSmIjUgrZGu69jXMtRR_kboIVcY73z5NV_y5IwsbE6EHhVqPNYOAur"/>
+</div>
+<div class="flex-1 min-w-0 flex flex-col gap-1">
+<div class="flex justify-between items-baseline">
+<span class="font-body-lg text-body-lg text-on-surface truncate">Worker #124</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant shrink-0">10:42 AM</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#16A34A]/10 text-[#16A34A] font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[12px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                                Safe
+                            </span>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-on-surface transition-colors shrink-0">chevron_right</span>
+</button>
+<!-- Feed Item 2: Unsafe -->
+<button class="flex items-center gap-gutter p-4 border-b border-outline-variant hover:bg-surface-container-low transition-colors w-full text-left group">
+<div class="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-surface-container relative">
+<img class="w-full h-full object-cover" data-alt="A slightly blurry photograph of a construction site showing a worker in the distance without proper high-visibility clothing. The lighting is slightly overcast, conveying a sense of concern. The image highlights a safety violation in an industrial setting. Modern documentary style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAFhE8raAGkMs1BYZUspwJ4oFPX3SWbo4dX1iAe3cmNYVRmW9P6t9PdClbIuejzpg4adl7aKlyvYNgyY0nMqmh5pKyEhrcIwbPFcDEXzhO62E03UBybWPOl2nnz60V0Mgf_Purl64DgmGKHGvOvpgMzySl0casEugs9cyuyjjUhkYMD_Hvlrm91X8AHQ4qfD7uohtCjBaPMwKcsYejWzXj_jamYZf1YKth53SwVHO0WyzA5gMXgqZ0F"/>
+</div>
+<div class="flex-1 min-w-0 flex flex-col gap-1">
+<div class="flex justify-between items-baseline">
+<span class="font-body-lg text-body-lg text-on-surface truncate">Worker #127</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant shrink-0">Yesterday</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-error/10 text-error font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[12px]" style="font-variation-settings: 'FILL' 1;">warning</span>
+                                Unsafe
+                            </span>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-on-surface transition-colors shrink-0">chevron_right</span>
+</button>
+<!-- Feed Item 3: Waiting -->
+<button class="flex items-center gap-gutter p-4 hover:bg-surface-container-low transition-colors w-full text-left group">
+<div class="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-surface-container relative flex items-center justify-center">
+<span class="material-symbols-outlined text-outline-variant text-[24px]">pending_actions</span>
+</div>
+<div class="flex-1 min-w-0 flex flex-col gap-1">
+<div class="flex justify-between items-baseline">
+<span class="font-body-lg text-body-lg text-on-surface truncate">Worker #131</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant shrink-0">Today</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-tertiary-container/10 text-tertiary-container font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[12px]" style="font-variation-settings: 'FILL' 1;">schedule</span>
+                                Review
+                            </span>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-on-surface transition-colors shrink-0">chevron_right</span>
+</button>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (Shared Component implementation) -->
+<nav class="bg-surface dark:bg-surface-container-highest fixed bottom-0 w-full rounded-t-xl border-t border-outline-variant dark:border-outline shadow-md dark:shadow-none fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-16 safe-area-pb px-gutter md:max-w-md md:left-auto">
+<!-- Home (Active) -->
+<button class="scale-95 active:scale-90 transition-transform duration-150 flex flex-col items-center justify-center bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary rounded-full px-4 py-1 group">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label-sm text-label-sm">Home</span>
+</button>
+<!-- History (Inactive) -->
+<button class="scale-95 active:scale-90 transition-transform duration-150 flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-4 py-1 hover:text-primary dark:hover:text-primary-fixed-dim group">
+<span class="material-symbols-outlined mb-1">history</span>
+<span class="font-label-sm text-label-sm">History</span>
+</button>
+<!-- Profile (Inactive) -->
+<button class="scale-95 active:scale-90 transition-transform duration-150 flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-4 py-1 hover:text-primary dark:hover:text-primary-fixed-dim group">
+<span class="material-symbols-outlined mb-1">person</span>
+<span class="font-label-sm text-label-sm">Profile</span>
+</button>
+</nav>
+</body></html>

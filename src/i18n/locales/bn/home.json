@@ -1,0 +1,59 @@
+{
+  "externalTitle": "PPE জমা",
+  "internalTitle": "রিভিউ ড্যাশবোর্ড",
+  "external": {
+    "greeting": "শুভ সকাল,\n{{name}}",
+    "company": "{{vendor}} · {{team}}",
+    "captureTitle": "PPE চেক জমা দিন",
+    "captureDescription": "সামনের, পেছনের এবং সাইটের অন্যান্য ছবি যোগ করুন",
+    "todayChecks": "আজকের চেক",
+    "compliance": "কমপ্লায়েন্স",
+    "recentChecks": "সাম্প্রতিক চেক",
+    "viewAll": "সব দেখুন",
+    "bottomNav": {
+      "home": "হোম",
+      "history": "ইতিহাস",
+      "profile": "প্রোফাইল"
+    },
+    "statuses": {
+      "safe": "নিরাপদ",
+      "unsafe": "অনিরাপদ",
+      "review": "রিভিউ"
+    },
+    "recent": {
+      "worker124": "কর্মী #১২৪",
+      "worker127": "কর্মী #১২৭",
+      "worker131": "কর্মী #১৩১",
+      "time1042": "সকাল ১০:৪২",
+      "today": "আজ",
+      "yesterday": "গতকাল"
+    }
+  },
+  "internal": {
+    "greeting": "শুভ সকাল, {{name}}",
+    "role": "EHS প্রতিনিধি",
+    "reviewTitle": "PPE রিভিউ",
+    "waitingCount": "{{count}}টি রিভিউ অপেক্ষমাণ",
+    "reviewNow": "এখন রিভিউ করুন",
+    "recent": "সাম্প্রতিক",
+    "viewAll": "সব দেখুন",
+    "bottomNav": {
+      "home": "হোম",
+      "reviews": "রিভিউ",
+      "history": "ইতিহাস"
+    },
+    "statuses": {
+      "waiting": "রিভিউ অপেক্ষমাণ",
+      "reviewed": "রিভিউ সম্পন্ন"
+    },
+    "reviewItems": {
+      "rahimLead": "রহিম মিয়া · {{count}} কর্মী",
+      "karimLead": "করিম হাসান · টিম লিডার",
+      "shakibLead": "সাকিব আহমেদ · টিম লিডার",
+      "workersPhotos": "{{workers}} কর্মী · {{photos}} PPE ছবি",
+      "time1042": "সকাল ১০:৪২",
+      "time1018": "সকাল ১০:১৮",
+      "yesterday": "গতকাল"
+    }
+  }
+}

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PPE Compliance - About</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "primary-fixed": "#d5e3ff",
+                      "secondary-fixed-dim": "#a9c7ff",
+                      "surface-container-lowest": "#ffffff",
+                      "on-secondary-fixed-variant": "#00468b",
+                      "tertiary-fixed-dim": "#ffb68e",
+                      "on-secondary": "#ffffff",
+                      "on-tertiary-fixed": "#331200",
+                      "outline-variant": "#c0c7d5",
+                      "surface-container-low": "#f1f3fd",
+                      "inverse-surface": "#2d3038",
+                      "error-red": "#ba1a1a",
+                      "on-background": "#181c22",
+                      "error": "#ba1a1a",
+                      "surface-variant": "#e0e2ec",
+                      "on-primary-fixed": "#001c3b",
+                      "tertiary-fixed": "#ffdbca",
+                      "background": "#f9f9ff",
+                      "on-tertiary": "#ffffff",
+                      "surface-container-highest": "#e0e2ec",
+                      "surface-container": "#ebedf7",
+                      "surface-dim": "#d7dae3",
+                      "on-surface": "#181c22",
+                      "primary-fixed-dim": "#a6c8ff",
+                      "inverse-on-surface": "#eef0fa",
+                      "warning-orange": "#984300",
+                      "on-primary-fixed-variant": "#004787",
+                      "primary-container": "#0075d8",
+                      "primary": "#005cad",
+                      "error-container": "#ffdad6",
+                      "glass-bg": "rgba(255, 255, 255, 0.95)",
+                      "inverse-primary": "#a6c8ff",
+                      "tertiary-container": "#be5600",
+                      "tertiary": "#984300",
+                      "on-error-container": "#93000a",
+                      "outline": "#717785",
+                      "on-secondary-container": "#00376f",
+                      "success-green": "#16A34A",
+                      "surface": "#f9f9ff",
+                      "secondary-container": "#64a1fe",
+                      "surface-container-high": "#e5e8f1",
+                      "on-tertiary-container": "#fffbff",
+                      "on-surface-variant": "#404753",
+                      "secondary-fixed": "#d6e3ff",
+                      "surface-bright": "#f9f9ff",
+                      "surface-tint": "#005eb1",
+                      "on-primary": "#ffffff",
+                      "on-tertiary-fixed-variant": "#763300",
+                      "secondary": "#015db6",
+                      "on-secondary-fixed": "#001b3d",
+                      "on-primary-container": "#fefcff",
+                      "on-error": "#ffffff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "container-padding": "20px",
+                      "touch-target-min": "48px",
+                      "stack-gap": "16px",
+                      "unit": "4px",
+                      "gutter": "12px"
+              },
+              "fontFamily": {
+                      "body-lg": ["Hanken Grotesk"],
+                      "title-lg": ["Hanken Grotesk"],
+                      "body-md": ["Hanken Grotesk"],
+                      "label-md": ["Hanken Grotesk"],
+                      "label-sm": ["Hanken Grotesk"],
+                      "display-lg": ["Hanken Grotesk"],
+                      "headline-md": ["Hanken Grotesk"]
+              },
+              "fontSize": {
+                      "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "title-lg": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                      "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+                      "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                      "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+        body { font-family: 'Hanken Grotesk', sans-serif; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--outline-variant, #c0c7d5);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col items-center">
+<div class="w-full max-w-md bg-surface min-h-screen relative flex flex-col">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky bg-surface dark:bg-background border-b border-outline-variant dark:border-outline flat no shadows flex items-center px-container-padding h-touch-target-min z-10">
+<button aria-label="Go back" class="text-primary dark:text-primary-fixed hover:bg-surface-container-low dark:hover:bg-surface-container-highest active:scale-95 transition-transform p-2 -ml-2 rounded-full">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-title-lg text-title-lg text-on-surface ml-4 font-bold">About</h1>
+</header>
+<!-- Main Content -->
+<main class="flex-1 px-container-padding py-stack-gap flex flex-col">
+<!-- App Info Section -->
+<section class="flex flex-col items-center pt-8 pb-12">
+<div class="w-24 h-24 bg-surface-container-high rounded-3xl flex items-center justify-center mb-6 shadow-sm border border-outline-variant/30">
+<img alt="App Logo Placeholder" class="w-16 h-16 object-contain" data-alt="A clean, minimalist 3D rendering of a stylized safety helmet or shield logo. The logo should use a professional corporate blue palette (matching #005cad) on a pure white background. Soft, ambient studio lighting highlights the modern, glass-like materiality of the logo icon. Highly polished, industrial yet modern aesthetic suitable for a high-end enterprise safety app." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAttQ8SXguKsE90LKtptBNxyn0Pvh1KKnxG-uUr58mDTrerMxTBwEXMhA2zVA1B0H9PJasp4RHXJm3xRxLQn2le7xMGDFmpCfIZB3OWhsjwydgDPPkQ6xI4zKVvS0cWAlSYge5kg-FnsudeH-tJGOuEkTw_Jb5bgJc0htN6ofN-jFCYFyyccpYbcwzb4JVy1cmBU6VJ5K45prtLmnT-scpR5wnqKQwoAP8IbM_zLahVeP9xTuZ3euui"/>
+</div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-2">PPE Compliance</h2>
+<p class="font-label-md text-label-md text-on-surface-variant bg-surface-container-low px-3 py-1 rounded-full mb-6">Version 1.0.0</p>
+<p class="font-body-md text-body-md text-on-surface-variant text-center max-w-xs">
+                    A field safety application for structured PPE submission and compliance review.
+                </p>
+</section>
+<!-- Technical Details Card -->
+<section class="mb-stack-gap">
+<div class="glass-card rounded-xl overflow-hidden">
+<div class="flex justify-between items-center px-4 py-3 border-b border-outline-variant/30 min-h-[48px]">
+<span class="font-body-md text-body-md text-on-surface">Version</span>
+<span class="font-body-md text-body-md text-on-surface-variant">1.0.0</span>
+</div>
+<div class="flex justify-between items-center px-4 py-3 min-h-[48px]">
+<span class="font-body-md text-body-md text-on-surface">Build</span>
+<span class="font-body-md text-body-md text-on-surface-variant">100</span>
+</div>
+</div>
+</section>
+<!-- Legal Links Card -->
+<section class="mb-stack-gap">
+<div class="glass-card rounded-xl overflow-hidden">
+<a class="flex justify-between items-center px-4 py-3 border-b border-outline-variant/30 min-h-[48px] hover:bg-surface-container-low active:bg-surface-container transition-colors" href="#">
+<span class="font-body-md text-body-md text-on-surface">Privacy Policy</span>
+<span class="material-symbols-outlined text-on-surface-variant text-lg">chevron_right</span>
+</a>
+<a class="flex justify-between items-center px-4 py-3 border-b border-outline-variant/30 min-h-[48px] hover:bg-surface-container-low active:bg-surface-container transition-colors" href="#">
+<span class="font-body-md text-body-md text-on-surface">Terms of Use</span>
+<span class="material-symbols-outlined text-on-surface-variant text-lg">chevron_right</span>
+</a>
+<a class="flex justify-between items-center px-4 py-3 min-h-[48px] hover:bg-surface-container-low active:bg-surface-container transition-colors" href="#">
+<span class="font-body-md text-body-md text-on-surface">Licenses</span>
+<span class="material-symbols-outlined text-on-surface-variant text-lg">chevron_right</span>
+</a>
+</div>
+</section>
+<!-- Footer -->
+<footer class="mt-auto py-8 text-center">
+<p class="font-label-sm text-label-sm text-on-surface-variant/70">
+                    © 2026 PPE Compliance App
+                </p>
+</footer>
+</main>
+<!-- Note: BottomNavBar suppressed because this is a deep link/details page ('<- About' header implies going back to settings or profile) -->
+</div>
+</body></html>

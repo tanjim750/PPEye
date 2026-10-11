@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Settings - SafetyCompliance</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed-dim": "#a9c7ff",
+                        "inverse-on-surface": "#eef0fa",
+                        "primary": "#005cad",
+                        "on-error-container": "#93000a",
+                        "error": "#ba1a1a",
+                        "surface-tint": "#005eb1",
+                        "success-green": "#16A34A",
+                        "secondary-fixed": "#d6e3ff",
+                        "surface-container-low": "#f1f3fd",
+                        "error-container": "#ffdad6",
+                        "on-tertiary": "#ffffff",
+                        "outline-variant": "#c0c7d5",
+                        "on-primary-fixed-variant": "#004787",
+                        "error-red": "#ba1a1a",
+                        "primary-container": "#0075d8",
+                        "primary-fixed-dim": "#a6c8ff",
+                        "on-primary-fixed": "#001c3b",
+                        "on-background": "#181c22",
+                        "inverse-surface": "#2d3038",
+                        "on-secondary-fixed": "#001b3d",
+                        "surface-variant": "#e0e2ec",
+                        "secondary-container": "#64a1fe",
+                        "on-tertiary-fixed-variant": "#763300",
+                        "on-tertiary-fixed": "#331200",
+                        "on-primary-container": "#fefcff",
+                        "outline": "#717785",
+                        "surface-container": "#ebedf7",
+                        "surface": "#f9f9ff",
+                        "on-secondary": "#ffffff",
+                        "surface-dim": "#d7dae3",
+                        "tertiary": "#984300",
+                        "surface-bright": "#f9f9ff",
+                        "warning-orange": "#984300",
+                        "surface-container-high": "#e5e8f1",
+                        "background": "#f9f9ff",
+                        "primary-fixed": "#d5e3ff",
+                        "surface-container-highest": "#e0e2ec",
+                        "inverse-primary": "#a6c8ff",
+                        "on-primary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-container": "#be5600",
+                        "on-surface": "#181c22",
+                        "tertiary-fixed": "#ffdbca",
+                        "on-error": "#ffffff",
+                        "secondary": "#015db6",
+                        "tertiary-fixed-dim": "#ffb68e",
+                        "glass-bg": "rgba(255, 255, 255, 0.95)",
+                        "on-surface-variant": "#404753",
+                        "on-secondary-fixed-variant": "#00468b",
+                        "on-secondary-container": "#00376f",
+                        "on-tertiary-container": "#fffbff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-padding": "20px",
+                        "gutter": "12px",
+                        "stack-gap": "16px",
+                        "unit": "4px",
+                        "touch-target-min": "48px"
+                    },
+                    "fontFamily": {
+                        "title-lg": ["Hanken Grotesk"],
+                        "body-md": ["Hanken Grotesk"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "display-lg": ["Hanken Grotesk"],
+                        "label-sm": ["Hanken Grotesk"],
+                        "label-md": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "title-lg": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-sm": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background antialiased font-body-md h-screen flex flex-col items-center">
+<!-- Nav shell is suppressed as per The "Destination" Rule for Settings/Sub-pages -->
+<div class="w-full max-w-md bg-surface h-full flex flex-col">
+<!-- Top App Bar -->
+<header class="flex items-center justify-between px-container-padding h-touch-target-min w-full bg-glass-bg backdrop-blur-md sticky top-0 z-10 border-b border-outline-variant shadow-soft">
+<button class="h-touch-target-min w-touch-target-min flex items-center justify-center -ml-2 text-primary active:scale-95 duration-200 transition-transform">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface">Settings</h1>
+<div class="h-touch-target-min w-touch-target-min"></div> <!-- Spacer for centering -->
+</header>
+<!-- Main Scrollable Content -->
+<main class="flex-1 overflow-y-auto w-full pb-20">
+<!-- Account Identity -->
+<div class="px-container-padding py-8 flex items-center gap-4 active:scale-[0.98] transition-transform duration-200 cursor-pointer">
+<img alt="Mahmud Hasan" class="w-20 h-20 rounded-full border-2 border-surface object-cover shadow-soft" data-alt="A professional headshot of a male safety officer in his mid-30s. He is wearing a clean, modern high-visibility vest over a collared shirt. The lighting is bright and even, creating a clean, modern corporate portrait style against a neutral gray background. The image feels trustworthy and highly professional." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2Q3xYDKRkx8ewS8VKNmz9vrucQSDxmBCrDoGPjOBthVoiiqnCKv9B5klwIXRJM4PnMQJoDKXyCtxaGI0G-8gn-EysgHWomYUEq-msCPa5sVx9nkZ8WnQp_ECC4gt-A3mKKGUbE1GZoMWUI3t9ARmzjKnTfwChw5Pqlede-d8zoBR222AYz1TiK8NElii_GlFzTaeY0HMsiw8-mdHI1vRHS_D3WFdvBB5x0qMoQPA1NFMDpDxaRJQQ"/>
+<div class="flex-1">
+<h2 class="font-headline-md text-[20px] leading-[28px] font-semibold text-on-surface">Mahmud Hasan</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">EHS Representative</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">mahmud@example.com</p>
+</div>
+<span class="material-symbols-outlined text-outline-variant">chevron_right</span>
+</div>
+<!-- Settings Sections -->
+<div class="flex flex-col">
+<!-- ACCOUNT -->
+<div class="pt-6">
+<h3 class="px-container-padding font-label-md text-label-md text-primary uppercase tracking-wider mb-2">Account</h3>
+<ul class="border-t border-outline-variant">
+<li class="border-b border-outline-variant">
+<button class="w-full flex items-center px-container-padding py-4 active:bg-surface-variant/50 transition-colors">
+<span class="material-symbols-outlined text-outline mr-4" style="font-variation-settings: 'FILL' 1;">person</span>
+<div class="flex-1 text-left">
+<div class="font-body-lg text-body-lg font-medium text-on-surface">Profile</div>
+<div class="font-body-md text-body-md text-on-surface-variant">Personal information</div>
+</div>
+<span class="material-symbols-outlined text-outline-variant">chevron_right</span>
+</button>
+</li>
+<li class="border-b border-outline-variant">
+<button class="w-full flex items-center px-container-padding py-4 active:bg-surface-variant/50 transition-colors">
+<span class="material-symbols-outlined text-outline mr-4" style="font-variation-settings: 'FILL' 1;">lock</span>
+<div class="flex-1 text-left">
+<div class="font-body-lg text-body-lg font-medium text-on-surface">Change Password</div>
+<div class="font-body-md text-body-md text-on-surface-variant">Update your password</div>
+</div>
+<span class="material-symbols-outlined text-outline-variant">chevron_right</span>
+</button>
+</li>
+</ul>
+</div>
+<!-- APP -->
+<div class="pt-6">
+<h3 class="px-container-padding font-label-md text-label-md text-primary uppercase tracking-wider mb-2">App</h3>
+<ul class="border-t border-outline-variant">
+<li class="border-b border-outline-variant">
+<button class="w-full flex items-center px-container-padding py-4 active:bg-surface-variant/50 transition-colors">
+<span class="material-symbols-outlined text-outline mr-4" style="font-variation-settings: 'FILL' 1;">notifications</span>
+<div class="flex-1 text-left">
+<div class="font-body-lg text-body-lg font-medium text-on-surface">Notifications</div>
+<div class="font-body-md text-body-md text-on-surface-variant">Manage app notifications</div>
+</div>
+<span class="material-symbols-outlined text-outline-variant">chevron_right</span>
+</button>
+</li>
+</ul>
+</div>
+<!-- SUPPORT -->
+<div class="pt-6">
+<h3 class="px-container-padding font-label-md text-label-md text-primary uppercase tracking-wider mb-2">Support</h3>
+<ul class="border-t border-outline-variant">
+<li class="border-b border-outline-variant">
+<button class="w-full flex items-center px-container-padding py-4 active:bg-surface-variant/50 transition-colors">
+<span class="material-symbols-outlined text-outline mr-4" style="font-variation-settings: 'FILL' 1;">help</span>
+<div class="flex-1 text-left">
+<div class="font-body-lg text-body-lg font-medium text-on-surface">Help &amp; Support</div>
+</div>
+<span class="material-symbols-outlined text-outline-variant">chevron_right</span>
+</button>
+</li>
+<li class="border-b border-outline-variant">
+<button class="w-full flex items-center px-container-padding py-4 active:bg-surface-variant/50 transition-colors">
+<span class="material-symbols-outlined text-outline mr-4" style="font-variation-settings: 'FILL' 1;">info</span>
+<div class="flex-1 text-left">
+<div class="font-body-lg text-body-lg font-medium text-on-surface">About</div>
+</div>
+<span class="font-body-md text-body-md text-on-surface-variant">v1.0.0</span>
+</button>
+</li>
+</ul>
+</div>
+<!-- SESSION -->
+<div class="pt-6 pb-8">
+<h3 class="px-container-padding font-label-md text-label-md text-outline uppercase tracking-wider mb-2">Session</h3>
+<ul class="border-t border-b border-outline-variant">
+<li>
+<button class="w-full flex items-center px-container-padding py-4 active:bg-error-container/30 transition-colors group">
+<span class="material-symbols-outlined text-error mr-4 group-active:scale-95 transition-transform" style="font-variation-settings: 'FILL' 1;">logout</span>
+<div class="flex-1 text-left">
+<div class="font-body-lg text-body-lg font-semibold text-error">Log out</div>
+</div>
+</button>
+</li>
+</ul>
+</div>
+</div>
+</main>
+</div>
+</body></html>

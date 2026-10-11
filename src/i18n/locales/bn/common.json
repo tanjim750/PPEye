@@ -1,0 +1,22 @@
+{
+  "appName": "PPEye",
+  "loading": "লোড হচ্ছে",
+  "retry": "আবার চেষ্টা করুন",
+  "version": "ভার্সন {{version}}",
+  "language": {
+    "title": "আপনার ভাষা বেছে নিন",
+    "description": "PPEye-তে যে ভাষা ব্যবহার করতে চান তা নির্বাচন করুন। পরে Settings থেকে এটি পরিবর্তন করতে পারবেন।",
+    "continue": "এগিয়ে যান",
+    "saving": "সংরক্ষণ হচ্ছে",
+    "options": {
+      "en": {
+        "label": "English",
+        "name": "ইংরেজি"
+      },
+      "bn": {
+        "label": "বাংলা",
+        "name": "বাংলা"
+      }
+    }
+  }
+}

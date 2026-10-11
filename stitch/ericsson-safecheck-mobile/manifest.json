@@ -1,0 +1,115 @@
+{
+  "project": {
+    "id": "3899263820690186624",
+    "title": "Ericsson SafeCheck Mobile"
+  },
+  "screens": [
+    {
+      "id": "0789ca37ae554c4e910ec400589b1128",
+      "title": "Language Selection",
+      "html": "screens/language-selection.html",
+      "screenshot": "images/language-selection.png",
+      "htmlUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1YTkzNjIwNWIzMmYwNTRjYzM1ODMwMjMzMDNiEgsSBxCbkfOU6AcYAZIBIwoKcHJvamVjdF9pZBIVQhMzODk5MjYzODIwNjkwMTg2NjI0&filename=&opi=89354086"
+    },
+    {
+      "id": "b7b5a78783f545e9a612cd5ff43e9368",
+      "title": "Home - Field Safety",
+      "html": "screens/home-field-safety.html",
+      "screenshot": "images/home-field-safety.png",
+      "htmlUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1YTgwYmE0MWQ5ZTQwMzZjNzlhODYwMTFhMjUwEgsSBxCbkfOU6AcYAZIBIwoKcHJvamVjdF9pZBIVQhMzODk5MjYzODIwNjkwMTg2NjI0&filename=&opi=89354086"
+    },
+    {
+      "id": "asset-stub-assets_c0613bc73a034bb69ca811f7dd40fa3b",
+      "title": "Design System",
+      "designSystem": "design-system/field-precision.md",
+      "asset": "assets/c0613bc73a034bb69ca811f7dd40fa3b"
+    },
+    {
+      "id": "54ea03474edd4deb9025104429c7a9d3",
+      "title": "Continuous PPE Capture",
+      "html": "screens/continuous-ppe-capture.html",
+      "screenshot": "images/continuous-ppe-capture.png",
+      "htmlUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1YTgxMDRmYTJhODYwOTI1YzVlYzcxMWU0ZTAyEgsSBxCbkfOU6AcYAZIBIwoKcHJvamVjdF9pZBIVQhMzODk5MjYzODIwNjkwMTg2NjI0&filename=&opi=89354086"
+    },
+    {
+      "id": "3b43a88f387441a99f3f865f1e0cb445",
+      "title": "Submit Images - Review State",
+      "html": "screens/submit-images-review-state.html",
+      "screenshot": "images/submit-images-review-state.png",
+      "htmlUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1YTgxMTc5Y2Y5YzUwMmE5YWQ1N2FmMGNlZWU4EgsSBxCbkfOU6AcYAZIBIwoKcHJvamVjdF9pZBIVQhMzODk5MjYzODIwNjkwMTg2NjI0&filename=&opi=89354086"
+    },
+    {
+      "id": "2f13e046a3304f20823747dcf98b1a15",
+      "title": "Submission Details - Action Required",
+      "html": "screens/submission-details-action-required.html",
+      "screenshot": "images/submission-details-action-required.png",
+      "htmlUrl": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzAwMDY1YWQxM2NmYjMwN2MwMzgzOTFmZjY0MjNjMDFhEgsSBxCbkfOU6AcYAZIBIwoKcHJvamVjdF9pZBIVQhMzODk5MjYzODIwNjkwMTg2NjI0&filename=&opi=89354086"
+    },
+    {
+      "id": "9d69e34b002e462a878db01f63f0ad4e",
+      "title": "Login",
+      "html": "screens/login.html",
+      "screenshot": "images/login.png"
+    },
+    {
+      "id": "40d857d49a3649279172724f253c1401",
+      "title": "Home - EHS Internal Review",
+      "html": "screens/home-ehs-internal-review.html",
+      "screenshot": "images/home-ehs-internal-review.jpg"
+    },
+    {
+      "id": "92f34d41fc7b405e8543b05a1ead7b3e",
+      "title": "PPE Review - Worker Inspection",
+      "html": "screens/ppe-review-worker-inspection.html",
+      "screenshot": "images/ppe-review-worker-inspection.png"
+    },
+    {
+      "id": "e514caf575be4e4f89b85372b0f01159",
+      "title": "PPE Review - Unsafe Reason Selection",
+      "html": "screens/ppe-review-unsafe-reason-selection.html",
+      "screenshot": "images/ppe-review-unsafe-reason-selection.png"
+    },
+    {
+      "id": "9922e565ebfe4ddf9418f6b2ecdce500",
+      "title": "Add User - External State",
+      "html": "screens/add-user-external-state.html",
+      "screenshot": "images/add-user-external-state.png"
+    },
+    {
+      "id": "298c48e28be44193820d254f0da8d6a6",
+      "title": "Settings",
+      "html": "screens/settings.html",
+      "screenshot": "images/settings.png"
+    },
+    {
+      "id": "91878f2a6aec49648ef7b9dd4ebea6d4",
+      "title": "Profile",
+      "html": "screens/profile.html",
+      "screenshot": "images/profile.png"
+    },
+    {
+      "id": "3c675df7d82c4ab3a35f2490ad62f36c",
+      "title": "Change Password",
+      "html": "screens/change-password.html",
+      "screenshot": "images/change-password.png"
+    },
+    {
+      "id": "7e511194fbd44a4cb63ad0536b3fa185",
+      "title": "Notifications",
+      "html": "screens/notifications.html",
+      "screenshot": "images/notifications.png"
+    },
+    {
+      "id": "dcf12e499ff2471abca53526b437846c",
+      "title": "Help & Support",
+      "html": "screens/help-support.html",
+      "screenshot": "images/help-support.png"
+    },
+    {
+      "id": "ae0a97e9b138440485ada68f6847aae2",
+      "title": "About",
+      "html": "screens/about.html",
+      "screenshot": "images/about.png"
+    }
+  ]
+}

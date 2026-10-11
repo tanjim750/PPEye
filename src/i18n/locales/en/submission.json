@@ -1,0 +1,152 @@
+{
+  "capture": "Capture PPE",
+  "history": "Submission history",
+  "othersCaptureScreen": {
+    "title": "Others Capture",
+    "photo": "Photo {{number}}",
+    "photoChip": "P{{number}}",
+    "instruction": "Capture supporting site safety photo",
+    "instructionChecklistTitle": "Required photos",
+    "instructionChecklistClose": "Close instructions",
+    "instructions": {
+      "accessId": "Capture the Access ID clearly",
+      "roofTop": "Capture the rooftop work area",
+      "safetyBanners": "Capture the safety banners",
+      "firstAidBox": "Capture the first aid box",
+      "additional": "Capture another supporting safety photo"
+    }
+  },
+  "reviewScreen": {
+    "title": "Submit Images",
+    "back": "Go back",
+    "currentSite": "Current Site",
+    "change": "Change",
+    "save": "Save",
+    "cancel": "Cancel",
+    "sitePlaceholder": "Enter site code",
+    "noSiteSelected": "No site selected",
+    "siteReadyHint": "Submission will be tagged to this site.",
+    "siteEmptyHint": "Add the tower or site code before submitting.",
+    "siteRequired": "Site code is required.",
+    "locationServicesTitle": "Location is turned off",
+    "locationServicesMessage": "Turn on location to attach weather context to this submission.",
+    "turnOnLocation": "Turn On",
+    "ppePhotos": "PPE Photos",
+    "ppeSummary": "{{workers}} workers • {{photos}} PPE photos",
+    "worker": "Worker {{number}}",
+    "photoPairReady": "Front and back ready",
+    "retake": "Retake",
+    "remove": "Remove",
+    "continueCapture": "Continue PPE Capture",
+    "others": "Others",
+    "otherSummary": "{{photos}} photos",
+    "addPhoto": "Add Photo",
+    "submit": "Submit",
+    "exitConfirmTitle": "Leave this review?",
+    "exitConfirmMessage": "Any unsaved progress will be discarded if you leave now.",
+    "keepReviewing": "Keep Reviewing",
+    "discardAndLeave": "Leave"
+  },
+  "detailScreen": {
+    "back": "Back to submissions",
+    "help": "Help and guidelines",
+    "eyebrow": "Safety Audit",
+    "title": "Submission Details",
+    "site": "ABC Telecom • Gazipur-ER-102",
+    "submissionId": "ID #88241",
+    "submittedBy": "Submitted by Rahim Mia",
+    "submittedAt": "6 Sep 2026 • 3:42 PM",
+    "actionRequired": "Action Required",
+    "actionRequiredBody": "Some items in this submission require adjustment before work clearance can be approved.",
+    "itemsToCorrect": "Items to Correct",
+    "issueCount": "2 issues found",
+    "severity": {
+      "critical": "Critical",
+      "missing": "Missing"
+    },
+    "issues": {
+      "workerHarness": {
+        "title": "Worker 2 - Unsafe PPE",
+        "message": "Harness connection was not properly secured to lifeline."
+      },
+      "firstAidMissing": {
+        "title": "Supporting Evidence",
+        "message": "First Aid Box on-site photo was not provided."
+      }
+    },
+    "tags": {
+      "harness": "Full-body harness",
+      "anchorage": "Anchorage point"
+    },
+    "workerPpe": "Worker PPE",
+    "workerSummary": "3 workers reviewed",
+    "history": "History",
+    "frontBackVerified": "Front + Back verified",
+    "status": {
+      "safe": "Safe",
+      "unsafe": "Unsafe"
+    },
+    "workers": {
+      "worker1": {
+        "name": "Tariqul Islam",
+        "role": "Climber"
+      },
+      "worker2": {
+        "name": "Kader Mollah",
+        "role": "Climber",
+        "issue": "Harness connection issue"
+      },
+      "worker3": {
+        "name": "Shahinur Rahman",
+        "role": "Groundsman"
+      }
+    },
+    "reviewerNote": "Reviewer Note",
+    "reviewerNoteBody": "The rear lanyard connection point was not clearly attached to the vertical lifeline carabiner. Please re-photograph Worker 2 with hook visibly engaged.",
+    "noteTags": "Tags: Full-body harness • Anchorage point",
+    "supportingEvidence": "Supporting Evidence",
+    "evidenceSummary": "1 of 2 required photos verified",
+    "needsAttention": "Needs Attention",
+    "toolboxTalk": "Toolbox Talk",
+    "firstAidBox": "First Aid Box",
+    "missing": "Missing",
+    "evidenceNote": "The reviewer requires a clear photograph of the open First Aid Box on site showing emergency kit readiness.",
+    "decisionLabel": "Why this was not approved",
+    "decisionQuote": "Worker 2 PPE was unsafe and required First Aid Box evidence was missing. Please update Worker 2 images and attach First Aid Box photo to resubmit.",
+    "reviewerName": "Mahmud Hasan",
+    "reviewerRole": "EHS Representative",
+    "reviewedAt": "Today 4:15 PM",
+    "fixAndResubmit": "Fix & Resubmit (2 Items)",
+    "viewOriginal": "View Original Submission Data"
+  },
+  "captureScreen": {
+    "title": "PPE Capture",
+    "done": "Done",
+    "close": "Close capture",
+    "worker": "Worker {{number}}",
+    "workerSide": "Worker {{worker}} • {{side}}",
+    "position": "FRONT",
+    "instruction": "Capture the full body from the front",
+    "frontInstruction": "Capture the full body from the front",
+    "backInstruction": "Capture the full body from the back",
+    "completedWorker": "W{{number}}",
+    "selectWorker": "Select worker {{worker}}",
+    "recentPhoto": "Recent photo preview",
+    "takePhoto": "Take photo",
+    "flash": "Toggle flash",
+    "grantPermission": "Grant camera access",
+    "permissionDenied": "Camera permission is required to capture PPE photos.",
+    "cameraLoading": "Preparing camera...",
+    "cameraUnavailable": "Camera is unavailable on this device.",
+    "backRequired": "Worker {{worker}} still needs a BACK photo.",
+    "takeBackPhoto": "Take Back Photo",
+    "removeCurrentWorker": "Remove Current Worker",
+    "localStateTitle": "Local capture state",
+    "retake": "Retake",
+    "keepPhoto": "Keep Photo",
+    "sides": {
+      "FRONT": "FRONT",
+      "BACK": "BACK"
+    }
+  }
+}

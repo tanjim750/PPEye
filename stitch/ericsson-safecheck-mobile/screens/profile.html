@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Profile - Compliance Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "primary-fixed": "#d5e3ff",
+                      "secondary-fixed-dim": "#a9c7ff",
+                      "surface-container-lowest": "#ffffff",
+                      "on-secondary-fixed-variant": "#00468b",
+                      "tertiary-fixed-dim": "#ffb68e",
+                      "on-secondary": "#ffffff",
+                      "on-tertiary-fixed": "#331200",
+                      "outline-variant": "#c0c7d5",
+                      "surface-container-low": "#f1f3fd",
+                      "inverse-surface": "#2d3038",
+                      "error-red": "#ba1a1a",
+                      "on-background": "#181c22",
+                      "error": "#ba1a1a",
+                      "surface-variant": "#e0e2ec",
+                      "on-primary-fixed": "#001c3b",
+                      "tertiary-fixed": "#ffdbca",
+                      "background": "#f9f9ff",
+                      "on-tertiary": "#ffffff",
+                      "surface-container-highest": "#e0e2ec",
+                      "surface-container": "#ebedf7",
+                      "surface-dim": "#d7dae3",
+                      "on-surface": "#181c22",
+                      "primary-fixed-dim": "#a6c8ff",
+                      "inverse-on-surface": "#eef0fa",
+                      "warning-orange": "#984300",
+                      "on-primary-fixed-variant": "#004787",
+                      "primary-container": "#0075d8",
+                      "primary": "#005cad",
+                      "error-container": "#ffdad6",
+                      "glass-bg": "rgba(255, 255, 255, 0.95)",
+                      "inverse-primary": "#a6c8ff",
+                      "tertiary-container": "#be5600",
+                      "tertiary": "#984300",
+                      "on-error-container": "#93000a",
+                      "outline": "#717785",
+                      "on-secondary-container": "#00376f",
+                      "success-green": "#16A34A",
+                      "surface": "#f9f9ff",
+                      "secondary-container": "#64a1fe",
+                      "surface-container-high": "#e5e8f1",
+                      "on-tertiary-container": "#fffbff",
+                      "on-surface-variant": "#404753",
+                      "secondary-fixed": "#d6e3ff",
+                      "surface-bright": "#f9f9ff",
+                      "surface-tint": "#005eb1",
+                      "on-primary": "#ffffff",
+                      "on-tertiary-fixed-variant": "#763300",
+                      "secondary": "#015db6",
+                      "on-secondary-fixed": "#001b3d",
+                      "on-primary-container": "#fefcff",
+                      "on-error": "#ffffff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "container-padding": "20px",
+                      "touch-target-min": "48px",
+                      "stack-gap": "16px",
+                      "unit": "4px",
+                      "gutter": "12px"
+              },
+              "fontFamily": {
+                      "body-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "title-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "body-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "label-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "label-sm": [
+                              "Hanken Grotesk"
+                      ],
+                      "display-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-md": [
+                              "Hanken Grotesk"
+                      ]
+              },
+              "fontSize": {
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "title-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-md": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-sm": [
+                              "11px",
+                              {
+                                      "lineHeight": "14px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "display-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+          .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+          }
+      </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-lg min-h-screen pb-safe">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky z-40 bg-surface border-b border-outline-variant flat no shadows flex items-center px-container-padding h-touch-target-min max-w-md mx-auto">
+<button aria-label="Back" class="mr-4 text-primary active:scale-95 transition-transform hover:bg-surface-container-low rounded-full p-2">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md text-primary font-bold">Compliance Settings</h1>
+</header>
+<main class="max-w-md mx-auto w-full pb-24">
+<!-- Profile Header -->
+<section class="flex flex-col items-center justify-center pt-8 pb-stack-gap px-container-padding">
+<div class="relative mb-4">
+<div class="w-24 h-24 rounded-full overflow-hidden border-2 border-surface-container-lowest">
+<img alt="Mahmud Hasan Profile Picture" class="w-full h-full object-cover" data-alt="A high-quality, professional headshot of a male EHS representative named Mahmud Hasan in his mid-30s. He is wearing a clean, modern safety vest over a crisp button-down shirt. The background is a soft, out-of-focus industrial site with bright, natural lighting. The mood is confident, reliable, and approachable. Shot with a shallow depth of field in a realistic, corporate portrait style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD6oKQYIvlcCAd0Go7owiww0nSPQ0lQBJvj1G-S6tDzJ0g13tcS66ar1UF780LQPaYX1a43qEJjk2MzRhmysjewgbvkb57cKXC-N4hd9m5VprvSw1u8ihovkyWPIieyK-0az-4nG-Mj-95C7FOMRT3sFJm892MzVDIhcbCFyUGTeAJKydUG7KXqre0I7U6CAYXRvhspzxyJF2BpchkO72WwSAgr528yT23NFVO98zx66QdvIt0vgfm7"/>
+</div>
+<button class="absolute bottom-0 right-0 bg-primary text-on-primary rounded-full p-1 shadow-soft flex items-center justify-center active:scale-95 transition-transform border-2 border-surface-container-lowest">
+<span class="material-symbols-outlined text-[16px]" data-icon="edit">edit</span>
+</button>
+</div>
+<h2 class="font-title-lg text-title-lg text-on-background">Mahmud Hasan</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">EHS Representative</p>
+</section>
+<div class="px-container-padding flex flex-col gap-stack-gap">
+<!-- Personal Information -->
+<section>
+<h3 class="font-label-md text-label-md text-primary mb-gutter uppercase tracking-wider">Personal information</h3>
+<div class="flex flex-col gap-0 border-y border-outline-variant">
+<div class="flex flex-col py-3 border-b border-outline-variant last:border-b-0">
+<label class="font-label-sm text-label-sm text-on-surface-variant mb-1" for="fullName">Full name</label>
+<input class="bg-transparent border-none p-0 font-body-lg text-body-lg text-on-background focus:ring-0 w-full" id="fullName" type="text" value="Mahmud Hasan"/>
+</div>
+<div class="flex flex-col py-3 border-b border-outline-variant last:border-b-0">
+<label class="font-label-sm text-label-sm text-on-surface-variant mb-1" for="phoneNumber">Phone number</label>
+<input class="bg-transparent border-none p-0 font-body-lg text-body-lg text-on-background focus:ring-0 w-full" id="phoneNumber" type="tel" value="+880 1712 345678"/>
+</div>
+<div class="flex flex-col py-3 border-b border-outline-variant last:border-b-0">
+<label class="font-label-sm text-label-sm text-on-surface-variant mb-1" for="email">Email</label>
+<input class="bg-transparent border-none p-0 font-body-lg text-body-lg text-on-background focus:ring-0 w-full" id="email" type="email" value="mahmud@example.com"/>
+</div>
+</div>
+</section>
+<!-- Account Details -->
+<section>
+<h3 class="font-label-md text-label-md text-primary mb-gutter uppercase tracking-wider">Account details</h3>
+<div class="flex flex-col gap-0 border-y border-outline-variant">
+<div class="flex flex-col py-3">
+<label class="font-label-sm text-label-sm text-on-surface-variant mb-1">Role</label>
+<div class="flex items-center text-on-surface-variant bg-surface-container-low px-3 py-2 rounded-lg opacity-80 cursor-not-allowed">
+<span class="material-symbols-outlined mr-2 text-[20px]" data-icon="shield_person">shield_person</span>
+<span class="font-body-lg text-body-lg">EHS Representative</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Sticky Bottom Action -->
+<div class="fixed bottom-0 left-0 w-full bg-glass-bg backdrop-blur-md border-t border-outline-variant shadow-soft p-container-padding pb-safe z-50 flex justify-center">
+<div class="max-w-md w-full">
+<button class="w-full bg-primary text-on-primary font-title-lg text-title-lg h-touch-target-min rounded-xl flex items-center justify-center gap-2 active:scale-98 transition-transform disabled:opacity-50 disabled:active:scale-100" disabled="">
+<span class="material-symbols-outlined bg-on-primary/20 rounded-full p-1 text-[20px]" data-icon="save">save</span>
+                Save Changes
+            </button>
+</div>
+</div>
+<!-- BottomNavBar (Suppressed as per rules: This is a focused sub-page/settings page, not a top-level destination. Overridden by Sticky Bottom Action) -->
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const inputs = document.querySelectorAll('input');
+            const saveBtn = document.querySelector('button[disabled]');
+            let initialValues = {};
+
+            inputs.forEach(input => {
+                initialValues[input.id] = input.value;
+                input.addEventListener('input', () => {
+                    let hasChanges = false;
+                    inputs.forEach(inp => {
+                        if (inp.value !== initialValues[inp.id]) {
+                            hasChanges = true;
+                        }
+                    });
+                    saveBtn.disabled = !hasChanges;
+                });
+            });
+        });
+    </script>
+</body></html>

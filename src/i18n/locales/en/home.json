@@ -1,0 +1,59 @@
+{
+  "externalTitle": "PPE submissions",
+  "internalTitle": "Review dashboard",
+  "external": {
+    "greeting": "Good morning,\n{{name}}",
+    "company": "{{vendor}} · {{team}}",
+    "captureTitle": "Submit PPE Check",
+    "captureDescription": "Add front, back and other site photos",
+    "todayChecks": "TODAY'S CHECKS",
+    "compliance": "COMPLIANCE",
+    "recentChecks": "Recent Checks",
+    "viewAll": "View all",
+    "bottomNav": {
+      "home": "Home",
+      "history": "History",
+      "profile": "Profile"
+    },
+    "statuses": {
+      "safe": "Safe",
+      "unsafe": "Unsafe",
+      "review": "Review"
+    },
+    "recent": {
+      "worker124": "Worker #124",
+      "worker127": "Worker #127",
+      "worker131": "Worker #131",
+      "time1042": "10:42 AM",
+      "today": "Today",
+      "yesterday": "Yesterday"
+    }
+  },
+  "internal": {
+    "greeting": "Good morning, {{name}}",
+    "role": "EHS Representative",
+    "reviewTitle": "PPE Reviews",
+    "waitingCount": "{{count}} waiting for review",
+    "reviewNow": "Review Now",
+    "recent": "Recent",
+    "viewAll": "View all",
+    "bottomNav": {
+      "home": "Home",
+      "reviews": "Reviews",
+      "history": "History"
+    },
+    "statuses": {
+      "waiting": "Waiting for review",
+      "reviewed": "Reviewed"
+    },
+    "reviewItems": {
+      "rahimLead": "Rahim Mia · {{count}} workers",
+      "karimLead": "Karim Hasan · Team Leader",
+      "shakibLead": "Shakib Ahmed · Team Leader",
+      "workersPhotos": "{{workers}} workers · {{photos}} PPE photos",
+      "time1042": "10:42 AM",
+      "time1018": "10:18 AM",
+      "yesterday": "Yesterday"
+    }
+  }
+}

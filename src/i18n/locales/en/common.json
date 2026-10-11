@@ -1,0 +1,22 @@
+{
+  "appName": "PPEye",
+  "loading": "Loading",
+  "retry": "Retry",
+  "version": "Version {{version}}",
+  "language": {
+    "title": "Choose your language",
+    "description": "Select the language you'd like to use in PPEye. You can change this later from Settings.",
+    "continue": "Continue",
+    "saving": "Saving",
+    "options": {
+      "en": {
+        "label": "English",
+        "name": "English"
+      },
+      "bn": {
+        "label": "বাংলা",
+        "name": "Bengali"
+      }
+    }
+  }
+}
