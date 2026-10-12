@@ -17,6 +17,7 @@
     }
   },
   "reviewScreen": {
+    "workerPhotosRequired": "Add at least one worker with both front and back photos before submitting.",
     "title": "Submit Images",
     "back": "Go back",
     "currentSite": "Current Site",
@@ -46,6 +47,17 @@
     "exitConfirmMessage": "Any unsaved progress will be discarded if you leave now.",
     "keepReviewing": "Keep Reviewing",
     "discardAndLeave": "Leave"
+  },
+  "submittedPreview": {
+    "title": "Submitted worker preview",
+    "waiting": "Waiting for reviewer",
+    "photos": "Submitted photos",
+    "sitePhoto": "SITE PHOTO {{number}}",
+    "notFound": "Submitted check not found.",
+    "workerNumber": "Worker #{{number}}",
+    "front": "FRONT",
+    "back": "BACK",
+    "submittedAt": "Submitted {{date}}"
   },
   "detailScreen": {
     "back": "Back to submissions",

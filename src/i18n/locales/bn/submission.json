@@ -17,6 +17,7 @@
     }
   },
   "reviewScreen": {
+    "workerPhotosRequired": "জমা দেওয়ার আগে অন্তত একজন কর্মীর সামনের ও পেছনের ছবি যোগ করুন।",
     "title": "ছবি জমা দিন",
     "back": "ফিরে যান",
     "currentSite": "বর্তমান সাইট",
@@ -46,6 +47,17 @@
     "exitConfirmMessage": "এখন বের হলে সংরক্ষণ না করা অগ্রগতি বাতিল হয়ে যাবে।",
     "keepReviewing": "রিভিউ চালিয়ে যান",
     "discardAndLeave": "বের হন"
+  },
+  "submittedPreview": {
+    "title": "জমা দেওয়া কর্মীর প্রিভিউ",
+    "waiting": "রিভিউয়ের অপেক্ষায়",
+    "photos": "জমা দেওয়া ছবি",
+    "sitePhoto": "সাইটের ছবি {{number}}",
+    "notFound": "জমা দেওয়া চেকটি পাওয়া যায়নি।",
+    "workerNumber": "কর্মী #{{number}}",
+    "front": "সামনে",
+    "back": "পেছনে",
+    "submittedAt": "জমা দেওয়া হয়েছে {{date}}"
   },
   "detailScreen": {
     "back": "সাবমিশনে ফিরে যান",
