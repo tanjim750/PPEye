@@ -1,20 +1,32 @@
 import { Href, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
+import { dummyUsers } from '@/utils/dummy-users';
 
 export function LoginScreen() {
   const router = useRouter();
   const { t } = useTranslation(['auth', 'common']);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
 
   function handleLogin() {
-    router.replace('/(external)' as Href);
+    const user = dummyUsers.find(
+      (item) => item.username === username.trim() && item.password === password
+    );
+
+    if (!user) {
+      Alert.alert('Login failed', 'Invalid username or password.');
+      return;
+    }
+
+    router.replace((user.role === 'vendor' ? '/(external)' : '/(internal)') as Href);
   }
 
   function handleForgotPassword() {
@@ -49,9 +61,11 @@ export function LoginScreen() {
                 <TextInput
                   autoCapitalize="none"
                   keyboardType="email-address"
+                  onChangeText={setUsername}
                   placeholder={t('auth:loginScreen.emailOrPhonePlaceholder')}
                   placeholderTextColor={colors.outline}
                   style={styles.input}
+                  value={username}
                 />
               </View>
             </View>
@@ -75,10 +89,12 @@ export function LoginScreen() {
                   style={styles.inputIcon}
                 />
                 <TextInput
+                  onChangeText={setPassword}
                   placeholder={t('auth:loginScreen.passwordPlaceholder')}
                   placeholderTextColor={colors.outline}
                   secureTextEntry={!isPasswordVisible}
                   style={[styles.input, styles.passwordInput]}
+                  value={password}
                 />
                 <Pressable
                   accessibilityLabel={t('auth:loginScreen.togglePasswordVisibility')}
