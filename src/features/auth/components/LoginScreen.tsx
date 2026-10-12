@@ -89,6 +89,7 @@ export function LoginScreen() {
                   style={styles.inputIcon}
                 />
                 <TextInput
+                  autoCapitalize="none"
                   onChangeText={setPassword}
                   placeholder={t('auth:loginScreen.passwordPlaceholder')}
                   placeholderTextColor={colors.outline}
