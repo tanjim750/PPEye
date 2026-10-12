@@ -1,4 +1,4 @@
-export type UserRole = 'external' | 'internal' | 'admin';
+export type UserRole = 'external' | 'internal' | 'admin' | 'vendor' | 'reviewer';
 
 export type AuthUser = {
   email: string;

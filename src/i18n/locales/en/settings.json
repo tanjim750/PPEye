@@ -1,5 +1,94 @@
 {
-  "language": "Language",
+  "title": "Settings",
+  "accountSection": "ACCOUNT",
   "profile": "Profile",
-  "settings": "Settings"
+  "profileSub": "Personal information",
+  "changePassword": "Change Password",
+  "changePasswordSub": "Update your password",
+  "appSection": "APP",
+  "notifications": "Notifications",
+  "notificationsSub": "Manage app notifications",
+  "language": "Language",
+  "languageSub": "Change app language",
+  "supportSection": "SUPPORT",
+  "helpSupport": "Help & Support",
+  "about": "About",
+  "sessionSection": "SESSION",
+  "logout": "Log out",
+  "fieldOperations": "Field Operations",
+  "ehsRepresentative": "EHS Representative",
+
+  "notificationsScreen": {
+    "title": "Notifications",
+    "subtitle": "Choose which updates you want to receive.",
+    "reviewsSection": "REVIEWS",
+    "accountSection": "ACCOUNT",
+    "newSubmissions": "New PPE submissions",
+    "newSubmissionsSub": "Get notified when team members submit new safety gear requests.",
+    "reviewUpdates": "Review updates",
+    "reviewUpdatesSub": "Receive alerts when the status of your submitted reviews changes.",
+    "accountUpdates": "Important account updates",
+    "accountUpdatesSub": "Mandatory notifications regarding security and compliance."
+  },
+
+  "helpScreen": {
+    "title": "Help & Support",
+    "heading": "How can we help?",
+    "subheading": "Find answers or contact support.",
+    "searchPlaceholder": "Search help topics...",
+    "topic1Title": "Using PPE Review",
+    "topic1Sub": "Guidelines for proper equipment checks.",
+    "topic2Title": "Submitting Images",
+    "topic2Sub": "Best practices for clear documentation.",
+    "topic3Title": "Account & Access",
+    "topic3Sub": "Manage credentials and permissions.",
+    "contactTitle": "Need more help?",
+    "contactDesc": "Our safety officers are available 24/7 for urgent compliance queries.",
+    "callSupport": "Call Support",
+    "emailTeam": "Email Team"
+  },
+
+  "aboutScreen": {
+    "title": "About",
+    "appName": "PPE Compliance",
+    "appDesc": "A field safety application for structured PPE submission and compliance review.",
+    "version": "Version 1.0.0",
+    "versionLabel": "Version",
+    "buildLabel": "Build",
+    "privacyPolicy": "Privacy Policy",
+    "termsOfUse": "Terms of Use",
+    "licenses": "Licenses",
+    "footer": "© 2026 PPE Compliance App"
+  },
+
+  "changePasswordScreen": {
+    "title": "Change Password",
+    "subtitle": "Choose a new password for your account.",
+    "newPassword": "New password",
+    "newPasswordPlaceholder": "Enter new password",
+    "confirmPassword": "Confirm password",
+    "confirmPasswordPlaceholder": "Confirm new password",
+    "updateButton": "Update Password",
+    "successMessage": "Password updated successfully!",
+    "errorEmpty": "Please enter a new password.",
+    "errorMismatch": "Passwords do not match. Please verify and try again.",
+    "errorTitle": "Error",
+    "successTitle": "Success",
+    "successAlert": "Password updated successfully!",
+    "okButton": "OK"
+  },
+
+  "profileScreen": {
+    "title": "Compliance Settings",
+    "ehsSubtitle": "EHS Representative",
+    "personalInfo": "PERSONAL INFORMATION",
+    "accountDetails": "ACCOUNT DETAILS",
+    "fieldFullName": "Full name",
+    "fieldPhone": "Phone number",
+    "fieldEmail": "Email",
+    "fieldRole": "Role",
+    "roleValue": "EHS Representative",
+    "saveButton": "Save Changes",
+    "saveSuccess": "Profile updated successfully!"
+  }
 }

@@ -2,6 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,6 +13,7 @@ type EditableField = 'fullName' | 'phoneNumber' | 'email';
 
 export function ProfileScreen() {
   const router = useRouter();
+  const { t } = useTranslation('settings');
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [fullName, setFullName] = useState('Mahmud Hasan');
   const [phoneNumber, setPhoneNumber] = useState('+880 1712 345678');
@@ -39,7 +41,7 @@ export function ProfileScreen() {
 
   function handleSave() {
     console.log('Profile saved:', { fullName, phoneNumber, email, profileImage });
-    setToastMessage('Profile updated successfully!');
+    setToastMessage(t('profileScreen.saveSuccess'));
   }
 
   const fields: {
@@ -49,9 +51,9 @@ export function ProfileScreen() {
     onChange: (text: string) => void;
     keyboardType: 'default' | 'phone-pad' | 'email-address';
   }[] = [
-    { key: 'fullName', label: 'Full name', value: fullName, onChange: setFullName, keyboardType: 'default' },
-    { key: 'phoneNumber', label: 'Phone number', value: phoneNumber, onChange: setPhoneNumber, keyboardType: 'phone-pad' },
-    { key: 'email', label: 'Email', value: email, onChange: setEmail, keyboardType: 'email-address' },
+    { key: 'fullName', label: t('profileScreen.fieldFullName'), value: fullName, onChange: setFullName, keyboardType: 'default' },
+    { key: 'phoneNumber', label: t('profileScreen.fieldPhone'), value: phoneNumber, onChange: setPhoneNumber, keyboardType: 'phone-pad' },
+    { key: 'email', label: t('profileScreen.fieldEmail'), value: email, onChange: setEmail, keyboardType: 'email-address' },
   ];
 
   return (
@@ -66,7 +68,7 @@ export function ProfileScreen() {
               style={({ pressed }) => [styles.backButton, pressed && styles.pressedOpacity]}>
               <Icon color={colors.primary} name={{ ios: 'arrow.left', android: 'arrow_back', web: 'arrow_back' }} size={22} />
             </Pressable>
-            <Text style={styles.headerTitle}>Compliance Settings</Text>
+            <Text style={styles.headerTitle}>{t('profileScreen.title')}</Text>
             <View style={styles.backButton} />
           </View>
 
@@ -86,11 +88,11 @@ export function ProfileScreen() {
               </Pressable>
             </View>
             <Text style={styles.name}>{fullName}</Text>
-            <Text style={styles.subtitle}>EHS Representative</Text>
+            <Text style={styles.subtitle}>{t('profileScreen.ehsSubtitle')}</Text>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Personal information</Text>
+            <Text style={styles.sectionTitle}>{t('profileScreen.personalInfo')}</Text>
             {fields.map((field, index) => (
               <View key={field.key} style={[styles.fieldRow, index > 0 && styles.fieldDivider]}>
                 <Text style={styles.fieldLabel}>{field.label}</Text>
@@ -108,15 +110,15 @@ export function ProfileScreen() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Account details</Text>
-            <Text style={styles.fieldLabel}>Role</Text>
+            <Text style={styles.sectionTitle}>{t('profileScreen.accountDetails')}</Text>
+            <Text style={styles.fieldLabel}>{t('profileScreen.fieldRole')}</Text>
             <View style={styles.roleBox}>
               <Icon
                 color={colors.primary}
                 name={{ ios: 'checkmark.shield', android: 'shield_person', web: 'shield_person' }}
                 size={20}
               />
-              <Text style={styles.roleText}>EHS Representative</Text>
+              <Text style={styles.roleText}>{t('profileScreen.roleValue')}</Text>
             </View>
           </View>
 
@@ -125,7 +127,7 @@ export function ProfileScreen() {
             onPress={handleSave}
             style={({ pressed }) => [styles.saveButton, pressed && styles.pressedScale]}>
             <Icon color={colors.white} name={{ ios: 'square.and.arrow.down', android: 'save', web: 'save' }} size={18} />
-            <Text style={styles.saveText}>Save Changes</Text>
+            <Text style={styles.saveText}>{t('profileScreen.saveButton')}</Text>
           </Pressable>
         </View>
       </ScrollView>

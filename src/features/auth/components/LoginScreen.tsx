@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
+import { authStore } from '@/stores/auth.store';
 import { dummyUsers } from '@/utils/dummy-users';
 
 export function LoginScreen() {
@@ -25,6 +26,13 @@ export function LoginScreen() {
       Alert.alert('Login failed', 'Invalid username or password.');
       return;
     }
+
+    authStore.user = {
+      id: user.username,
+      email: `${user.username}@example.com`,
+      name: user.role === 'vendor' ? 'Rahim' : 'Mahmud',
+      role: user.role,
+    };
 
     router.replace((user.role === 'vendor' ? '/(external)' : '/(internal)') as Href);
   }

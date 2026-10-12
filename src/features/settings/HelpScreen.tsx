@@ -1,13 +1,4 @@
-import { Text } from 'react-native';
+import { HelpSupportScreen } from '@/features/settings/HelpSupportScreen';
 
-import { Screen } from '@/components/ui/Screen';
-import { typography } from '@/theme';
-
-export function HelpScreen() {
-  return (
-    <Screen>
-      <Text style={typography.title}>Help</Text>
-      <Text style={typography.body}>Support and FAQ content will appear here.</Text>
-    </Screen>
-  );
-}
+export { HelpSupportScreen as HelpScreen };
+export default HelpSupportScreen;

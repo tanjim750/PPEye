@@ -18,6 +18,7 @@ export const routes = {
   onboarding: {
     language: '/language',
   },
+  profile: '/profile',
   settings: {
     about: '/settings/about',
     changePassword: '/settings/change-password',

@@ -13,7 +13,8 @@
     "bottomNav": {
       "home": "হোম",
       "history": "ইতিহাস",
-      "profile": "প্রোফাইল"
+      "profile": "প্রোফাইল",
+      "settings": "সেটিংস"
     },
     "statuses": {
       "safe": "নিরাপদ",
@@ -40,7 +41,8 @@
     "bottomNav": {
       "home": "হোম",
       "reviews": "রিভিউ",
-      "history": "ইতিহাস"
+      "history": "ইতিহাস",
+      "settings": "সেটিংস"
     },
     "statuses": {
       "waiting": "রিভিউ অপেক্ষমাণ",

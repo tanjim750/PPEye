@@ -1,5 +1,94 @@
 {
-  "language": "ভাষা",
+  "title": "সেটিংস",
+  "accountSection": "অ্যাকাউন্ট",
   "profile": "প্রোফাইল",
-  "settings": "সেটিংস"
+  "profileSub": "ব্যক্তিগত তথ্য",
+  "changePassword": "পাসওয়ার্ড পরিবর্তন",
+  "changePasswordSub": "আপনার পাসওয়ার্ড আপডেট করুন",
+  "appSection": "অ্যাপ",
+  "notifications": "নোটিফিকেশন",
+  "notificationsSub": "অ্যাপ নোটিফিকেশন পরিচালনা করুন",
+  "language": "ভাষা",
+  "languageSub": "অ্যাপের ভাষা পরিবর্তন করুন",
+  "supportSection": "সাপোর্ট",
+  "helpSupport": "সাহায্য ও সাপোর্ট",
+  "about": "সম্পর্কে",
+  "sessionSection": "সেশন",
+  "logout": "লগ আউট",
+  "fieldOperations": "ফিল্ড অপারেশনস",
+  "ehsRepresentative": "EHS প্রতিনিধি",
+
+  "notificationsScreen": {
+    "title": "নোটিফিকেশন",
+    "subtitle": "আপনি কোন আপডেটগুলো পেতে চান তা বেছে নিন।",
+    "reviewsSection": "রিভিউ",
+    "accountSection": "অ্যাকাউন্ট",
+    "newSubmissions": "নতুন PPE জমা",
+    "newSubmissionsSub": "দলের সদস্যরা নতুন নিরাপত্তা সরঞ্জামের অনুরোধ জমা দিলে বিজ্ঞপ্তি পান।",
+    "reviewUpdates": "রিভিউ আপডেট",
+    "reviewUpdatesSub": "আপনার জমা দেওয়া রিভিউর অবস্থা পরিবর্তন হলে সতর্কতা পান।",
+    "accountUpdates": "গুরুত্বপূর্ণ অ্যাকাউন্ট আপডেট",
+    "accountUpdatesSub": "নিরাপত্তা ও কমপ্লায়েন্স সংক্রান্ত বাধ্যতামূলক বিজ্ঞপ্তি।"
+  },
+
+  "helpScreen": {
+    "title": "সাহায্য ও সাপোর্ট",
+    "heading": "আমরা কীভাবে সাহায্য করতে পারি?",
+    "subheading": "উত্তর খুঁজুন বা সাপোর্টে যোগাযোগ করুন।",
+    "searchPlaceholder": "সাহায্যের বিষয় খুঁজুন...",
+    "topic1Title": "PPE রিভিউ ব্যবহার",
+    "topic1Sub": "সঠিক সরঞ্জাম পরীক্ষার নির্দেশিকা।",
+    "topic2Title": "ছবি জমা দেওয়া",
+    "topic2Sub": "স্পষ্ট ডকুমেন্টেশনের সেরা অনুশীলন।",
+    "topic3Title": "অ্যাকাউন্ট ও অ্যাক্সেস",
+    "topic3Sub": "পরিচয়পত্র ও অনুমতি পরিচালনা করুন।",
+    "contactTitle": "আরো সাহায্য দরকার?",
+    "contactDesc": "আমাদের নিরাপত্তা কর্মকর্তারা জরুরি কমপ্লায়েন্স প্রশ্নের জন্য ২৪/৭ উপলব্ধ।",
+    "callSupport": "সাপোর্টে কল করুন",
+    "emailTeam": "ইমেইল করুন"
+  },
+
+  "aboutScreen": {
+    "title": "সম্পর্কে",
+    "appName": "PPE কমপ্লায়েন্স",
+    "appDesc": "কাঠামোগত PPE জমা ও কমপ্লায়েন্স রিভিউয়ের জন্য একটি ফিল্ড নিরাপত্তা অ্যাপ্লিকেশন।",
+    "version": "ভার্সন ১.০.০",
+    "versionLabel": "ভার্সন",
+    "buildLabel": "বিল্ড",
+    "privacyPolicy": "গোপনীয়তা নীতি",
+    "termsOfUse": "ব্যবহারের শর্তাবলি",
+    "licenses": "লাইসেন্স",
+    "footer": "© ২০২৬ PPE কমপ্লায়েন্স অ্যাপ"
+  },
+
+  "changePasswordScreen": {
+    "title": "পাসওয়ার্ড পরিবর্তন",
+    "subtitle": "আপনার অ্যাকাউন্টের জন্য একটি নতুন পাসওয়ার্ড বেছে নিন।",
+    "newPassword": "নতুন পাসওয়ার্ড",
+    "newPasswordPlaceholder": "নতুন পাসওয়ার্ড লিখুন",
+    "confirmPassword": "পাসওয়ার্ড নিশ্চিত করুন",
+    "confirmPasswordPlaceholder": "নতুন পাসওয়ার্ড আবার লিখুন",
+    "updateButton": "পাসওয়ার্ড আপডেট করুন",
+    "successMessage": "পাসওয়ার্ড সফলভাবে আপডেট হয়েছে!",
+    "errorEmpty": "অনুগ্রহ করে একটি নতুন পাসওয়ার্ড লিখুন।",
+    "errorMismatch": "পাসওয়ার্ড মিলছে না। অনুগ্রহ করে যাচাই করুন এবং আবার চেষ্টা করুন।",
+    "errorTitle": "ত্রুটি",
+    "successTitle": "সফল",
+    "successAlert": "পাসওয়ার্ড সফলভাবে আপডেট হয়েছে!",
+    "okButton": "ঠিক আছে"
+  },
+
+  "profileScreen": {
+    "title": "কমপ্লায়েন্স সেটিংস",
+    "ehsSubtitle": "EHS প্রতিনিধি",
+    "personalInfo": "ব্যক্তিগত তথ্য",
+    "accountDetails": "অ্যাকাউন্টের বিবরণ",
+    "fieldFullName": "পুরো নাম",
+    "fieldPhone": "ফোন নম্বর",
+    "fieldEmail": "ইমেইল",
+    "fieldRole": "ভূমিকা",
+    "roleValue": "EHS প্রতিনিধি",
+    "saveButton": "পরিবর্তন সংরক্ষণ করুন",
+    "saveSuccess": "প্রোফাইল সফলভাবে আপডেট হয়েছে!"
+  }
 }
