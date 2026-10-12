@@ -77,7 +77,7 @@ export function LoginScreen() {
                   accessibilityRole="button"
                   onPress={handleForgotPassword}
                   style={({ pressed }) => pressed && styles.textPressed}>
-                  <Text style={styles.forgotText}>{t('auth:loginScreen.forgotPassword')}</Text>
+                  {/* <Text style={styles.forgotText}>{t('auth:loginScreen.forgotPassword')}</Text> */}
                 </Pressable>
               </View>
 
