@@ -2,7 +2,6 @@ import { Href, Stack, useFocusEffect, useNavigation, useRouter } from 'expo-rout
 import { Image, ImageSource } from 'expo-image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   BackHandler,
   Modal,
   Pressable,
@@ -28,7 +27,6 @@ import {
   setPendingSubmissionReviewSite,
   setPendingSubmissionReviewTarget,
 } from '@/features/submissions/services/pendingSubmissionReview.service';
-import { saveSubmittedWorkerChecks } from '@/features/submissions/services/submittedChecks.service';
 import { locationService } from '@/services/location';
 import {
   getSubmissionWeatherMetadata,
@@ -59,6 +57,23 @@ type SubmissionReviewMetadata = {
   weather: SubmissionWeatherMetadata | null;
 };
 
+const sampleWorkerPhotos: WorkerReviewPhoto[] = [
+  {
+    sequenceNo: 1,
+    front: { uri: 'https://lh3.googleusercontent.com/aida/AEtjO1U7K_FAZ2HeXCCuL2GQebrq1USmx1KtyBTKUh84qCcposq_rfrMO_mGEt5NKO_tE0vD_1YOU7KmDn5OKbRgdPKBlaDDg_N_qlBu6Q7nyji0utCKG1CwE_luLM5-0Dj5Ymhp8yHlplc6Hwc_85tfJxvub3rfYZypubfAXG06ivU3WmhMIqCx-fgeN0WTm-oHDpqIITmW0HF-yRkRSG5MFJlfIiKHtfRhlADTEVgkHnPj7fst2ftVOLRAkC0' },
+    frontUri: 'https://lh3.googleusercontent.com/aida/AEtjO1U7K_FAZ2HeXCCuL2GQebrq1USmx1KtyBTKUh84qCcposq_rfrMO_mGEt5NKO_tE0vD_1YOU7KmDn5OKbRgdPKBlaDDg_N_qlBu6Q7nyji0utCKG1CwE_luLM5-0Dj5Ymhp8yHlplc6Hwc_85tfJxvub3rfYZypubfAXG06ivU3WmhMIqCx-fgeN0WTm-oHDpqIITmW0HF-yRkRSG5MFJlfIiKHtfRhlADTEVgkHnPj7fst2ftVOLRAkC0',
+    back: { uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDCACqY_pWKKerdF_sB7Hn1kXmpmze_vsM9Q87ByZ-aJv5Ha2Z8QuMUb576RhSLwX7QvXn-YSAcbFDbABHSu8qOec2YFZd_GCjCigDQbej6SFNFFDIryMUYL-MYdfm0Y230WrZ3wggUC3108k7xbp3bJZGgDQa0Rvzy-WEpHRk4zzqFsWYytmrt5Sw_SRZ8sceBzy8HuLNjeuQVk1kJ4qaxQa28BcIR8WAfC8uvlL0bazXbfTuf9vHI' },
+    backUri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDCACqY_pWKKerdF_sB7Hn1kXmpmze_vsM9Q87ByZ-aJv5Ha2Z8QuMUb576RhSLwX7QvXn-YSAcbFDbABHSu8qOec2YFZd_GCjCigDQbej6SFNFFDIryMUYL-MYdfm0Y230WrZ3wggUC3108k7xbp3bJZGgDQa0Rvzy-WEpHRk4zzqFsWYytmrt5Sw_SRZ8sceBzy8HuLNjeuQVk1kJ4qaxQa28BcIR8WAfC8uvlL0bazXbfTuf9vHI',
+  },
+  {
+    sequenceNo: 2,
+    front: { uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCuZxy0Q311kBgLiTS7t5-_L7uaLXsi9HlYUAmSZQECsMALWF-aLrkfYbyn8kf4UqSt_uHq1IhY8uCvjb2N6NKBXCHkv98ED-ffl-lpbEV6W-L7WM-Hn-2dQ5-7tNlgN_hkH0oMEIeKREYM68xHcjdLHd-ikZQWrKvONiJk3x11DK7eJwD75uhgkoHLY6ckPThpYZCuk2t4FRVyenFpUB89i-0dsc5xiJv4TOclt_-JhmesV6uugg9W' },
+    frontUri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCuZxy0Q311kBgLiTS7t5-_L7uaLXsi9HlYUAmSZQECsMALWF-aLrkfYbyn8kf4UqSt_uHq1IhY8uCvjb2N6NKBXCHkv98ED-ffl-lpbEV6W-L7WM-Hn-2dQ5-7tNlgN_hkH0oMEIeKREYM68xHcjdLHd-ikZQWrKvONiJk3x11DK7eJwD75uhgkoHLY6ckPThpYZCuk2t4FRVyenFpUB89i-0dsc5xiJv4TOclt_-JhmesV6uugg9W',
+    back: { uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCUqFlp6mW8hgXcWvLNWmYC53C2Er97cazwOTfMvEVNUPj6DbE4oykqDPIG8kxu5qmgT4jU46fu4-sbK6yhZ4aqJJGehkIqDsjLECr4q10RMx_XWtnU1v1SiRnghGvBFu_XkZeP9Pb5vXuMNyVRNM4Q0vtx2WzUIZIhl9oCSkdsGHyRcQsFAysgEyq5Hifp7mFEpEUhT2rl5_E2rsxArAgkPyJF7xj0A8DOrTPfxUEvUfcAr4sdSOWz' },
+    backUri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCUqFlp6mW8hgXcWvLNWmYC53C2Er97cazwOTfMvEVNUPj6DbE4oykqDPIG8kxu5qmgT4jU46fu4-sbK6yhZ4aqJJGehkIqDsjLECr4q10RMx_XWtnU1v1SiRnghGvBFu_XkZeP9Pb5vXuMNyVRNM4Q0vtx2WzUIZIhl9oCSkdsGHyRcQsFAysgEyq5Hifp7mFEpEUhT2rl5_E2rsxArAgkPyJF7xj0A8DOrTPfxUEvUfcAr4sdSOWz',
+  },
+];
+
 export function SubmissionReviewScreen() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -79,7 +94,7 @@ export function SubmissionReviewScreen() {
   const [workerPhotos, setWorkerPhotos] = useState<WorkerReviewPhoto[]>(() => {
     const pendingCaptures = getPendingSubmissionReviewCaptures();
 
-    return pendingCaptures ? getWorkerPhotosFromCaptures(pendingCaptures) : [];
+    return pendingCaptures ? getWorkerPhotosFromCaptures(pendingCaptures) : sampleWorkerPhotos;
   });
   const [reviewOtherPhotos] = useState<OtherReviewPhoto[]>(() => {
     const pendingOtherPhotos = getPendingSubmissionReviewOtherPhotos();
@@ -254,7 +269,7 @@ export function SubmissionReviewScreen() {
     });
   }
 
-  async function submitForReview() {
+  function submitForReview() {
     if (!siteName) {
       setSiteError(t('reviewScreen.siteRequired'));
       setIsEditingSite(true);
@@ -262,24 +277,6 @@ export function SubmissionReviewScreen() {
     }
 
     setPendingSubmissionReviewSite(siteName);
-    const completeWorkers = workerPhotos.filter((worker) => worker.frontUri && worker.backUri);
-    if (completeWorkers.length === 0) {
-      Alert.alert(t('reviewScreen.workerPhotosRequired'));
-      return;
-    }
-    const submissionId = `${Date.now()}`;
-    const submittedAt = new Date().toISOString();
-    await saveSubmittedWorkerChecks(completeWorkers.map((worker) => ({
-      id: `${submissionId}-${worker.sequenceNo}`,
-      submissionId,
-      workerNumber: worker.sequenceNo,
-      frontUri: worker.frontUri,
-      backUri: worker.backUri,
-      otherPhotoUris: reviewOtherPhotos.map((photo) => photo.uri),
-      site: siteName,
-      submittedAt,
-      status: 'waiting',
-    })));
     console.log(
       'Submission review state',
       JSON.stringify(
@@ -297,8 +294,6 @@ export function SubmissionReviewScreen() {
         2,
       ),
     );
-    clearPendingSubmissionReviewCaptures();
-    router.replace('/(external)' as Href);
   }
 
   function updateActiveWorker(offsetX: number) {

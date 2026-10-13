@@ -9,7 +9,6 @@
     "todayChecks": "TODAY'S CHECKS",
     "compliance": "COMPLIANCE",
     "recentChecks": "Recent Checks",
-    "workerNumber": "Worker #{{number}}",
     "viewAll": "View all",
     "bottomNav": {
       "home": "Home",
@@ -20,8 +19,7 @@
     "statuses": {
       "safe": "Safe",
       "unsafe": "Unsafe",
-      "review": "Review",
-      "waiting": "Waiting"
+      "review": "Review"
     },
     "recent": {
       "worker124": "Worker #124",

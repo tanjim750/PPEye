@@ -1,6 +1,5 @@
 import { Image, ImageSource } from 'expo-image';
-import { useFocusEffect, useSegments } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useSegments } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -11,10 +10,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from '@/hooks/useNavigate';
 import { DummyUserRole } from '@/utils/dummy-users';
 import { UserRole } from '@/features/auth/types';
-import {
-  listSubmittedWorkerChecks,
-  SubmittedWorkerCheck,
-} from '@/features/submissions/services/submittedChecks.service';
 
 export type SharedHomeScreenRole =
   | 'vendor'
@@ -74,41 +69,23 @@ const recentReviews: RecentReview[] = [
 ];
 
 type RecentCheck = {
-  id: string;
   image?: ImageSource;
-  status: 'safe' | 'unsafe' | 'waiting';
-  time: string;
-  workerNumber: number;
+  status: 'safe' | 'unsafe' | 'review';
+  timeKey: 'time1042' | 'today' | 'yesterday';
+  titleKey: 'worker124' | 'worker127' | 'worker131';
 };
 
-function toRecentCheck(check: SubmittedWorkerCheck): RecentCheck {
-  return {
-    id: check.id,
-    image: { uri: check.frontUri },
-    status: check.status,
-    time: new Date(check.submittedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-    workerNumber: check.workerNumber,
-  };
-}
+const recentChecks: RecentCheck[] = [
+  { image: assets.fieldSafeCheck, status: 'safe', timeKey: 'time1042', titleKey: 'worker124' },
+  { image: assets.fieldUnsafeCheck, status: 'unsafe', timeKey: 'yesterday', titleKey: 'worker127' },
+  { status: 'review', timeKey: 'today', titleKey: 'worker131' },
+];
 
 export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {}) {
-  const [recentChecks, setRecentChecks] = useState<RecentCheck[]>([]);
   const navigate = useNavigate();
   const { user } = useAuth();
   const segments = useSegments();
   const { t } = useTranslation('home');
-
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      listSubmittedWorkerChecks().then((checks) => {
-        if (active) setRecentChecks(checks.map(toRecentCheck));
-      });
-      return () => {
-        active = false;
-      };
-    }, []),
-  );
 
   // Determine whether to show Vendor or Reviewer UI
   const resolvedRole =
@@ -223,10 +200,8 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                       accessibilityRole="button"
                       accessibilityState={{ disabled: item.status === 'safe' }}
                       disabled={item.status === 'safe'}
-                      key={item.id}
-                      onPress={() =>
-                        navigate({ pathname: '/submitted-worker', params: { checkId: item.id } })
-                      }
+                      key={item.titleKey}
+                      onPress={() => navigate('/submission-details')}
                       style={({ pressed }) => [
                         vendorStyles.feedRow,
                         index < recentChecks.length - 1 && vendorStyles.feedDivider,
@@ -247,16 +222,16 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                       <View style={vendorStyles.feedCopy}>
                         <View style={vendorStyles.feedTitleRow}>
                           <Text numberOfLines={1} style={vendorStyles.workerName}>
-                            {t('external.workerNumber', { number: item.workerNumber })}
+                            {t(`external.recent.${item.titleKey}`)}
                           </Text>
-                          <Text style={vendorStyles.time}>{item.time}</Text>
+                          <Text style={vendorStyles.time}>{t(`external.recent.${item.timeKey}`)}</Text>
                         </View>
                         <View
                           style={[
                             vendorStyles.statusChip,
                             item.status === 'safe' && vendorStyles.safeChip,
                             item.status === 'unsafe' && vendorStyles.unsafeChip,
-                            item.status === 'waiting' && vendorStyles.reviewChip,
+                            item.status === 'review' && vendorStyles.reviewChip,
                           ]}>
                           {item.status === 'safe' ? (
                             <Icon
@@ -290,7 +265,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                               vendorStyles.statusText,
                               item.status === 'safe' && vendorStyles.safeText,
                               item.status === 'unsafe' && vendorStyles.unsafeText,
-                              item.status === 'waiting' && vendorStyles.reviewText,
+                              item.status === 'review' && vendorStyles.reviewText,
                             ]}>
                             {statusLabel}
                           </Text>

@@ -9,7 +9,6 @@
     "todayChecks": "আজকের চেক",
     "compliance": "কমপ্লায়েন্স",
     "recentChecks": "সাম্প্রতিক চেক",
-    "workerNumber": "কর্মী #{{number}}",
     "viewAll": "সব দেখুন",
     "bottomNav": {
       "home": "হোম",
@@ -20,8 +19,7 @@
     "statuses": {
       "safe": "নিরাপদ",
       "unsafe": "অনিরাপদ",
-      "review": "রিভিউ",
-      "waiting": "অপেক্ষমাণ"
+      "review": "রিভিউ"
     },
     "recent": {
       "worker124": "কর্মী #১২৪",
