@@ -8,6 +8,7 @@ import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from '@/hooks/useNavigate';
+import { useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
 import { DummyUserRole } from '@/utils/dummy-users';
 import { UserRole } from '@/features/auth/types';
 
@@ -86,6 +87,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   const { user } = useAuth();
   const segments = useSegments();
   const { t } = useTranslation('home');
+  const { recentChecks: vendorRecentChecks } = useWorkerChecks();
 
   // Determine whether to show Vendor or Reviewer UI
   const resolvedRole =
@@ -177,7 +179,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                 <Text style={vendorStyles.sectionTitle}>{t('external.recentChecks')}</Text>
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => navigate('/history')}
+                  onPress={() => navigate('/history?filter=pending')}
                   style={({ pressed }) => pressed && vendorStyles.textPressed}>
                   <View style={vendorStyles.viewAllRow}>
                     <Text style={vendorStyles.viewAll}>{t('external.viewAll')}</Text>
@@ -192,20 +194,21 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
               </View>
 
               <View style={vendorStyles.feed}>
-                {recentChecks.map((item, index) => {
+                {vendorRecentChecks.map((item, index) => {
+                  const isSafe = item.status === 'safe';
                   const statusLabel = t(`external.statuses.${item.status}`);
 
                   return (
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityState={{ disabled: item.status === 'safe' }}
-                      disabled={item.status === 'safe'}
-                      key={item.titleKey}
-                      onPress={() => navigate('/submission-details')}
+                      accessibilityState={{ disabled: isSafe }}
+                      disabled={isSafe}
+                      key={item.id}
+                      onPress={item.status === 'unsafe' ? () => navigate('/submission-details') : undefined}
                       style={({ pressed }) => [
                         vendorStyles.feedRow,
-                        index < recentChecks.length - 1 && vendorStyles.feedDivider,
-                        pressed && vendorStyles.pressed,
+                        index < vendorRecentChecks.length - 1 && vendorStyles.feedDivider,
+                        pressed && !isSafe && vendorStyles.pressed,
                       ]}>
                       {item.image ? (
                         <Image source={item.image} style={vendorStyles.thumbnail} />
@@ -222,9 +225,11 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                       <View style={vendorStyles.feedCopy}>
                         <View style={vendorStyles.feedTitleRow}>
                           <Text numberOfLines={1} style={vendorStyles.workerName}>
-                            {t(`external.recent.${item.titleKey}`)}
+                            {t(`external.recent.${item.titleKey}`, { defaultValue: `Worker #${item.workerNumber}` })}
                           </Text>
-                          <Text style={vendorStyles.time}>{t(`external.recent.${item.timeKey}`)}</Text>
+                          <Text style={vendorStyles.time}>
+                            {t(`external.recent.${item.timeKey}`, { defaultValue: item.timeKey })}
+                          </Text>
                         </View>
                         <View
                           style={[
@@ -272,7 +277,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                         </View>
                       </View>
 
-                      {item.status !== 'safe' ? (
+                      {!isSafe ? (
                         <Icon
                           color={vendorColors.outline}
                           name={{
@@ -303,7 +308,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              onPress={() => navigate('/history')}
+              onPress={() => navigate('/history?filter=all')}
               style={({ pressed }) => [vendorStyles.navItem, pressed && vendorStyles.navPressed]}>
               <Icon
                 color={vendorColors.textMuted}
