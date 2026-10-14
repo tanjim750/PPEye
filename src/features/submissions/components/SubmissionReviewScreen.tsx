@@ -2,6 +2,7 @@ import { Href, Stack, useFocusEffect, useNavigation, useRouter } from 'expo-rout
 import { Image, ImageSource } from 'expo-image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   BackHandler,
   Modal,
   Pressable,
@@ -27,6 +28,8 @@ import {
   setPendingSubmissionReviewSite,
   setPendingSubmissionReviewTarget,
 } from '@/features/submissions/services/pendingSubmissionReview.service';
+import { resubmitWorkerCheck } from '@/features/submissions/services/workerChecks.service';
+import { createOrUpdatePendingReview } from '@/features/reviews/services/reviews.service';
 import { locationService } from '@/services/location';
 import {
   getSubmissionWeatherMetadata,
@@ -78,11 +81,12 @@ export function SubmissionReviewScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const isExitingToHomeRef = useRef(false);
+  const isSubmittingRef = useRef(false);
   const { t } = useTranslation('submission');
   const [activeWorkerIndex, setActiveWorkerIndex] = useState(0);
   const [isExitConfirmVisible, setIsExitConfirmVisible] = useState(false);
-  const [siteName, setSiteName] = useState(() => getPendingSubmissionReviewSite());
-  const [siteDraft, setSiteDraft] = useState(() => getPendingSubmissionReviewSite() ?? '');
+  const [siteName, setSiteName] = useState(() => getPendingSubmissionReviewSite() || 'Gazipur-ER-102 - Tower Sector 3');
+  const [siteDraft, setSiteDraft] = useState(() => getPendingSubmissionReviewSite() || 'Gazipur-ER-102 - Tower Sector 3');
   const [isEditingSite, setIsEditingSite] = useState(false);
   const [siteError, setSiteError] = useState<string | null>(null);
   const [isBuildingWeatherMetadata, setIsBuildingWeatherMetadata] = useState(false);
@@ -223,6 +227,9 @@ export function SubmissionReviewScreen() {
   useFocusEffect(
     useCallback(() => {
       const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (isSubmittingRef.current || isExitingToHomeRef.current) {
+          return false;
+        }
         requestExitToHome();
         return true;
       });
@@ -234,7 +241,7 @@ export function SubmissionReviewScreen() {
   useFocusEffect(
     useCallback(() => {
       const unsubscribe = navigation.addListener('beforeRemove', (event) => {
-        if (isExitingToHomeRef.current) {
+        if (isExitingToHomeRef.current || isSubmittingRef.current) {
           return;
         }
 
@@ -270,30 +277,34 @@ export function SubmissionReviewScreen() {
   }
 
   function submitForReview() {
-    if (!siteName) {
-      setSiteError(t('reviewScreen.siteRequired'));
-      setIsEditingSite(true);
-      return;
-    }
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    isExitingToHomeRef.current = true;
 
-    setPendingSubmissionReviewSite(siteName);
-    console.log(
-      'Submission review state',
-      JSON.stringify(
-        {
-          others: reviewOtherPhotos.map((photo) => photo.uri),
-          metadata: submissionMetadata,
-          site: siteName,
-          workers: workerPhotos.map((worker) => ({
-            backUri: worker.backUri,
-            frontUri: worker.frontUri,
-            sequenceNo: worker.sequenceNo,
-          })),
-        },
-        null,
-        2,
-      ),
-    );
+    const finalSite = siteName?.trim() || getPendingSubmissionReviewSite() || 'Gazipur-ER-102 - Tower Sector 3';
+    setPendingSubmissionReviewSite(finalSite);
+
+    // Update/resubmit each worker check with the newly captured photos
+    workerPhotos.forEach((worker) => {
+      resubmitWorkerCheck(worker.sequenceNo, {
+        backUri: worker.backUri,
+        frontUri: worker.frontUri,
+        siteName: finalSite,
+      });
+    });
+
+    // Also register the pending review in Reviewer queue
+    createOrUpdatePendingReview({
+      location: finalSite,
+      photos: workerPhotos.length * 2 + reviewOtherPhotos.length,
+      workers: workerPhotos.length,
+      teamLead: 'Rahim Mia · Team Leader',
+    });
+
+    clearPendingSubmissionReviewCaptures();
+
+    // Immediately navigate to history pending page
+    router.replace('/history?filter=pending' as Href);
   }
 
   function updateActiveWorker(offsetX: number) {
@@ -646,6 +657,12 @@ export function SubmissionReviewScreen() {
           transparent
           visible={isExitConfirmVisible}>
           <View style={styles.confirmBackdrop}>
+            <Pressable
+              accessibilityLabel="Dismiss dialog"
+              accessibilityRole="button"
+              onPress={() => setIsExitConfirmVisible(false)}
+              style={StyleSheet.absoluteFill}
+            />
             <View style={styles.confirmCard}>
               <View style={styles.confirmIcon}>
                 <Icon
@@ -1247,7 +1264,7 @@ const styles = StyleSheet.create({
   },
   confirmBackdrop: {
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 18, 20, 0.52)',
+    backgroundColor: 'transparent',
     flex: 1,
     justifyContent: 'center',
     padding: 24,
@@ -1255,14 +1272,17 @@ const styles = StyleSheet.create({
   confirmCard: {
     alignItems: 'center',
     backgroundColor: colors.white,
+    borderColor: colors.border,
     borderRadius: 14,
+    borderWidth: 1,
+    elevation: 20,
     gap: 12,
     maxWidth: 360,
     padding: 20,
     shadowColor: '#000000',
-    shadowOffset: { height: 18, width: 0 },
-    shadowOpacity: 0.24,
-    shadowRadius: 28,
+    shadowOffset: { height: 10, width: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
     width: '100%',
   },
   confirmIcon: {

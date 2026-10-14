@@ -1,7 +1,7 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -15,6 +15,23 @@ export function SubmissionHistoryScreen() {
   const params = useLocalSearchParams<{ filter?: string }>();
   const { t } = useTranslation('home');
   const { safeChecks, pendingChecks, unsafeChecks, resubmitWorkerCheck } = useWorkerChecks();
+
+  const handleGoHome = useCallback(() => {
+    router.replace('/(external)' as Href);
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        handleGoHome();
+        return true;
+      });
+
+      return () => {
+        subscription.remove();
+      };
+    }, [handleGoHome])
+  );
 
   // Tabs: "all" (safe workers), "pending" (awaiting review), "unsafe" (action required)
   const initialTab: HistoryTab =
@@ -51,7 +68,7 @@ export function SubmissionHistoryScreen() {
           <Pressable
             accessibilityLabel="Go back"
             accessibilityRole="button"
-            onPress={() => router.back()}
+            onPress={handleGoHome}
             style={({ pressed }) => [styles.backButton, pressed && styles.pressedOpacity]}>
             <Icon
               color={colors.primary}
@@ -183,7 +200,7 @@ export function SubmissionHistoryScreen() {
                           })}
                         </Text>
                         <Text style={styles.time}>
-                          {formatWorkerCheckTime(item.timeKey, t)}
+                          {formatWorkerCheckTime(item, t)}
                         </Text>
                       </View>
 
@@ -251,7 +268,7 @@ export function SubmissionHistoryScreen() {
         <View style={styles.bottomNav}>
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.replace('/' as any)}
+            onPress={handleGoHome}
             style={({ pressed }) => [styles.navItem, pressed && styles.navPressed]}>
             <Icon
               color={colors.textMuted}

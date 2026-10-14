@@ -134,7 +134,7 @@ let workerChecks: WorkerCheck[] = [
     timeKey: 'time0945', // Today, 09:45 AM
     timestamp: now - 345 * minute,
     titleKey: 'worker135',
-    unsafeReasons: ['Helmet', 'Lanyard'],
+    unsafeReasons: ['helmet', 'lanyard'],
     workerNumber: 135,
   },
   {
@@ -163,7 +163,7 @@ let workerChecks: WorkerCheck[] = [
     timeKey: 'yesterday1630', // Yesterday, 04:30 PM
     timestamp: now - 1 * day - 4 * hour,
     titleKey: 'worker127',
-    unsafeReasons: ['Full-body harness', 'Anchorage / connection'],
+    unsafeReasons: ['harness', 'anchorage'],
     workerNumber: 127,
   },
 
@@ -284,43 +284,116 @@ export function getUnsafeWorkerChecks(): WorkerCheck[] {
 /**
  * Resubmit an unsafe check - transitions its status from 'unsafe' to 'review' (pending).
  */
-export function resubmitWorkerCheck(idOrWorkerNumber: string | number) {
+export function resubmitWorkerCheck(
+  idOrWorkerNumber: string | number,
+  options?: { backUri?: string; frontUri?: string; siteName?: string }
+) {
+  let matched = false;
   workerChecks = workerChecks.map((item) => {
     if (
       item.id === idOrWorkerNumber ||
       item.workerNumber === idOrWorkerNumber ||
-      String(item.workerNumber) === String(idOrWorkerNumber)
+      String(item.workerNumber) === String(idOrWorkerNumber) ||
+      (typeof idOrWorkerNumber === 'string' &&
+        item.id.toLowerCase() === idOrWorkerNumber.toLowerCase())
     ) {
+      matched = true;
       return {
         ...item,
-        status: 'review',
+        image: options?.frontUri ? { uri: options.frontUri } : item.image,
+        siteName: options?.siteName || item.siteName,
+        status: 'review' as const,
         timestamp: Date.now(),
       };
     }
     return item;
   });
+
+  if (!matched) {
+    const num =
+      typeof idOrWorkerNumber === 'number'
+        ? idOrWorkerNumber
+        : parseInt(String(idOrWorkerNumber).replace(/\D/g, ''), 10) || 135;
+    workerChecks = [
+      {
+        id: `w${num}`,
+        image: options?.frontUri ? { uri: options.frontUri } : undefined,
+        siteName: options?.siteName || 'Gazipur-ER-102 - Tower Sector 3',
+        status: 'review' as const,
+        timeKey: 'time1042',
+        timestamp: Date.now(),
+        titleKey: `worker${num}`,
+        workerNumber: num,
+      },
+      ...workerChecks,
+    ];
+  }
   notify();
 }
 
 /**
- * Formats time display:
- * - If today: returns just time (e.g., "10:42 AM")
- * - If yesterday: returns just "Yesterday" (or Bengali "গতকাল") without time
+ * Formats time display using real time:
+ * - If today: returns real formatted time (e.g. "06:05 PM")
+ * - If yesterday: returns "Yesterday" (or Bengali "গতকাল")
  */
 export function formatWorkerCheckTime(
-  timeKey: string,
-  t: (key: string, options?: any) => string
+  itemOrTimeKey: string | { timestamp?: number; timeKey?: string },
+  t?: (key: string, options?: any) => string,
+  explicitTimestamp?: number
 ): string {
-  const raw = t(`external.recent.${timeKey}`, { defaultValue: timeKey });
-  if (
-    timeKey.startsWith('yesterday') ||
-    raw.toLowerCase().includes('yesterday') ||
-    raw.includes('গতকাল')
-  ) {
-    return raw.includes('গতকাল') ? 'গতকাল' : 'Yesterday';
+  let timestamp = explicitTimestamp;
+  let timeKey = '';
+
+  if (typeof itemOrTimeKey === 'object' && itemOrTimeKey !== null) {
+    timestamp = itemOrTimeKey.timestamp;
+    timeKey = itemOrTimeKey.timeKey || '';
+  } else if (typeof itemOrTimeKey === 'string') {
+    timeKey = itemOrTimeKey;
   }
-  // Strip "Today, " or "আজ, " if present
-  return raw.replace(/^(Today,\s*|আজ,\s*)/i, '');
+
+  if (timestamp && typeof timestamp === 'number' && !isNaN(timestamp)) {
+    const date = new Date(timestamp);
+    const now = new Date();
+
+    const isToday =
+      date.getDate() === now.getDate() &&
+      date.getMonth() === now.getMonth() &&
+      date.getFullYear() === now.getFullYear();
+
+    const isYesterday =
+      new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).toDateString() ===
+      new Date(date.getFullYear(), date.getMonth(), date.getDate()).toDateString();
+
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const formattedHours = hours < 10 ? `0${hours}` : `${hours}`;
+    const timeStr = `${formattedHours}:${minutes} ${ampm}`;
+
+    if (isToday) {
+      return timeStr;
+    }
+    if (isYesterday) {
+      return t ? t('external.history.yesterday', { defaultValue: 'Yesterday' }) : 'Yesterday';
+    }
+    return `${date.getDate()} ${date.toLocaleString('en-US', { month: 'short' })}`;
+  }
+
+  if (t && timeKey) {
+    const raw = t(`external.recent.${timeKey}`, { defaultValue: timeKey });
+    if (
+      timeKey.startsWith('yesterday') ||
+      raw.toLowerCase().includes('yesterday') ||
+      raw.includes('গতকাল')
+    ) {
+      return raw.includes('গতকাল') ? 'গতকাল' : 'Yesterday';
+    }
+    return raw.replace(/^(Today,\s*|আজ,\s*)/i, '');
+  }
+
+  return 'Just now';
 }
 
 /**
@@ -346,6 +419,60 @@ export function markWorkerSafe(idOrWorkerNumber: string | number) {
 }
 
 /**
+ * Mark a worker as unsafe with reviewer reasons and note.
+ */
+export function markWorkerUnsafe(
+  idOrWorkerNumber: string | number,
+  reasons: string[] = [],
+  notes?: string,
+  reviewerName = 'Mahmudul Hasan · EHS Representative'
+) {
+  let matched = false;
+  workerChecks = workerChecks.map((item) => {
+    if (
+      item.id === idOrWorkerNumber ||
+      item.workerNumber === idOrWorkerNumber ||
+      String(item.workerNumber) === String(idOrWorkerNumber) ||
+      (idOrWorkerNumber === 'rev-01' && item.id === 'w135')
+    ) {
+      matched = true;
+      return {
+        ...item,
+        image: assets.fieldUnsafeCheck,
+        status: 'unsafe',
+        unsafeReasons: reasons.length > 0 ? reasons : item.unsafeReasons,
+        reviewerNote: notes || item.reviewerNote,
+        reviewerName,
+        timeKey: 'time1042',
+        timestamp: Date.now(),
+      };
+    }
+    return item;
+  });
+
+  if (!matched && typeof idOrWorkerNumber === 'string') {
+    const newWorkerNum = parseInt(idOrWorkerNumber.replace(/\D/g, ''), 10) || 135;
+    workerChecks = [
+      {
+        id: idOrWorkerNumber,
+        image: assets.fieldUnsafeCheck,
+        status: 'unsafe',
+        unsafeReasons: reasons,
+        reviewerNote: notes || 'PPE non-compliance identified during visual inspection.',
+        reviewerName,
+        siteName: 'Gazipur-ER-102 - Tower Sector 3',
+        timeKey: 'time1042',
+        timestamp: Date.now(),
+        titleKey: `worker${newWorkerNum}`,
+        workerNumber: newWorkerNum,
+      },
+      ...workerChecks,
+    ];
+  }
+  notify();
+}
+
+/**
  * Hook providing reactive access to worker checks with time sorting
  */
 export function useWorkerChecks() {
@@ -365,6 +492,7 @@ export function useWorkerChecks() {
     safeChecks: getSafeWorkerChecks(),
     unsafeChecks: getUnsafeWorkerChecks(),
     markWorkerSafe,
+    markWorkerUnsafe,
     resubmitWorkerCheck,
   };
 }

@@ -1,38 +1,34 @@
 import { Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image, ImageSource } from 'expo-image';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
+import { assets } from '@/constants/assets';
+import {
+  reasonIcons,
+  unsafeReasonLabels,
+} from '@/features/reviews/services/reviews.service';
 import {
   formatWorkerCheckTime,
   getWorkerCheckById,
   resubmitWorkerCheck,
   WorkerIssue,
 } from '@/features/submissions/services/workerChecks.service';
-
-type WorkerStatus = 'safe' | 'unsafe';
-
-type WorkerDetail = {
-  back?: ImageSource;
-  front?: ImageSource;
-  issue?: string;
-  name: string;
-  role: string;
-  sequenceNo: number;
-  status: WorkerStatus;
-  reviewerNote?: string;
-  unsafeReasons?: string[];
-};
-
-type IssueDetail = {
-  severityKey: 'critical' | 'missing';
-  tags?: string[];
-  title: string;
-  tone: 'error' | 'warning';
-  message: string;
-};
+import {
+  setPendingSubmissionReviewSite,
+  setPendingSubmissionReviewTarget,
+} from '@/features/submissions/services/pendingSubmissionReview.service';
 
 const workerTwoFront =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuDgQU9bHBVHLqpP5L7JengM95PotCLUMm0pYSa5LrM8Tak4Qv7ZN0RbNzGeW5mlq6MGCveBJQQDXEWtSxpzqpzEqzO73hM9VW3OgXi4AkyKod79xg_aPJ9wxOMTPTb6_qUd51H5P1DcSqqEAji7jg9I2Kg465f111W36y-82wOnClR_5LezGuCHcZ0pf1_OvuhGY7GpysiX6hZC7JVN63eZ_gNo4b6GLcrM8yI56LZdN8ToE9jQBAt0';
@@ -40,30 +36,32 @@ const workerTwoFront =
 const workerTwoBack =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuB-I5Gv4lteN5XsmAXE1_cDPtr_NEzL0F2CWVDwg-sZ1I-sHC0rbP0roxgmqczH7trvuE09iErv3qWPdaBHjcUMQoCkQorKdchMTpc_UUiogIYbMk6JgnOI5qH9IntEebdbZ_cummC-xp7OVKcew1zHrrSby1porfloCpEp9kvEmQQMPGtP2B7Vc8qebXWvsrsMUP_7BXNFUpp_KpYAP-6afKkjDLBTdOpvXOk1EfqXOSazVPOvAIwS';
 
-const supportingPhoto =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuDM1AWQuL-6QHryo-dNR2MVY1VYvY3vBWVMl7of8ulRF_ik6eL49ety5FWDvBUZTCEUXu5yqcULmP6KjjM7WkVrg2D_iRe77GvUJJWyGa7vb3--AiT1IptDJ_GzntaGXBLeV8LNfZlW1cURZlmWhEKS3kgK3eUaBUl4WA7KSfMK6QFLdKHkAaKzeDX885fiKX5ifvyiK0W3enHoDTU6R40023Kw1vsgBbYoVeToSPObjGcxCaRi_TFL';
-
-const fallbackIssues: IssueDetail[] = [
-  {
-    message: 'detailScreen.issues.workerHarness.message',
-    severityKey: 'critical',
-    tags: ['detailScreen.tags.harness', 'detailScreen.tags.anchorage'],
-    title: 'detailScreen.issues.workerHarness.title',
-    tone: 'error',
-  },
-  {
-    message: 'detailScreen.issues.firstAidMissing.message',
-    severityKey: 'missing',
-    tags: ['detailScreen.tags.firstAid'],
-    title: 'detailScreen.issues.firstAidMissing.title',
-    tone: 'warning',
-  },
-];
+const colors = {
+  background: '#f9f9ff',
+  border: '#c0c7d5',
+  error: '#ba1a1a',
+  errorContainer: '#ffdad6',
+  errorLight: '#fef2f2',
+  errorBorder: 'rgba(186, 26, 26, 0.2)',
+  primary: '#005cad',
+  primaryContainer: '#0075d8',
+  success: '#16A34A',
+  surface: '#ffffff',
+  surfaceContainer: '#ebedf7',
+  surfaceContainerLow: '#f1f3fd',
+  text: '#181c22',
+  textMuted: '#404753',
+  textSubtle: '#717785',
+  warning: '#984300',
+  warningContainer: '#ffdbca',
+  white: '#ffffff',
+};
 
 export function SubmissionDetailsActionRequiredScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string; workerNumber?: string }>();
   const { t } = useTranslation('submission');
+  const [selectedPhoto, setSelectedPhoto] = useState<{ uri: string; label: string } | null>(null);
 
   const workerId = params.id || params.workerNumber || 'w135';
   const currentWorker = getWorkerCheckById(workerId) || getWorkerCheckById('w135');
@@ -73,67 +71,86 @@ export function SubmissionDetailsActionRequiredScreen() {
       router.back();
       return;
     }
-
     router.replace('/(external)' as Href);
   }
 
   function fixAndResubmit() {
-    const idToFix = currentWorker?.id || workerId || 'w135';
-    resubmitWorkerCheck(idToFix);
-    router.replace('/history?filter=pending' as Href);
+    const workerNum = currentWorker?.workerNumber || 135;
+
+    // Set target so camera opens directly on this worker
+    setPendingSubmissionReviewTarget({
+      workerNumber: workerNum,
+      side: 'FRONT',
+    });
+    setPendingSubmissionReviewSite(currentWorker?.siteName || 'Gazipur-ER-102 - Tower Sector 3');
+
+    // Navigate directly to camera capture screen
+    router.push('/continuous-ppe-capture' as Href);
   }
 
-  const displayIssues: IssueDetail[] =
-    currentWorker?.issues && currentWorker.issues.length > 0
-      ? currentWorker.issues
-      : fallbackIssues;
+  const rawReasons: string[] =
+    currentWorker?.unsafeReasons && currentWorker.unsafeReasons.length > 0
+      ? currentWorker.unsafeReasons
+      : ['helmet', 'lanyard'];
 
-  const reviewerInitials = currentWorker?.reviewerName
-    ? currentWorker.reviewerName
-        .split(' ')
-        .slice(0, 2)
-        .map((n) => n[0])
-        .join('')
-    : 'MH';
+  const reviewerName = currentWorker?.reviewerName || 'Mahmudul Hasan · EHS Representative';
+  const reviewerInitials = reviewerName
+    .split(' ')
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() || '')
+    .join('') || 'MH';
+
+  const timeDisplay = formatWorkerCheckTime(currentWorker || 'time0945', t);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.shell}>
+        {/* Navigation Header */}
         <View style={styles.header}>
           <Pressable
-            accessibilityLabel={t('detailScreen.back')}
+            accessibilityLabel={t('detailScreen.back', { defaultValue: 'Back' })}
             accessibilityRole="button"
             onPress={goBack}
             style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
             <Icon
               color={colors.text}
               name={{ ios: 'arrow.left', android: 'arrow_back', web: 'arrow_back' }}
-              size={23}
+              size={22}
               weight="semibold"
             />
           </Pressable>
           <View style={styles.headerCopy}>
             <Text style={styles.headerEyebrow}>
-              {currentWorker?.workerNumber ? `SUBMISSION #GAZ-${currentWorker.workerNumber}` : t('detailScreen.eyebrow')}
+              {`SUBMISSION #GAZ-${currentWorker?.workerNumber || '135'}`}
             </Text>
-            <Text style={styles.headerTitle}>{t('detailScreen.title')}</Text>
+            <Text style={styles.headerTitle}>
+              {`Worker #${currentWorker?.workerNumber || '135'} Details`}
+            </Text>
           </View>
           <Pressable
-            accessibilityLabel={t('detailScreen.help')}
+            accessibilityLabel={t('detailScreen.help', { defaultValue: 'Help' })}
             accessibilityRole="button"
+            onPress={() =>
+              Alert.alert(
+                'Safety Review Details',
+                'This screen displays the visual PPE inspection feedback provided by the EHS Reviewer. Tap "Fix & Resubmit" after correcting the flagged items.'
+              )
+            }
             style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
             <Icon
               color={colors.textMuted}
               name={{ ios: 'questionmark.circle', android: 'help_outline', web: 'help_outline' }}
-              size={23}
+              size={22}
             />
           </Pressable>
         </View>
 
+        {/* Scrollable Content */}
         <ScrollView
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           style={styles.scroll}>
+          {/* Metadata Card */}
           <View style={styles.metaCard}>
             <View style={styles.metaTopRow}>
               <View style={styles.metaSite}>
@@ -144,15 +161,12 @@ export function SubmissionDetailsActionRequiredScreen() {
                     android: 'cell_tower',
                     web: 'cell_tower',
                   }}
-                  size={17}
+                  size={16}
                 />
                 <Text numberOfLines={1} style={styles.metaTitle}>
-                  {currentWorker?.siteName || t('detailScreen.site')}
+                  {currentWorker?.siteName || 'Gazipur-ER-102 - Tower Sector 3'}
                 </Text>
               </View>
-              <Text style={styles.idChip}>
-                {`Worker #${currentWorker?.workerNumber || '135'}`}
-              </Text>
             </View>
             <View style={styles.metaDivider} />
             <View style={styles.metaBottomRow}>
@@ -163,200 +177,212 @@ export function SubmissionDetailsActionRequiredScreen() {
                   size={14}
                 />
                 <Text numberOfLines={1} style={styles.metaSubtext}>
-                  {t('detailScreen.submittedBy')}
+                  {t('detailScreen.submittedBy', { defaultValue: 'Submitted by Field Team Lead' })}
                 </Text>
               </View>
-              <Text style={styles.metaTime}>
-                {formatWorkerCheckTime(currentWorker?.timeKey || 'time0945', t)}
-              </Text>
+              <Text style={styles.metaTime}>{timeDisplay}</Text>
             </View>
           </View>
 
-          <View style={styles.statusBanner}>
-            <View style={styles.statusIcon}>
+          {/* Alert Banner: Marked as UNSAFE by Reviewer (Matching Reviewer Unsafe Modal) */}
+          <View style={styles.alertBanner}>
+            <View style={styles.alertIconCircle}>
               <Icon
-                color={colors.warning}
-                name={{
-                  ios: 'exclamationmark.triangle.fill',
-                  android: 'warning',
-                  web: 'warning',
-                }}
-                size={27}
+                color={colors.error}
+                name={{ ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' }}
+                size={22}
                 weight="bold"
               />
             </View>
-            <View style={styles.statusCopy}>
-              <Text style={styles.statusTitle}>
-                {`Worker #${currentWorker?.workerNumber || '135'} Non-Compliant`}
+            <View style={styles.alertTextContainer}>
+              <Text style={styles.alertTitle}>Marked as UNSAFE by Reviewer</Text>
+              <Text style={styles.alertLocation}>
+                {`${currentWorker?.siteName || 'Gazipur-ER-102'} • ${timeDisplay}`}
               </Text>
-              <Text style={styles.statusMessage}>{t('detailScreen.actionRequiredBody')}</Text>
             </View>
           </View>
 
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.titleRow}>
-                <Icon
-                  color={colors.warning}
-                  name={{ ios: 'checklist', android: 'checklist_rtl', web: 'checklist_rtl' }}
-                  size={21}
-                />
-                <Text style={styles.sectionTitle}>{t('detailScreen.itemsToCorrect')}</Text>
-              </View>
-              <Text style={styles.issueCount}>
-                {`${displayIssues.length} ${displayIssues.length === 1 ? 'issue' : 'issues'}`}
-              </Text>
-            </View>
-            <View style={styles.issueList}>
-              {displayIssues.map((issue, index) => {
-                const issueTitle = issue.title.startsWith('detailScreen.') ? t(issue.title) : issue.title;
-                const issueMessage = issue.message.startsWith('detailScreen.') ? t(issue.message) : issue.message;
+          {/* Section: IDENTIFIED PPE VIOLATIONS */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>IDENTIFIED PPE VIOLATIONS</Text>
+
+            <View style={styles.reasonsGrid}>
+              {rawReasons.map((r) => {
+                const normalized = r.toLowerCase().replace(/[^a-z]/g, '');
+                let matchedKey = 'other';
+                if (normalized.includes('helmet')) matchedKey = 'helmet';
+                else if (normalized.includes('harness')) matchedKey = 'harness';
+                else if (normalized.includes('lanyard')) matchedKey = 'lanyard';
+                else if (normalized.includes('anchor')) matchedKey = 'anchorage';
+                else if (normalized.includes('shoe') || normalized.includes('boot')) matchedKey = 'shoes';
+
+                const iconConfig = reasonIcons[matchedKey] || reasonIcons.other;
+                const label = unsafeReasonLabels[matchedKey] || r;
 
                 return (
-                  <View key={issue.title + index} style={styles.issueItem}>
-                    <View
-                      style={[
-                        styles.issueNumber,
-                        issue.tone === 'error' ? styles.issueNumberError : styles.issueNumberWarning,
-                      ]}>
-                      <Text
-                        style={[
-                          styles.issueNumberText,
-                          issue.tone === 'error'
-                            ? styles.issueNumberTextError
-                            : styles.issueNumberTextWarning,
-                        ]}>
-                        {index + 1}
-                      </Text>
+                  <View key={r} style={styles.reasonItem}>
+                    <View style={styles.reasonIconBox}>
+                      <Icon
+                        color={colors.error}
+                        name={iconConfig as any}
+                        size={18}
+                        weight="semibold"
+                      />
                     </View>
-                    <View style={styles.issueCopy}>
-                      <View style={styles.issueTitleRow}>
-                        <Text numberOfLines={1} style={styles.issueTitle}>
-                          {issueTitle}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.severity,
-                            issue.tone === 'error' ? styles.errorText : styles.warningText,
-                          ]}>
-                          {t(`detailScreen.severity.${issue.severityKey}`, { defaultValue: issue.severityKey.toUpperCase() })}
-                        </Text>
-                      </View>
-                      <Text style={styles.issueMessage}>{issueMessage}</Text>
-                      {issue.tags && issue.tags.length > 0 ? (
-                        <View style={styles.tagRow}>
-                          {issue.tags.map((tag) => (
-                            <Text key={tag} style={styles.tag}>
-                              {tag.startsWith('detailScreen.') ? t(tag) : tag}
-                            </Text>
-                          ))}
-                        </View>
-                      ) : null}
+                    <View style={styles.reasonCopy}>
+                      <Text style={styles.reasonItemText}>{label}</Text>
+                      <Text style={styles.reasonStatusTag}>Non-compliant</Text>
                     </View>
                   </View>
                 );
               })}
             </View>
+
+            {/* If structured issues list exists for this worker, render each item */}
+            {currentWorker?.issues && currentWorker.issues.length > 0 && (
+              <View style={styles.detailedIssuesList}>
+                {currentWorker.issues.map((issue, idx) => (
+                  <View key={issue.title + idx} style={styles.issueItem}>
+                    <View style={styles.issueNumber}>
+                      <Icon
+                        color={colors.error}
+                        name={{ ios: 'exclamationmark', android: 'priority_high', web: 'priority_high' }}
+                        size={12}
+                        weight="bold"
+                      />
+                    </View>
+                    <View style={styles.issueBody}>
+                      <View style={styles.issueTitleRow}>
+                        <Text style={styles.issueTitle}>{issue.title}</Text>
+                        <View style={styles.criticalChip}>
+                          <Text style={styles.criticalChipText}>CRITICAL</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.issueMessage}>{issue.message}</Text>
+                      {issue.tags && issue.tags.length > 0 && (
+                        <View style={styles.tagRow}>
+                          {issue.tags.map((tag) => (
+                            <View key={tag} style={styles.tag}>
+                              <Text style={styles.tagText}>{tag}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
 
-          <View style={styles.workerSection}>
-            <View style={styles.sectionHeaderInline}>
-              <View style={styles.workerTitleWrap}>
-                <Text style={styles.sectionTitle}>{t('detailScreen.workerPpe')}</Text>
-                <Text style={styles.inlineSubtext}>
-                  {`Worker #${currentWorker?.workerNumber || '135'}`}
-                </Text>
+          {/* Section: REVIEWER NOTE / DESCRIPTION */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>REVIEWER NOTE / DESCRIPTION</Text>
+            <View style={styles.notesBox}>
+              <View style={styles.quoteIconWrap}>
+                <Icon
+                  color={colors.error}
+                  name={{ ios: 'quote.opening', android: 'format_quote', web: 'format_quote' }}
+                  size={20}
+                />
               </View>
-            </View>
-            <View style={styles.workerList}>
-              <UnsafeWorkerCard
-                worker={{
-                  back: { uri: workerTwoBack },
-                  front: { uri: workerTwoFront },
-                  issue: currentWorker?.unsafeReasons?.join(' · ') || 'detailScreen.workers.worker2.issue',
-                  name: `Worker #${currentWorker?.workerNumber || '135'}`,
-                  role: t('detailScreen.workers.worker2.role'),
-                  sequenceNo: currentWorker?.workerNumber || 135,
-                  status: 'unsafe',
-                  reviewerNote: currentWorker?.reviewerNote,
-                  unsafeReasons: currentWorker?.unsafeReasons,
-                }}
-              />
+              <Text style={styles.notesText}>
+                "{currentWorker?.reviewerNote || 'Worker was observed without required PPE gear properly fastened during inspection.'}"
+              </Text>
             </View>
           </View>
 
-          <View style={styles.card}>
-            <View style={styles.evidenceHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>{t('detailScreen.supportingEvidence')}</Text>
-                <Text style={styles.inlineSubtext}>{t('detailScreen.evidenceSummary')}</Text>
-              </View>
-              <Text style={styles.needsAttentionChip}>{t('detailScreen.needsAttention')}</Text>
-            </View>
-            <View style={styles.evidenceGrid}>
-              <View style={styles.evidencePhoto}>
-                <Image contentFit="cover" source={{ uri: supportingPhoto }} style={styles.fullImage} />
-                <View style={styles.imageShade} />
-                <View style={styles.evidenceLabel}>
+          {/* Section: INSPECTION PHOTOS */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>INSPECTION PHOTOS</Text>
+
+            <View style={styles.photosRow}>
+              {/* Front Photo */}
+              <Pressable
+                accessibilityLabel="View Front Inspection Photo"
+                accessibilityRole="button"
+                onPress={() => setSelectedPhoto({ uri: workerTwoFront, label: 'FRONT INSPECTION' })}
+                style={({ pressed }) => [styles.photoCard, pressed && styles.pressed]}>
+                <View style={styles.photoBadge}>
+                  <Text style={styles.photoBadgeText}>FRONT</Text>
+                </View>
+                <Image
+                  contentFit="cover"
+                  source={{ uri: workerTwoFront }}
+                  style={styles.photoImg}
+                />
+                <View style={styles.zoomButton}>
                   <Icon
-                    color={colors.success}
+                    color={colors.white}
                     name={{
-                      ios: 'checkmark.circle.fill',
-                      android: 'check_circle',
-                      web: 'check_circle',
+                      ios: 'arrow.up.left.and.arrow.down.right',
+                      android: 'fullscreen',
+                      web: 'fullscreen',
+                    }}
+                    size={14}
+                  />
+                </View>
+              </Pressable>
+
+              {/* Back Photo - Flagged */}
+              <Pressable
+                accessibilityLabel="View Back Inspection Photo Flagged"
+                accessibilityRole="button"
+                onPress={() => setSelectedPhoto({ uri: workerTwoBack, label: 'BACK - VIOLATION FLAGGED' })}
+                style={({ pressed }) => [styles.photoCard, styles.photoCardFlagged, pressed && styles.pressed]}>
+                <View style={[styles.photoBadge, styles.photoBadgeFlagged]}>
+                  <Text style={[styles.photoBadgeText, styles.photoBadgeTextFlagged]}>
+                    BACK - FLAG
+                  </Text>
+                </View>
+                <Image
+                  contentFit="cover"
+                  source={{ uri: workerTwoBack }}
+                  style={styles.photoImg}
+                />
+                <View style={styles.flagShade} />
+                <View style={styles.inspectBadge}>
+                  <Icon
+                    color={colors.error}
+                    name={{
+                      ios: 'exclamationmark.triangle.fill',
+                      android: 'warning',
+                      web: 'warning',
                     }}
                     size={13}
                     weight="bold"
                   />
-                  <Text style={styles.evidenceLabelText}>{t('detailScreen.toolboxTalk')}</Text>
+                  <Text style={styles.inspectBadgeText}>Violation Area</Text>
                 </View>
-              </View>
-              <View style={styles.missingEvidence}>
-                <View style={styles.missingIcon}>
+                <View style={styles.zoomButton}>
                   <Icon
-                    color={colors.warning}
-                    name={{ ios: 'camera.fill', android: 'add_a_photo', web: 'add_a_photo' }}
-                    size={18}
-                    weight="bold"
+                    color={colors.white}
+                    name={{
+                      ios: 'arrow.up.left.and.arrow.down.right',
+                      android: 'fullscreen',
+                      web: 'fullscreen',
+                    }}
+                    size={14}
                   />
                 </View>
-                <Text style={styles.missingTitle}>{t('detailScreen.firstAidBox')}</Text>
-                <Text style={styles.missingText}>{t('detailScreen.missing')}</Text>
-              </View>
-            </View>
-            <View style={styles.infoCallout}>
-              <Icon
-                color={colors.warning}
-                name={{ ios: 'info.circle.fill', android: 'info', web: 'info' }}
-                size={18}
-                weight="bold"
-              />
-              <Text style={styles.infoText}>{t('detailScreen.evidenceNote')}</Text>
+              </Pressable>
             </View>
           </View>
 
-          <View style={styles.decisionCard}>
-            <Text style={styles.decisionLabel}>{t('detailScreen.decisionLabel')}</Text>
-            <Text style={styles.decisionQuote}>
-              "{currentWorker?.reviewerNote || t('detailScreen.decisionQuote')}"
-            </Text>
-            <View style={styles.reviewerRow}>
-              <View style={styles.reviewerAvatar}>
-                <Text style={styles.reviewerInitials}>{reviewerInitials}</Text>
-              </View>
-              <View style={styles.reviewerCopy}>
-                <Text style={styles.reviewerName}>
-                  {currentWorker?.reviewerName || t('detailScreen.reviewerName')}
-                </Text>
-                <Text style={styles.reviewerRole}>{t('detailScreen.reviewerRole')}</Text>
-              </View>
-              <Text style={styles.reviewerTime}>
-                {formatWorkerCheckTime(currentWorker?.timeKey || 'time0945', t)}
-              </Text>
+          {/* Section: REVIEWED BY (Reviewer Info) */}
+          <View style={styles.reviewerCard}>
+            <View style={styles.reviewerAvatar}>
+              <Text style={styles.reviewerInitials}>{reviewerInitials}</Text>
+            </View>
+            <View style={styles.reviewerInfo}>
+              <Text style={styles.reviewerLabel}>REVIEWED BY</Text>
+              <Text style={styles.reviewerName}>{reviewerName}</Text>
+              <Text style={styles.reviewerTime}>{timeDisplay}</Text>
             </View>
           </View>
         </ScrollView>
 
+        {/* Bottom Action Bar */}
         <View style={styles.actionBar}>
           <Pressable
             accessibilityRole="button"
@@ -368,178 +394,52 @@ export function SubmissionDetailsActionRequiredScreen() {
               size={18}
               weight="bold"
             />
-            <Text style={styles.primaryButtonText}>{t('detailScreen.fixAndResubmit')}</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.textPressed]}>
-            <Text style={styles.secondaryButtonText}>{t('detailScreen.viewOriginal')}</Text>
+            <Text style={styles.primaryButtonText}>
+              {t('detailScreen.fixAndResubmit', { defaultValue: 'Fix & Resubmit' })}
+            </Text>
           </Pressable>
         </View>
+
+        {/* Fullscreen Photo Modal */}
+        <Modal
+          animationType="fade"
+          onRequestClose={() => setSelectedPhoto(null)}
+          transparent={true}
+          visible={selectedPhoto !== null}>
+          <View style={styles.photoModalOverlay}>
+            <Pressable
+              onPress={() => setSelectedPhoto(null)}
+              style={styles.photoModalBackdrop}
+            />
+            <View style={styles.photoModalContent}>
+              <View style={styles.photoModalHeader}>
+                <Text style={styles.photoModalTitle}>{selectedPhoto?.label}</Text>
+                <Pressable
+                  accessibilityLabel="Close photo"
+                  accessibilityRole="button"
+                  onPress={() => setSelectedPhoto(null)}
+                  style={styles.photoModalCloseButton}>
+                  <Icon
+                    color={colors.white}
+                    name={{ ios: 'xmark', android: 'close', web: 'close' }}
+                    size={22}
+                  />
+                </Pressable>
+              </View>
+              {selectedPhoto ? (
+                <Image
+                  contentFit="contain"
+                  source={{ uri: selectedPhoto.uri }}
+                  style={styles.modalFullImage}
+                />
+              ) : null}
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
   );
 }
-
-function CompactWorkerRow({ worker }: { worker: WorkerDetail }) {
-  const { t } = useTranslation('submission');
-
-  return (
-    <View style={styles.workerRow}>
-      <View style={styles.workerAvatar}>
-        <Text style={styles.workerAvatarText}>W{worker.sequenceNo}</Text>
-      </View>
-      <View style={styles.workerCopy}>
-        <Text style={styles.workerName}>{t(worker.name)}</Text>
-        <Text numberOfLines={1} style={styles.workerMeta}>
-          {t('detailScreen.frontBackVerified')} - {t(worker.role)}
-        </Text>
-      </View>
-      <StatusPill status={worker.status} />
-    </View>
-  );
-}
-
-function UnsafeWorkerCard({ worker }: { worker: WorkerDetail }) {
-  const { t } = useTranslation('submission');
-
-  const issueText = worker.issue
-    ? worker.issue.startsWith('detailScreen.')
-      ? t(worker.issue)
-      : worker.issue
-    : null;
-
-  return (
-    <View style={styles.unsafeWorkerCard}>
-      <View style={styles.unsafeWorkerHeader}>
-        <View style={styles.workerIdentity}>
-          <View style={styles.workerAvatarWarning}>
-            <Text style={styles.workerAvatarWarningText}>W{worker.sequenceNo}</Text>
-          </View>
-          <View style={styles.workerCopy}>
-            <Text style={styles.workerName}>
-              {worker.name.startsWith('detailScreen.') ? t(worker.name) : worker.name}
-            </Text>
-            {issueText ? (
-              <Text numberOfLines={1} style={styles.workerIssue}>
-                {issueText}
-              </Text>
-            ) : null}
-          </View>
-        </View>
-        <StatusPill status={worker.status} />
-      </View>
-
-      <View style={styles.photoGrid}>
-        <EvidencePhoto label="FRONT" source={worker.front} />
-        <EvidencePhoto flagged label="BACK - FLAG" source={worker.back} />
-      </View>
-
-      <View style={styles.reviewerNote}>
-        <View style={styles.reviewerNoteTitleRow}>
-          <Icon
-            color={colors.warning}
-            name={{ ios: 'text.bubble.fill', android: 'rate_review', web: 'rate_review' }}
-            size={16}
-            weight="bold"
-          />
-          <Text style={styles.reviewerNoteTitle}>{t('detailScreen.reviewerNote')}</Text>
-        </View>
-        <Text style={styles.reviewerNoteText}>
-          {worker.reviewerNote || t('detailScreen.reviewerNoteBody')}
-        </Text>
-        {worker.unsafeReasons && worker.unsafeReasons.length > 0 ? (
-          <Text style={styles.noteTags}>{worker.unsafeReasons.join(' · ')}</Text>
-        ) : (
-          <Text style={styles.noteTags}>{t('detailScreen.noteTags')}</Text>
-        )}
-      </View>
-    </View>
-  );
-}
-
-function EvidencePhoto({
-  flagged,
-  label,
-  source,
-}: {
-  flagged?: boolean;
-  label: string;
-  source?: ImageSource;
-}) {
-  return (
-    <View style={[styles.photoBox, flagged && styles.photoBoxFlagged]}>
-      {source ? <Image contentFit="cover" source={source} style={styles.fullImage} /> : null}
-      <View style={[styles.imageShade, flagged && styles.flagShade]} />
-      <Text style={[styles.photoBadge, flagged && styles.photoBadgeFlagged]}>{label}</Text>
-      <View style={styles.zoomButton}>
-        <Icon
-          color={colors.white}
-          name={{ ios: 'arrow.up.left.and.arrow.down.right', android: 'fullscreen', web: 'fullscreen' }}
-          size={15}
-        />
-      </View>
-      {flagged ? (
-        <View style={styles.inspectBadge}>
-          <Icon
-            color={colors.errorContainer}
-            name={{
-              ios: 'exclamationmark.triangle.fill',
-              android: 'warning',
-              web: 'warning',
-            }}
-            size={14}
-            weight="bold"
-          />
-          <Text style={styles.inspectText}>Inspect D-ring</Text>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function StatusPill({ status }: { status: WorkerStatus }) {
-  const { t } = useTranslation('submission');
-  const isSafe = status === 'safe';
-
-  return (
-    <View style={[styles.statusPill, isSafe ? styles.safePill : styles.unsafePill]}>
-      <Icon
-        color={isSafe ? colors.success : colors.error}
-        name={
-          isSafe
-            ? { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }
-            : { ios: 'exclamationmark.triangle.fill', android: 'error', web: 'error' }
-        }
-        size={14}
-        weight="bold"
-      />
-      <Text style={[styles.statusPillText, isSafe ? styles.safeText : styles.errorText]}>
-        {t(`detailScreen.status.${status}`)}
-      </Text>
-    </View>
-  );
-}
-
-const colors = {
-  background: '#f9f9ff',
-  border: '#c0c7d5',
-  error: '#ba1a1a',
-  errorContainer: '#ffdad6',
-  primary: '#005cad',
-  primaryContainer: '#0075d8',
-  success: '#16A34A',
-  surface: '#ffffff',
-  surfaceContainer: '#ebedf7',
-  surfaceContainerHigh: '#e5e8f1',
-  surfaceContainerLow: '#f1f3fd',
-  text: '#181c22',
-  textMuted: '#404753',
-  textSubtle: '#717785',
-  warning: '#984300',
-  warningContainer: '#ffdbca',
-  white: '#ffffff',
-};
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -564,21 +464,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surfaceContainerLow,
     borderRadius: 999,
-    height: 48,
+    height: 44,
     justifyContent: 'center',
-    width: 48,
+    width: 44,
   },
   headerCopy: {
     alignItems: 'center',
     flex: 1,
     minWidth: 0,
+    paddingHorizontal: 8,
   },
   headerEyebrow: {
     color: colors.textSubtle,
     fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0,
-    lineHeight: 14,
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
   headerTitle: {
@@ -592,17 +492,19 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: 16,
-    paddingBottom: 128,
+    paddingBottom: 140,
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 12,
   },
   metaCard: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(192, 199, 213, 0.4)',
+    borderRadius: 14,
+    borderWidth: 1,
     padding: 14,
     shadowColor: '#000000',
     shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowRadius: 6,
   },
   metaTopRow: {
@@ -620,631 +522,358 @@ const styles = StyleSheet.create({
   },
   metaTitle: {
     color: colors.text,
-    flex: 1,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
-    lineHeight: 18,
-  },
-  idChip: {
-    backgroundColor: colors.surfaceContainerHigh,
-    borderRadius: 999,
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-    lineHeight: 14,
-    overflow: 'hidden',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
   },
   metaDivider: {
     backgroundColor: colors.surfaceContainer,
     height: 1,
-    marginVertical: 8,
+    marginVertical: 10,
   },
   metaBottomRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8,
     justifyContent: 'space-between',
   },
   submittedBy: {
     alignItems: 'center',
-    flex: 1,
     flexDirection: 'row',
-    gap: 5,
-    minWidth: 0,
+    gap: 6,
   },
   metaSubtext: {
     color: colors.textMuted,
-    flex: 1,
-    fontSize: 11,
-    fontWeight: '600',
-    lineHeight: 14,
+    fontSize: 12,
   },
   metaTime: {
-    color: colors.textSubtle,
-    fontSize: 11,
-    fontWeight: '500',
-    lineHeight: 14,
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
   },
-  statusBanner: {
-    backgroundColor: colors.warningContainer,
+  alertBanner: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(186, 26, 26, 0.08)',
+    borderColor: 'rgba(186, 26, 26, 0.25)',
     borderRadius: 12,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: 12,
-    padding: 16,
-    shadowColor: '#984300',
-    shadowOffset: { height: 3, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+    padding: 14,
   },
-  statusIcon: {
+  alertIconCircle: {
     alignItems: 'center',
-    backgroundColor: 'rgba(152, 67, 0, 0.14)',
+    backgroundColor: 'rgba(186, 26, 26, 0.12)',
     borderRadius: 999,
-    height: 40,
+    height: 38,
     justifyContent: 'center',
-    width: 40,
+    width: 38,
   },
-  statusCopy: {
+  alertTextContainer: {
     flex: 1,
-    minWidth: 0,
   },
-  statusTitle: {
-    color: '#331200',
-    fontSize: 24,
-    fontWeight: '800',
-    lineHeight: 30,
+  alertTitle: {
+    color: colors.error,
+    fontSize: 15,
+    fontWeight: '700',
   },
-  statusMessage: {
-    color: '#763300',
-    fontSize: 14,
-    lineHeight: 20,
+  alertLocation: {
+    color: '#7f1d1d',
+    fontSize: 12,
     marginTop: 2,
   },
-  card: {
+  sectionCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderColor: 'rgba(192, 199, 213, 0.4)',
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
     padding: 16,
     shadowColor: '#000000',
     shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 7,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
   },
-  cardHeader: {
+  sectionHeader: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8,
     justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  titleRow: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-    minWidth: 0,
   },
   sectionTitle: {
-    color: colors.text,
-    fontSize: 18,
+    color: colors.textSubtle,
+    fontSize: 11,
     fontWeight: '700',
-    lineHeight: 24,
+    letterSpacing: 0.8,
   },
-  issueCount: {
-    backgroundColor: colors.warningContainer,
-    borderRadius: 999,
-    color: '#763300',
+  violationCountBadge: {
+    color: colors.error,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  photoCountText: {
+    color: colors.textSubtle,
     fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
-    overflow: 'hidden',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
   },
-  issueList: {
-    gap: 10,
+  reasonsGrid: {
+    gap: 8,
   },
-  issueItem: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: 8,
+  reasonItem: {
+    alignItems: 'center',
+    backgroundColor: colors.errorLight,
+    borderColor: colors.errorBorder,
+    borderRadius: 10,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: 12,
-    padding: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  reasonIconBox: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(186, 26, 26, 0.12)',
+    borderRadius: 8,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  reasonCopy: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reasonItemText: {
+    color: '#991b1b',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  reasonStatusTag: {
+    color: colors.error,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  detailedIssuesList: {
+    borderTopColor: colors.surfaceContainer,
+    borderTopWidth: 1,
+    gap: 10,
+    marginTop: 4,
+    paddingTop: 12,
+  },
+  issueItem: {
+    flexDirection: 'row',
+    gap: 10,
   },
   issueNumber: {
     alignItems: 'center',
+    backgroundColor: colors.errorContainer,
     borderRadius: 999,
-    height: 24,
+    height: 22,
     justifyContent: 'center',
-    marginTop: 2,
-    width: 24,
-  },
-  issueNumberError: {
-    backgroundColor: 'rgba(186, 26, 26, 0.14)',
-  },
-  issueNumberWarning: {
-    backgroundColor: 'rgba(152, 67, 0, 0.14)',
+    width: 22,
   },
   issueNumberText: {
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 14,
-  },
-  issueNumberTextError: {
     color: colors.error,
+    fontSize: 12,
+    fontWeight: '700',
   },
-  issueNumberTextWarning: {
-    color: colors.warning,
-  },
-  issueCopy: {
+  issueBody: {
     flex: 1,
-    minWidth: 0,
+    gap: 4,
   },
   issueTitleRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8,
     justifyContent: 'space-between',
   },
   issueTitle: {
     color: colors.text,
-    flex: 1,
     fontSize: 13,
-    fontWeight: '800',
-    lineHeight: 18,
-  },
-  severity: {
-    fontSize: 11,
     fontWeight: '700',
-    lineHeight: 14,
   },
-  errorText: {
+  criticalChip: {
+    backgroundColor: colors.errorContainer,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  criticalChipText: {
     color: colors.error,
-  },
-  safeText: {
-    color: colors.success,
-  },
-  warningText: {
-    color: colors.warning,
+    fontSize: 9,
+    fontWeight: '700',
   },
   issueMessage: {
     color: colors.textMuted,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
   },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 8,
+    marginTop: 2,
   },
   tag: {
     backgroundColor: colors.surfaceContainer,
-    borderRadius: 999,
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-    lineHeight: 14,
-    overflow: 'hidden',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  workerSection: {
-    gap: 10,
-  },
-  sectionHeaderInline: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 2,
-  },
-  workerTitleWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  inlineSubtext: {
-    color: colors.textSubtle,
-    fontSize: 11,
-    fontWeight: '600',
-    lineHeight: 14,
-  },
-  historyButton: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 2,
+    borderRadius: 4,
     paddingHorizontal: 6,
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
-  historyText: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
+  tagText: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
   },
-  workerList: {
+  notesBox: {
+    backgroundColor: '#f9fafb',
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
     gap: 10,
-  },
-  workerRow: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'space-between',
     padding: 14,
-    shadowColor: '#000000',
-    shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 7,
   },
-  workerAvatar: {
-    alignItems: 'center',
-    backgroundColor: '#d6e3ff',
-    borderRadius: 999,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
+  quoteIconWrap: {
+    marginTop: 2,
   },
-  workerAvatarText: {
-    color: '#001b3d',
-    fontSize: 12,
-    fontWeight: '800',
-    lineHeight: 16,
-  },
-  workerCopy: {
+  notesText: {
+    color: '#1f2937',
     flex: 1,
-    minWidth: 0,
+    fontSize: 14,
+    fontStyle: 'italic',
+    lineHeight: 20,
   },
-  workerName: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-  workerMeta: {
-    color: colors.textSubtle,
-    fontSize: 11,
-    fontWeight: '500',
-    lineHeight: 14,
-  },
-  statusPill: {
-    alignItems: 'center',
-    borderRadius: 999,
-    flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  safePill: {
-    backgroundColor: 'rgba(22, 163, 74, 0.1)',
-  },
-  unsafePill: {
-    backgroundColor: 'rgba(186, 26, 26, 0.1)',
-  },
-  statusPillText: {
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 14,
-  },
-  unsafeWorkerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000000',
-    shadowOffset: { height: 5, width: 0 },
-    shadowOpacity: 0.09,
-    shadowRadius: 11,
-  },
-  unsafeWorkerHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  workerIdentity: {
-    alignItems: 'center',
-    flex: 1,
+  photosRow: {
     flexDirection: 'row',
     gap: 12,
-    minWidth: 0,
   },
-  workerAvatarWarning: {
-    alignItems: 'center',
-    backgroundColor: colors.warningContainer,
-    borderRadius: 999,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  workerAvatarWarningText: {
-    color: '#331200',
-    fontSize: 12,
-    fontWeight: '800',
-    lineHeight: 16,
-  },
-  workerIssue: {
-    color: colors.error,
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 14,
-  },
-  photoGrid: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
-  },
-  photoBox: {
-    aspectRatio: 1,
+  photoCard: {
     backgroundColor: colors.surfaceContainer,
-    borderRadius: 8,
+    borderRadius: 12,
     flex: 1,
+    height: 150,
     overflow: 'hidden',
+    position: 'relative',
   },
-  photoBoxFlagged: {
-    borderColor: 'rgba(186, 26, 26, 0.42)',
-    borderWidth: 2,
+  photoCardFlagged: {
+    borderColor: colors.error,
+    borderWidth: 1.5,
   },
-  fullImage: {
+  photoBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 4,
+    left: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    position: 'absolute',
+    top: 8,
+    zIndex: 2,
+  },
+  photoBadgeFlagged: {
+    backgroundColor: colors.error,
+  },
+  photoBadgeText: {
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  photoBadgeTextFlagged: {
+    color: colors.white,
+  },
+  photoImg: {
     height: '100%',
     width: '100%',
   },
-  imageShade: {
-    backgroundColor: 'rgba(0, 0, 0, 0.14)',
+  flagShade: {
+    backgroundColor: 'rgba(186, 26, 26, 0.1)',
     bottom: 0,
     left: 0,
     position: 'absolute',
     right: 0,
     top: 0,
   },
-  flagShade: {
-    backgroundColor: 'rgba(186, 26, 26, 0.22)',
-  },
-  photoBadge: {
-    backgroundColor: 'rgba(0, 0, 0, 0.56)',
-    borderRadius: 4,
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: '700',
+  inspectBadge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 6,
+    bottom: 8,
+    flexDirection: 'row',
+    gap: 4,
     left: 8,
-    lineHeight: 14,
-    overflow: 'hidden',
-    paddingHorizontal: 7,
+    paddingHorizontal: 6,
     paddingVertical: 3,
     position: 'absolute',
-    top: 8,
+    zIndex: 2,
   },
-  photoBadgeFlagged: {
-    backgroundColor: colors.error,
+  inspectBadgeText: {
+    color: colors.error,
+    fontSize: 10,
+    fontWeight: '700',
   },
   zoomButton: {
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     borderRadius: 999,
     bottom: 8,
-    height: 28,
+    height: 24,
     justifyContent: 'center',
     position: 'absolute',
     right: 8,
-    width: 28,
+    width: 24,
+    zIndex: 2,
   },
-  inspectBadge: {
+  reviewerCard: {
     alignItems: 'center',
-    bottom: 9,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(192, 199, 213, 0.4)',
+    borderRadius: 14,
+    borderWidth: 1,
     flexDirection: 'row',
-    gap: 4,
-    left: 8,
-    position: 'absolute',
-  },
-  inspectText: {
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 14,
-  },
-  reviewerNote: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: 8,
-    gap: 6,
-    padding: 12,
-  },
-  reviewerNoteTitleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  reviewerNoteTitle: {
-    color: colors.warning,
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 14,
-  },
-  reviewerNoteText: {
-    color: colors.textMuted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  noteTags: {
-    color: colors.textSubtle,
-    fontSize: 11,
-    fontWeight: '600',
-    lineHeight: 14,
-  },
-  evidenceHeader: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: 10,
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  needsAttentionChip: {
-    backgroundColor: colors.warningContainer,
-    borderRadius: 999,
-    color: '#331200',
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 14,
-    overflow: 'hidden',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  evidenceGrid: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
-  },
-  evidencePhoto: {
-    aspectRatio: 1.56,
-    backgroundColor: colors.surfaceContainer,
-    borderRadius: 8,
-    flex: 1,
-    overflow: 'hidden',
-  },
-  evidenceLabel: {
-    alignItems: 'center',
-    bottom: 8,
-    flexDirection: 'row',
-    gap: 5,
-    left: 8,
-    position: 'absolute',
-  },
-  evidenceLabelText: {
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 14,
-  },
-  missingEvidence: {
-    alignItems: 'center',
-    aspectRatio: 1.56,
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: 8,
-    flex: 1,
-    justifyContent: 'center',
-    padding: 10,
-  },
-  missingIcon: {
-    alignItems: 'center',
-    backgroundColor: colors.warningContainer,
-    borderRadius: 999,
-    height: 30,
-    justifyContent: 'center',
-    marginBottom: 5,
-    width: 30,
-  },
-  missingTitle: {
-    color: colors.text,
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 14,
-    textAlign: 'center',
-  },
-  missingText: {
-    color: colors.warning,
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 14,
-    textAlign: 'center',
-  },
-  infoCallout: {
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(255, 219, 202, 0.42)',
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 8,
-    padding: 10,
-  },
-  infoText: {
-    color: colors.textMuted,
-    flex: 1,
-    fontSize: 11,
-    fontWeight: '600',
-    lineHeight: 16,
-  },
-  decisionCard: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: 12,
-    padding: 16,
-  },
-  decisionLabel: {
-    color: colors.textSubtle,
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 14,
-    textTransform: 'uppercase',
-  },
-  decisionQuote: {
-    borderLeftColor: colors.primary,
-    borderLeftWidth: 2,
-    color: colors.text,
-    fontSize: 14,
-    fontStyle: 'italic',
-    lineHeight: 20,
-    marginBottom: 12,
-    marginTop: 6,
-    paddingLeft: 10,
-  },
-  reviewerRow: {
-    alignItems: 'center',
-    borderTopColor: colors.surfaceContainer,
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    gap: 10,
-    paddingTop: 10,
+    gap: 12,
+    padding: 14,
   },
   reviewerAvatar: {
     alignItems: 'center',
-    backgroundColor: '#d5e3ff',
+    backgroundColor: '#00376f',
     borderRadius: 999,
-    height: 30,
+    height: 42,
     justifyContent: 'center',
-    width: 30,
+    width: 42,
   },
   reviewerInitials: {
-    color: '#001c3b',
-    fontSize: 11,
-    fontWeight: '900',
-    lineHeight: 14,
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: '700',
   },
-  reviewerCopy: {
+  reviewerInfo: {
     flex: 1,
-    minWidth: 0,
+  },
+  reviewerLabel: {
+    color: colors.textSubtle,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   reviewerName: {
     color: colors.text,
-    fontSize: 12,
-    fontWeight: '800',
-    lineHeight: 16,
-  },
-  reviewerRole: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '500',
-    lineHeight: 14,
+    fontSize: 14,
+    fontWeight: '700',
   },
   reviewerTime: {
-    color: colors.textSubtle,
-    fontSize: 11,
-    fontWeight: '500',
-    lineHeight: 14,
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
   },
   actionBar: {
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
-    borderTopColor: 'rgba(192, 199, 213, 0.46)',
+    backgroundColor: colors.surface,
+    borderTopColor: colors.surfaceContainer,
     borderTopWidth: 1,
     bottom: 0,
-    gap: 6,
+    gap: 10,
     left: 0,
-    paddingBottom: 14,
+    maxWidth: 448,
+    paddingBottom: 24,
     paddingHorizontal: 20,
     paddingTop: 12,
     position: 'absolute',
     right: 0,
-    shadowColor: '#000000',
-    shadowOffset: { height: -3, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
   },
   primaryButton: {
     alignItems: 'center',
@@ -1252,32 +881,57 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     flexDirection: 'row',
     gap: 8,
+    height: 48,
     justifyContent: 'center',
-    minHeight: 48,
-    paddingHorizontal: 20,
+    width: '100%',
   },
   primaryButtonText: {
     color: colors.white,
-    fontSize: 13,
-    fontWeight: '800',
-    lineHeight: 18,
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    minHeight: 28,
-    justifyContent: 'center',
-  },
-  secondaryButtonText: {
-    color: colors.primary,
-    fontSize: 11,
+    fontSize: 15,
     fontWeight: '700',
-    lineHeight: 14,
+  },
+  photoModalOverlay: {
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
+  photoModalBackdrop: {
+    ...StyleSheet.absoluteFill,
+  },
+  photoModalContent: {
+    backgroundColor: '#111827',
+    borderRadius: 16,
+    overflow: 'hidden',
+    zIndex: 10,
+  },
+  photoModalHeader: {
+    alignItems: 'center',
+    borderBottomColor: '#1f2937',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  photoModalTitle: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  photoModalCloseButton: {
+    padding: 4,
+  },
+  modalFullImage: {
+    height: 360,
+    width: '100%',
   },
   pressed: {
-    opacity: 0.76,
-    transform: [{ scale: 0.98 }],
+    opacity: 0.85,
   },
   textPressed: {
-    opacity: 0.62,
+    opacity: 0.6,
   },
 });
+
+export default SubmissionDetailsActionRequiredScreen;

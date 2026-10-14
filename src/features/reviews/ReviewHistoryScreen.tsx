@@ -1,13 +1,23 @@
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import {
+  Animated,
+  Modal,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
 import {
+  formatReviewTime,
   ReviewItem,
   unsafeReasonLabels,
   useReviews,
@@ -47,6 +57,52 @@ export function ReviewHistoryScreen() {
   // 2 Tabs: "Safe reviewed" and "Unsafe reviewed"
   const [activeTab, setActiveTab] = useState<'safe' | 'unsafe'>('safe');
   const [selectedUnsafeItem, setSelectedUnsafeItem] = useState<ReviewItem | null>(null);
+
+  const translateY = useRef(new Animated.Value(0)).current;
+
+  function closeModal() {
+    Animated.timing(translateY, {
+      toValue: 600,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      setSelectedUnsafeItem(null);
+    });
+  }
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 1,
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => gestureState.dy > 1,
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          translateY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // Any downward drag or tap slides down and closes. NEVER bounce back!
+        if (gestureState.dy >= 0 || gestureState.vy >= 0) {
+          closeModal();
+        } else {
+          Animated.timing(translateY, {
+            toValue: 0,
+            duration: 80,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        closeModal();
+      },
+    })
+  ).current;
+
+  function openUnsafeModal(item: ReviewItem) {
+    translateY.setValue(0);
+    setSelectedUnsafeItem(item);
+  }
 
   const displayedList = activeTab === 'safe' ? safeReviews : unsafeReviews;
 
@@ -126,7 +182,7 @@ export function ReviewHistoryScreen() {
                     key={item.id}
                     onPress={() => {
                       if (isUnsafe) {
-                        setSelectedUnsafeItem(item);
+                        openUnsafeModal(item);
                       }
                     }}
                     style={({ pressed }) => [
@@ -168,11 +224,7 @@ export function ReviewHistoryScreen() {
                         </View>
                       </View>
                       <Text style={styles.time}>
-                        {item.timeKey
-                          ? t(`internal.reviewItems.${item.timeKey}`, {
-                              defaultValue: item.timeDisplay,
-                            })
-                          : item.timeDisplay}
+                        {formatReviewTime(item)}
                       </Text>
                     </View>
 
@@ -290,23 +342,31 @@ export function ReviewHistoryScreen() {
         {/* Unsafe Details Modal: Shows why reviewer marked it unsafe */}
         <Modal
           animationType="slide"
-          onRequestClose={() => setSelectedUnsafeItem(null)}
+          onRequestClose={closeModal}
           transparent={true}
           visible={selectedUnsafeItem !== null}>
           <View style={detailsStyles.overlay}>
             <Pressable
-              onPress={() => setSelectedUnsafeItem(null)}
+              onPress={closeModal}
               style={detailsStyles.backdrop}
             />
 
-            <View style={detailsStyles.container}>
-              {/* Drag Handle */}
-              <View style={detailsStyles.dragHandleContainer}>
+            <Animated.View
+              style={[
+                detailsStyles.container,
+                { transform: [{ translateY }] },
+              ]}>
+              {/* Drag Handle with PanResponder to pull down and dismiss */}
+              <View
+                {...panResponder.panHandlers}
+                style={detailsStyles.dragHandleContainer}>
                 <View style={detailsStyles.dragHandle} />
               </View>
 
-              {/* Modal Header */}
-              <View style={detailsStyles.modalHeader}>
+              {/* Modal Header with PanResponder */}
+              <View
+                {...panResponder.panHandlers}
+                style={detailsStyles.modalHeader}>
                 <View>
                   <Text style={detailsStyles.modalTitle}>Unsafe Review Details</Text>
                   <Text style={detailsStyles.modalSubtitle}>
@@ -316,7 +376,7 @@ export function ReviewHistoryScreen() {
                 <Pressable
                   accessibilityLabel="Close"
                   accessibilityRole="button"
-                  onPress={() => setSelectedUnsafeItem(null)}
+                  onPress={closeModal}
                   style={detailsStyles.closeButton}>
                   <Icon
                     color={reviewerColors.textMuted}
@@ -339,7 +399,7 @@ export function ReviewHistoryScreen() {
                   <View style={detailsStyles.alertTextContainer}>
                     <Text style={detailsStyles.alertTitle}>Marked as UNSAFE by Reviewer</Text>
                     <Text style={detailsStyles.alertLocation}>
-                      {selectedUnsafeItem?.location} • {selectedUnsafeItem?.timeDisplay}
+                      {selectedUnsafeItem?.location} • {selectedUnsafeItem ? formatReviewTime(selectedUnsafeItem) : ''}
                     </Text>
                   </View>
                 </View>
@@ -414,17 +474,7 @@ export function ReviewHistoryScreen() {
                   </View>
                 </View>
               </ScrollView>
-
-              {/* Close Footer Button */}
-              <View style={detailsStyles.modalFooter}>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setSelectedUnsafeItem(null)}
-                  style={detailsStyles.dismissButton}>
-                  <Text style={detailsStyles.dismissButtonText}>Dismiss</Text>
-                </Pressable>
-              </View>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
       </View>
@@ -712,36 +762,43 @@ const styles = StyleSheet.create({
 
 const detailsStyles = StyleSheet.create({
   overlay: {
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'transparent',
     flex: 1,
     justifyContent: 'flex-end',
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
+    backgroundColor: 'transparent',
   },
   container: {
+    alignSelf: 'center',
     backgroundColor: '#ffffff',
+    borderColor: '#e5e7eb',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    elevation: 20,
     maxHeight: '80%',
-    width: '100%',
     maxWidth: 448,
-    alignSelf: 'center',
-    shadowColor: '#000',
+    paddingBottom: 24,
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 8,
+    shadowRadius: 12,
+    width: '100%',
   },
   dragHandleContainer: {
     alignItems: 'center',
-    paddingVertical: 10,
+    justifyContent: 'center',
+    paddingVertical: 14,
+    width: '100%',
   },
   dragHandle: {
-    backgroundColor: '#d1d5db',
-    borderRadius: 2,
-    height: 4,
-    width: 40,
+    backgroundColor: '#cbd5e1',
+    borderRadius: 999,
+    height: 5,
+    width: 48,
   },
   modalHeader: {
     borderBottomColor: '#f3f4f6',
@@ -873,25 +930,6 @@ const detailsStyles = StyleSheet.create({
   photoImg: {
     height: '100%',
     width: '100%',
-  },
-  modalFooter: {
-    borderTopColor: '#f3f4f6',
-    borderTopWidth: 1,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 20,
-  },
-  dismissButton: {
-    alignItems: 'center',
-    backgroundColor: '#f3f4f6',
-    borderRadius: 10,
-    height: 46,
-    justifyContent: 'center',
-  },
-  dismissButtonText: {
-    color: '#374151',
-    fontSize: 15,
-    fontWeight: '600',
   },
 });
 

@@ -1,9 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   Modal,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
-import { markWorkerSafe } from '@/features/submissions/services/workerChecks.service';
+import { markWorkerSafe, markWorkerUnsafe } from '@/features/submissions/services/workerChecks.service';
 import {
   markReviewReviewed,
   markReviewUnsafe,
@@ -132,8 +134,49 @@ export function ReviewDetailScreen() {
     ]);
   }
 
+  const translateY = useRef(new Animated.Value(0)).current;
+
+  function closeModal() {
+    Animated.timing(translateY, {
+      toValue: 600,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      setIsUnsafeModalVisible(false);
+    });
+  }
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 1,
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => gestureState.dy > 1,
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          translateY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // Any downward drag or tap immediately slides down and closes. NEVER bounce back!
+        if (gestureState.dy >= 0 || gestureState.vy >= 0) {
+          closeModal();
+        } else {
+          Animated.timing(translateY, {
+            toValue: 0,
+            duration: 80,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        closeModal();
+      },
+    })
+  ).current;
+
   function handleUnsafeClick() {
-    // Open the bottom sheet modal
+    translateY.setValue(0);
     setIsUnsafeModalVisible(true);
   }
 
@@ -141,6 +184,7 @@ export function ReviewDetailScreen() {
     if (!isConfirmActive) return;
 
     markReviewUnsafe(submissionId || 'rev-01', selectedReasons, otherReasonText);
+    markWorkerUnsafe(submissionId || 'w135', selectedReasons, otherReasonText, 'Sarah Jenkins');
 
     setIsUnsafeModalVisible(false);
     setSelectedReasons([]);
@@ -330,33 +374,34 @@ export function ReviewDetailScreen() {
 
         {/* Unsafe Reason Bottom Sheet Modal */}
         <Modal
-          animationType="fade"
-          onRequestClose={() => setIsUnsafeModalVisible(false)}
+          animationType="slide"
+          onRequestClose={closeModal}
           transparent={true}
           visible={isUnsafeModalVisible}>
           <View style={modalStyles.overlay}>
-            {/* Blurred background construction worker photo */}
-            <Image
-              blurRadius={10}
-              contentFit="cover"
-              source={assets.captureRecentPhoto}
-              style={StyleSheet.absoluteFill}
-            />
-            {/* Dark semi-transparent overlay (bg-black/40) */}
+            {/* Transparent backdrop - tapping outside dismisses */}
             <Pressable
-              onPress={() => setIsUnsafeModalVisible(false)}
-              style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0, 0, 0, 0.4)' }]}
+              onPress={closeModal}
+              style={modalStyles.backdrop}
             />
 
-            {/* Bottom Sheet Container (rounded-t-3xl, covers ~70% of screen) */}
-            <View style={modalStyles.sheetContainer}>
-              {/* Drag Handle */}
-              <View style={modalStyles.dragHandleContainer}>
+            {/* Bottom Sheet Container (covers ~70% of screen) */}
+            <Animated.View
+              style={[
+                modalStyles.sheetContainer,
+                { transform: [{ translateY }] },
+              ]}>
+              {/* Drag Handle with PanResponder to pull down and dismiss */}
+              <View
+                {...panResponder.panHandlers}
+                style={modalStyles.dragHandleContainer}>
                 <View style={modalStyles.dragHandle} />
               </View>
 
-              {/* Header Section */}
-              <View style={modalStyles.header}>
+              {/* Header Section with PanResponder */}
+              <View
+                {...panResponder.panHandlers}
+                style={modalStyles.header}>
                 <Text style={modalStyles.title}>Why is this unsafe?</Text>
                 <Text style={modalStyles.subtitle}>Select all that apply</Text>
               </View>
@@ -449,7 +494,7 @@ export function ReviewDetailScreen() {
                   </Text>
                 </Pressable>
               </View>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
       </View>
@@ -676,33 +721,43 @@ const styles = StyleSheet.create({
 
 const modalStyles = StyleSheet.create({
   overlay: {
+    backgroundColor: 'transparent',
     flex: 1,
     justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'transparent',
   },
   sheetContainer: {
     alignSelf: 'center',
     backgroundColor: '#ffffff',
+    borderColor: '#e5e7eb',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    elevation: 8,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    elevation: 20,
     maxHeight: '75%',
     maxWidth: 448,
     paddingBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
-    shadowRadius: 10,
+    shadowRadius: 12,
     width: '100%',
   },
   dragHandleContainer: {
     alignItems: 'center',
-    paddingVertical: 10,
+    justifyContent: 'center',
+    paddingVertical: 14,
+    width: '100%',
   },
   dragHandle: {
-    backgroundColor: '#d1d5db',
-    borderRadius: 2,
-    height: 4,
-    width: 40,
+    backgroundColor: '#cbd5e1',
+    borderRadius: 999,
+    height: 5,
+    width: 48,
   },
   header: {
     paddingBottom: 12,
@@ -772,7 +827,7 @@ const modalStyles = StyleSheet.create({
     marginTop: 2,
   },
   otherInput: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#ffffff',
     borderColor: '#e5e7eb',
     borderRadius: 8,
     borderWidth: 1,

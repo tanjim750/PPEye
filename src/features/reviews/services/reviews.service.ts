@@ -27,6 +27,15 @@ export const unsafeReasonLabels: Record<string, string> = {
   shoes: 'Safety shoes',
 };
 
+export const reasonIcons: Record<string, { ios: string; android: string; web: string }> = {
+  anchorage: { ios: 'anchor', android: 'anchor', web: 'anchor' },
+  harness: { ios: 'figure.stand', android: 'accessibility_new', web: 'accessibility_new' },
+  helmet: { ios: 'wrench.and.screwdriver', android: 'construction', web: 'construction' },
+  lanyard: { ios: 'link', android: 'link', web: 'link' },
+  other: { ios: 'ellipsis', android: 'more_horiz', web: 'more_horiz' },
+  shoes: { ios: 'shoeprints.fill', android: 'directions_walk', web: 'directions_walk' },
+};
+
 const now = Date.now();
 const minute = 60 * 1000;
 const hour = 60 * minute;
@@ -311,4 +320,41 @@ export function useReviews() {
     safeReviews: safe,
     unsafeReviews: unsafe,
   };
+}
+
+export function formatReviewTime(item: { timestamp?: number; timeDisplay?: string }): string {
+  if (item.timestamp && typeof item.timestamp === 'number' && !isNaN(item.timestamp)) {
+    const date = new Date(item.timestamp);
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const formattedHours = hours < 10 ? `0${hours}` : `${hours}`;
+    return `${formattedHours}:${minutes} ${ampm}`;
+  }
+  return item.timeDisplay || '10:42 AM';
+}
+
+export function createOrUpdatePendingReview(data: {
+  location: string;
+  photos: number;
+  workers: number;
+  teamLead?: string;
+}) {
+  const currentNow = Date.now();
+  const newReview: ReviewItem = {
+    avatar: 'RM',
+    id: `rev-${currentNow}`,
+    location: data.location,
+    photos: data.photos || 8,
+    status: 'waiting',
+    teamLead: data.teamLead || 'Rahim Mia · Team Leader',
+    timeDisplay: formatReviewTime({ timestamp: currentNow }),
+    timestamp: currentNow,
+    vendor: 'ABC Telecom',
+    workers: data.workers || 4,
+  };
+  reviews = [newReview, ...reviews];
+  notify();
 }

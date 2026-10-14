@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
-import { useReviews } from '@/features/reviews/services/reviews.service';
+import { formatReviewTime, useReviews } from '@/features/reviews/services/reviews.service';
 
 const reviewerColors = {
   background: '#f9f9ff',
@@ -115,11 +115,7 @@ export function ReviewQueueScreen() {
                       </View>
                     </View>
                     <Text style={styles.time}>
-                      {item.timeKey
-                        ? t(`internal.reviewItems.${item.timeKey}`, {
-                            defaultValue: item.timeDisplay,
-                          })
-                        : item.timeDisplay}
+                      {formatReviewTime(item)}
                     </Text>
                   </View>
 

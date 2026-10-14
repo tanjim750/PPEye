@@ -58,15 +58,25 @@ export function CaptureScreen() {
   const completeCapture = capture.completeCapture;  
 
   const handleDone = useCallback(() => {
-    const completedCaptures = completeCapture();
+    let completedCaptures = completeCapture();
 
-    if (!completedCaptures) {
-      return;
+    if (!completedCaptures || completedCaptures.length === 0) {
+      if (capture.currentWorkerCapture?.frontUri || capture.currentWorkerCapture?.backUri) {
+        completedCaptures = [
+          {
+            sequenceNo: capture.currentWorkerNumber,
+            frontUri: capture.currentWorkerCapture.frontUri || capture.currentWorkerCapture.backUri,
+            backUri: capture.currentWorkerCapture.backUri || capture.currentWorkerCapture.frontUri,
+          },
+        ];
+      } else {
+        return;
+      }
     }
 
     setPendingSubmissionReviewCaptures(completedCaptures);
     router.push("/submission-review" as Href);
-  }, [completeCapture, router]);
+  }, [capture.currentWorkerCapture, capture.currentWorkerNumber, completeCapture, router]);
 
   const exitToHome = useCallback(() => {
     if (isExitingToHomeRef.current) {
@@ -153,7 +163,9 @@ export function CaptureScreen() {
   async function handleCapture() {
     await capture.capturePhoto(async () => {
       if (!cameraRef.current || !isCameraReady) {
-        return undefined;
+        return capture.currentSide === "FRONT"
+          ? "https://lh3.googleusercontent.com/aida-public/AB6AXuDgQU9bHBVHLqpP5L7JengM95PotCLUMm0pYSa5LrM8Tak4Qv7ZN0RbNzGeW5mlq6MGCveBJQQDXEWtSxpzqpzEqzO73hM9VW3OgXi4AkyKod79xg_aPJ9wxOMTPTb6_qUd51H5P1DcSqqEAji7jg9I2Kg465f111W36y-82wOnClR_5LezGuCHcZ0pf1_OvuhGY7GpysiX6hZC7JVN63eZ_gNo4b6GLcrM8yI56LZdN8ToE9jQBAt0"
+          : "https://lh3.googleusercontent.com/aida-public/AB6AXuB-I5Gv4lteN5XsmAXE1_cDPtr_NEzL0F2CWVDwg-sZ1I-sHC0rbP0roxgmqczH7trvuE09iErv3qWPdaBHjcUMQoCkQorKdchMTpc_UUiogIYbMk6JgnOI5qH9IntEebdbZ_cummC-xp7OVKcew1zHrrSby1porfloCpEp9kvEmQQMPGtP2B7Vc8qebXWvsrsMUP_7BXNFUpp_KpYAP-6afKkjDLBTdOpvXOk1EfqXOSazVPOvAIwS";
       }
 
       const photo = await cameraRef.current.takePictureAsync({
@@ -182,9 +194,8 @@ export function CaptureScreen() {
 
   const captureDisabled =
     capture.isCapturing ||
-    !isCameraReady ||
-    !permission?.granted ||
-    isCameraAvailable !== true;
+    (Platform.OS !== "web" &&
+      (!isCameraReady || !permission?.granted || isCameraAvailable !== true));
   const hasCurrentWorkerPreview = Boolean(
     capture.currentWorkerCapture?.frontUri ||
     capture.currentWorkerCapture?.backUri,

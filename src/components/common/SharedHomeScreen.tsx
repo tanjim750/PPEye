@@ -9,7 +9,7 @@ import { assets } from '@/constants/assets';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from '@/hooks/useNavigate';
 import { formatWorkerCheckTime, useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
-import { useReviews } from '@/features/reviews/services/reviews.service';
+import { formatReviewTime, useReviews } from '@/features/reviews/services/reviews.service';
 import { DummyUserRole } from '@/utils/dummy-users';
 import { UserRole } from '@/features/auth/types';
 
@@ -230,7 +230,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                             {t(`external.recent.${item.titleKey}`, { defaultValue: `Worker #${item.workerNumber}` })}
                           </Text>
                           <Text style={vendorStyles.time}>
-                            {formatWorkerCheckTime(item.timeKey, t)}
+                            {formatWorkerCheckTime(item, t)}
                           </Text>
                         </View>
                         <View
@@ -428,11 +428,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                     </View>
                   </View>
                   <Text style={reviewerStyles.time}>
-                    {item.timeKey
-                      ? t(`internal.reviewItems.${item.timeKey}`, {
-                          defaultValue: item.timeDisplay,
-                        })
-                      : item.timeDisplay}
+                    {formatReviewTime(item)}
                   </Text>
                 </View>
 
