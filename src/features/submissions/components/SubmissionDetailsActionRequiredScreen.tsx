@@ -1,10 +1,16 @@
-import { Href, useRouter } from 'expo-router';
+import { Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image, ImageSource } from 'expo-image';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
+import {
+  formatWorkerCheckTime,
+  getWorkerCheckById,
+  resubmitWorkerCheck,
+  WorkerIssue,
+} from '@/features/submissions/services/workerChecks.service';
 
 type WorkerStatus = 'safe' | 'unsafe';
 
@@ -16,6 +22,8 @@ type WorkerDetail = {
   role: string;
   sequenceNo: number;
   status: WorkerStatus;
+  reviewerNote?: string;
+  unsafeReasons?: string[];
 };
 
 type IssueDetail = {
@@ -35,7 +43,7 @@ const workerTwoBack =
 const supportingPhoto =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuDM1AWQuL-6QHryo-dNR2MVY1VYvY3vBWVMl7of8ulRF_ik6eL49ety5FWDvBUZTCEUXu5yqcULmP6KjjM7WkVrg2D_iRe77GvUJJWyGa7vb3--AiT1IptDJ_GzntaGXBLeV8LNfZlW1cURZlmWhEKS3kgK3eUaBUl4WA7KSfMK6QFLdKHkAaKzeDX885fiKX5ifvyiK0W3enHoDTU6R40023Kw1vsgBbYoVeToSPObjGcxCaRi_TFL';
 
-const issues: IssueDetail[] = [
+const fallbackIssues: IssueDetail[] = [
   {
     message: 'detailScreen.issues.workerHarness.message',
     severityKey: 'critical',
@@ -46,38 +54,19 @@ const issues: IssueDetail[] = [
   {
     message: 'detailScreen.issues.firstAidMissing.message',
     severityKey: 'missing',
+    tags: ['detailScreen.tags.firstAid'],
     title: 'detailScreen.issues.firstAidMissing.title',
     tone: 'warning',
   },
 ];
 
-const workers: WorkerDetail[] = [
-  {
-    name: 'detailScreen.workers.worker1.name',
-    role: 'detailScreen.workers.worker1.role',
-    sequenceNo: 1,
-    status: 'safe',
-  },
-  {
-    back: { uri: workerTwoBack },
-    front: { uri: workerTwoFront },
-    issue: 'detailScreen.workers.worker2.issue',
-    name: 'detailScreen.workers.worker2.name',
-    role: 'detailScreen.workers.worker2.role',
-    sequenceNo: 2,
-    status: 'unsafe',
-  },
-  {
-    name: 'detailScreen.workers.worker3.name',
-    role: 'detailScreen.workers.worker3.role',
-    sequenceNo: 3,
-    status: 'safe',
-  },
-];
-
 export function SubmissionDetailsActionRequiredScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ id?: string; workerNumber?: string }>();
   const { t } = useTranslation('submission');
+
+  const workerId = params.id || params.workerNumber || 'w135';
+  const currentWorker = getWorkerCheckById(workerId) || getWorkerCheckById('w135');
 
   function goBack() {
     if (router.canGoBack()) {
@@ -89,8 +78,23 @@ export function SubmissionDetailsActionRequiredScreen() {
   }
 
   function fixAndResubmit() {
-    router.push('/continuous-ppe-capture' as Href);
+    const idToFix = currentWorker?.id || workerId || 'w135';
+    resubmitWorkerCheck(idToFix);
+    router.replace('/history?filter=pending' as Href);
   }
+
+  const displayIssues: IssueDetail[] =
+    currentWorker?.issues && currentWorker.issues.length > 0
+      ? currentWorker.issues
+      : fallbackIssues;
+
+  const reviewerInitials = currentWorker?.reviewerName
+    ? currentWorker.reviewerName
+        .split(' ')
+        .slice(0, 2)
+        .map((n) => n[0])
+        .join('')
+    : 'MH';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -109,7 +113,9 @@ export function SubmissionDetailsActionRequiredScreen() {
             />
           </Pressable>
           <View style={styles.headerCopy}>
-            <Text style={styles.headerEyebrow}>{t('detailScreen.eyebrow')}</Text>
+            <Text style={styles.headerEyebrow}>
+              {currentWorker?.workerNumber ? `SUBMISSION #GAZ-${currentWorker.workerNumber}` : t('detailScreen.eyebrow')}
+            </Text>
             <Text style={styles.headerTitle}>{t('detailScreen.title')}</Text>
           </View>
           <Pressable
@@ -141,10 +147,12 @@ export function SubmissionDetailsActionRequiredScreen() {
                   size={17}
                 />
                 <Text numberOfLines={1} style={styles.metaTitle}>
-                  {t('detailScreen.site')}
+                  {currentWorker?.siteName || t('detailScreen.site')}
                 </Text>
               </View>
-              <Text style={styles.idChip}>{t('detailScreen.submissionId')}</Text>
+              <Text style={styles.idChip}>
+                {`Worker #${currentWorker?.workerNumber || '135'}`}
+              </Text>
             </View>
             <View style={styles.metaDivider} />
             <View style={styles.metaBottomRow}>
@@ -158,7 +166,9 @@ export function SubmissionDetailsActionRequiredScreen() {
                   {t('detailScreen.submittedBy')}
                 </Text>
               </View>
-              <Text style={styles.metaTime}>{t('detailScreen.submittedAt')}</Text>
+              <Text style={styles.metaTime}>
+                {formatWorkerCheckTime(currentWorker?.timeKey || 'time0945', t)}
+              </Text>
             </View>
           </View>
 
@@ -176,7 +186,9 @@ export function SubmissionDetailsActionRequiredScreen() {
               />
             </View>
             <View style={styles.statusCopy}>
-              <Text style={styles.statusTitle}>{t('detailScreen.actionRequired')}</Text>
+              <Text style={styles.statusTitle}>
+                {`Worker #${currentWorker?.workerNumber || '135'} Non-Compliant`}
+              </Text>
               <Text style={styles.statusMessage}>{t('detailScreen.actionRequiredBody')}</Text>
             </View>
           </View>
@@ -191,52 +203,59 @@ export function SubmissionDetailsActionRequiredScreen() {
                 />
                 <Text style={styles.sectionTitle}>{t('detailScreen.itemsToCorrect')}</Text>
               </View>
-              <Text style={styles.issueCount}>{t('detailScreen.issueCount')}</Text>
+              <Text style={styles.issueCount}>
+                {`${displayIssues.length} ${displayIssues.length === 1 ? 'issue' : 'issues'}`}
+              </Text>
             </View>
             <View style={styles.issueList}>
-              {issues.map((issue, index) => (
-                <View key={issue.title} style={styles.issueItem}>
-                  <View
-                    style={[
-                      styles.issueNumber,
-                      issue.tone === 'error' ? styles.issueNumberError : styles.issueNumberWarning,
-                    ]}>
-                    <Text
+              {displayIssues.map((issue, index) => {
+                const issueTitle = issue.title.startsWith('detailScreen.') ? t(issue.title) : issue.title;
+                const issueMessage = issue.message.startsWith('detailScreen.') ? t(issue.message) : issue.message;
+
+                return (
+                  <View key={issue.title + index} style={styles.issueItem}>
+                    <View
                       style={[
-                        styles.issueNumberText,
-                        issue.tone === 'error'
-                          ? styles.issueNumberTextError
-                          : styles.issueNumberTextWarning,
+                        styles.issueNumber,
+                        issue.tone === 'error' ? styles.issueNumberError : styles.issueNumberWarning,
                       ]}>
-                      {index + 1}
-                    </Text>
-                  </View>
-                  <View style={styles.issueCopy}>
-                    <View style={styles.issueTitleRow}>
-                      <Text numberOfLines={1} style={styles.issueTitle}>
-                        {t(issue.title)}
-                      </Text>
                       <Text
                         style={[
-                          styles.severity,
-                          issue.tone === 'error' ? styles.errorText : styles.warningText,
+                          styles.issueNumberText,
+                          issue.tone === 'error'
+                            ? styles.issueNumberTextError
+                            : styles.issueNumberTextWarning,
                         ]}>
-                        {t(`detailScreen.severity.${issue.severityKey}`)}
+                        {index + 1}
                       </Text>
                     </View>
-                    <Text style={styles.issueMessage}>{t(issue.message)}</Text>
-                    {issue.tags ? (
-                      <View style={styles.tagRow}>
-                        {issue.tags.map((tag) => (
-                          <Text key={tag} style={styles.tag}>
-                            {t(tag)}
-                          </Text>
-                        ))}
+                    <View style={styles.issueCopy}>
+                      <View style={styles.issueTitleRow}>
+                        <Text numberOfLines={1} style={styles.issueTitle}>
+                          {issueTitle}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.severity,
+                            issue.tone === 'error' ? styles.errorText : styles.warningText,
+                          ]}>
+                          {t(`detailScreen.severity.${issue.severityKey}`, { defaultValue: issue.severityKey.toUpperCase() })}
+                        </Text>
                       </View>
-                    ) : null}
+                      <Text style={styles.issueMessage}>{issueMessage}</Text>
+                      {issue.tags && issue.tags.length > 0 ? (
+                        <View style={styles.tagRow}>
+                          {issue.tags.map((tag) => (
+                            <Text key={tag} style={styles.tag}>
+                              {tag.startsWith('detailScreen.') ? t(tag) : tag}
+                            </Text>
+                          ))}
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </View>
 
@@ -244,27 +263,25 @@ export function SubmissionDetailsActionRequiredScreen() {
             <View style={styles.sectionHeaderInline}>
               <View style={styles.workerTitleWrap}>
                 <Text style={styles.sectionTitle}>{t('detailScreen.workerPpe')}</Text>
-                <Text style={styles.inlineSubtext}>{t('detailScreen.workerSummary')}</Text>
+                <Text style={styles.inlineSubtext}>
+                  {`Worker #${currentWorker?.workerNumber || '135'}`}
+                </Text>
               </View>
-              <Pressable
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.historyButton, pressed && styles.textPressed]}>
-                <Text style={styles.historyText}>{t('detailScreen.history')}</Text>
-                <Icon
-                  color={colors.primary}
-                  name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-                  size={16}
-                />
-              </Pressable>
             </View>
             <View style={styles.workerList}>
-              {workers.map((worker) =>
-                worker.status === 'unsafe' ? (
-                  <UnsafeWorkerCard key={worker.sequenceNo} worker={worker} />
-                ) : (
-                  <CompactWorkerRow key={worker.sequenceNo} worker={worker} />
-                ),
-              )}
+              <UnsafeWorkerCard
+                worker={{
+                  back: { uri: workerTwoBack },
+                  front: { uri: workerTwoFront },
+                  issue: currentWorker?.unsafeReasons?.join(' · ') || 'detailScreen.workers.worker2.issue',
+                  name: `Worker #${currentWorker?.workerNumber || '135'}`,
+                  role: t('detailScreen.workers.worker2.role'),
+                  sequenceNo: currentWorker?.workerNumber || 135,
+                  status: 'unsafe',
+                  reviewerNote: currentWorker?.reviewerNote,
+                  unsafeReasons: currentWorker?.unsafeReasons,
+                }}
+              />
             </View>
           </View>
 
@@ -320,16 +337,22 @@ export function SubmissionDetailsActionRequiredScreen() {
 
           <View style={styles.decisionCard}>
             <Text style={styles.decisionLabel}>{t('detailScreen.decisionLabel')}</Text>
-            <Text style={styles.decisionQuote}>{t('detailScreen.decisionQuote')}</Text>
+            <Text style={styles.decisionQuote}>
+              "{currentWorker?.reviewerNote || t('detailScreen.decisionQuote')}"
+            </Text>
             <View style={styles.reviewerRow}>
               <View style={styles.reviewerAvatar}>
-                <Text style={styles.reviewerInitials}>MH</Text>
+                <Text style={styles.reviewerInitials}>{reviewerInitials}</Text>
               </View>
               <View style={styles.reviewerCopy}>
-                <Text style={styles.reviewerName}>{t('detailScreen.reviewerName')}</Text>
+                <Text style={styles.reviewerName}>
+                  {currentWorker?.reviewerName || t('detailScreen.reviewerName')}
+                </Text>
                 <Text style={styles.reviewerRole}>{t('detailScreen.reviewerRole')}</Text>
               </View>
-              <Text style={styles.reviewerTime}>{t('detailScreen.reviewedAt')}</Text>
+              <Text style={styles.reviewerTime}>
+                {formatWorkerCheckTime(currentWorker?.timeKey || 'time0945', t)}
+              </Text>
             </View>
           </View>
         </ScrollView>
@@ -380,6 +403,12 @@ function CompactWorkerRow({ worker }: { worker: WorkerDetail }) {
 function UnsafeWorkerCard({ worker }: { worker: WorkerDetail }) {
   const { t } = useTranslation('submission');
 
+  const issueText = worker.issue
+    ? worker.issue.startsWith('detailScreen.')
+      ? t(worker.issue)
+      : worker.issue
+    : null;
+
   return (
     <View style={styles.unsafeWorkerCard}>
       <View style={styles.unsafeWorkerHeader}>
@@ -388,10 +417,14 @@ function UnsafeWorkerCard({ worker }: { worker: WorkerDetail }) {
             <Text style={styles.workerAvatarWarningText}>W{worker.sequenceNo}</Text>
           </View>
           <View style={styles.workerCopy}>
-            <Text style={styles.workerName}>{t(worker.name)}</Text>
-            <Text numberOfLines={1} style={styles.workerIssue}>
-              {worker.issue ? t(worker.issue) : null}
+            <Text style={styles.workerName}>
+              {worker.name.startsWith('detailScreen.') ? t(worker.name) : worker.name}
             </Text>
+            {issueText ? (
+              <Text numberOfLines={1} style={styles.workerIssue}>
+                {issueText}
+              </Text>
+            ) : null}
           </View>
         </View>
         <StatusPill status={worker.status} />
@@ -412,8 +445,14 @@ function UnsafeWorkerCard({ worker }: { worker: WorkerDetail }) {
           />
           <Text style={styles.reviewerNoteTitle}>{t('detailScreen.reviewerNote')}</Text>
         </View>
-        <Text style={styles.reviewerNoteText}>{t('detailScreen.reviewerNoteBody')}</Text>
-        <Text style={styles.noteTags}>{t('detailScreen.noteTags')}</Text>
+        <Text style={styles.reviewerNoteText}>
+          {worker.reviewerNote || t('detailScreen.reviewerNoteBody')}
+        </Text>
+        {worker.unsafeReasons && worker.unsafeReasons.length > 0 ? (
+          <Text style={styles.noteTags}>{worker.unsafeReasons.join(' · ')}</Text>
+        ) : (
+          <Text style={styles.noteTags}>{t('detailScreen.noteTags')}</Text>
+        )}
       </View>
     </View>
   );

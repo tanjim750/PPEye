@@ -8,7 +8,7 @@ import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from '@/hooks/useNavigate';
-import { useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
+import { formatWorkerCheckTime, useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
 import { DummyUserRole } from '@/utils/dummy-users';
 import { UserRole } from '@/features/auth/types';
 
@@ -204,7 +204,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                       accessibilityState={{ disabled: isSafe }}
                       disabled={isSafe}
                       key={item.id}
-                      onPress={item.status === 'unsafe' ? () => navigate('/submission-details') : undefined}
+                      onPress={item.status === 'unsafe' ? () => navigate(`/submission-details?id=${item.id}` as any) : undefined}
                       style={({ pressed }) => [
                         vendorStyles.feedRow,
                         index < vendorRecentChecks.length - 1 && vendorStyles.feedDivider,
@@ -228,7 +228,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                             {t(`external.recent.${item.titleKey}`, { defaultValue: `Worker #${item.workerNumber}` })}
                           </Text>
                           <Text style={vendorStyles.time}>
-                            {t(`external.recent.${item.timeKey}`, { defaultValue: item.timeKey })}
+                            {formatWorkerCheckTime(item.timeKey, t)}
                           </Text>
                         </View>
                         <View

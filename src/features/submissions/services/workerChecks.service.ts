@@ -2,13 +2,26 @@ import { ImageSource } from 'expo-image';
 import { useEffect, useState } from 'react';
 import { assets } from '@/constants/assets';
 
+export type WorkerIssue = {
+  message: string;
+  severityKey: 'critical' | 'missing';
+  tags: string[];
+  title: string;
+  tone: 'error' | 'warning';
+};
+
 export type WorkerCheck = {
   id: string;
   image?: ImageSource;
+  issues?: WorkerIssue[];
+  reviewerName?: string;
+  reviewerNote?: string;
+  siteName?: string;
   status: 'safe' | 'unsafe' | 'review';
   timeKey: string;
   timestamp: number; // Unix timestamp in milliseconds for chronological sorting
   titleKey: string;
+  unsafeReasons?: string[];
   workerNumber: number;
 };
 
@@ -98,19 +111,59 @@ let workerChecks: WorkerCheck[] = [
   {
     id: 'w135',
     image: assets.fieldUnsafeCheck,
+    issues: [
+      {
+        message: 'Worker helmet chin strap was unbuckled while climbing.',
+        severityKey: 'critical',
+        tags: ['Helmet', 'Safety Gear'],
+        title: 'Helmet Chin Strap Unbuckled',
+        tone: 'error',
+      },
+      {
+        message: 'Twin tail shock-absorbing lanyard not anchored to safety lifeline.',
+        severityKey: 'critical',
+        tags: ['Lanyard', 'Fall Arrest'],
+        title: 'Lanyard Anchorage Not Secured',
+        tone: 'error',
+      },
+    ],
+    reviewerName: 'Mahmudul Hasan · EHS Representative',
+    reviewerNote: 'Worker #135 was observed without the helmet chin strap fastened during vertical climbing. The lanyard carabiner was unclipped from the safety lifeline.',
+    siteName: 'Gazipur-ER-102 - Tower Sector 3',
     status: 'unsafe',
     timeKey: 'time0945', // Today, 09:45 AM
     timestamp: now - 345 * minute,
     titleKey: 'worker135',
+    unsafeReasons: ['Helmet', 'Lanyard'],
     workerNumber: 135,
   },
   {
     id: 'w127',
     image: assets.fieldUnsafeCheck,
+    issues: [
+      {
+        message: 'Full-body harness leg straps and chest strap loose and improperly adjusted.',
+        severityKey: 'critical',
+        tags: ['Harness', 'Fall Protection'],
+        title: 'Full-Body Harness Fitting Failure',
+        tone: 'error',
+      },
+      {
+        message: 'Worker operating near edge with no active fall restraint connection.',
+        severityKey: 'critical',
+        tags: ['Anchorage', 'Fall Arrest'],
+        title: 'Anchorage Missing',
+        tone: 'error',
+      },
+    ],
+    reviewerName: 'Tanvir Hossain · EHS Safety Officer',
+    reviewerNote: 'Worker #127 full-body harness dorsal D-ring was misaligned and leg straps were unbuckled. Lanyard carabiner was unclipped from certified anchor point.',
+    siteName: 'Mirpur-DH-044 - Rooftop Mast',
     status: 'unsafe',
     timeKey: 'yesterday1630', // Yesterday, 04:30 PM
     timestamp: now - 1 * day - 4 * hour,
     titleKey: 'worker127',
+    unsafeReasons: ['Full-body harness', 'Anchorage / connection'],
     workerNumber: 127,
   },
 
@@ -167,15 +220,35 @@ export function getAllWorkerChecks(): WorkerCheck[] {
 }
 
 /**
- * Returns safe and unsafe checks ONLY for vendor home page (up to limit, max 10).
+ * Returns safe AND unsafe checks for TODAY for vendor home page (up to limit, max 10).
  * Sorted chronologically (latest time first).
- * Pending (review) checks are excluded.
+ * Excludes yesterday submissions.
  */
-export function getRecentSafeAndUnsafeChecks(limit = 10): WorkerCheck[] {
+export function getRecentTodayChecks(limit = 10): WorkerCheck[] {
   return workerChecks
-    .filter((item) => item.status === 'safe' || item.status === 'unsafe')
+    .filter(
+      (item) =>
+        (item.status === 'safe' || item.status === 'unsafe') &&
+        !item.timeKey.startsWith('yesterday')
+    )
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, limit);
+}
+
+/**
+ * Returns a worker check by its ID or workerNumber.
+ */
+export function getWorkerCheckById(id: string): WorkerCheck | undefined {
+  return workerChecks.find(
+    (item) => item.id === id || String(item.workerNumber) === String(id)
+  );
+}
+
+/**
+ * Returns safe and unsafe checks (legacy export kept for compatibility).
+ */
+export function getRecentSafeAndUnsafeChecks(limit = 10): WorkerCheck[] {
+  return getRecentTodayChecks(limit);
 }
 
 /**
@@ -196,6 +269,58 @@ export function getPendingWorkerChecks(): WorkerCheck[] {
   return workerChecks
     .filter((item) => item.status === 'review')
     .sort((a, b) => b.timestamp - a.timestamp);
+}
+
+/**
+ * Returns unsafe checks ONLY (for "All Unsafe" tab in History view).
+ * Sorted chronologically (latest time first).
+ */
+export function getUnsafeWorkerChecks(): WorkerCheck[] {
+  return workerChecks
+    .filter((item) => item.status === 'unsafe')
+    .sort((a, b) => b.timestamp - a.timestamp);
+}
+
+/**
+ * Resubmit an unsafe check - transitions its status from 'unsafe' to 'review' (pending).
+ */
+export function resubmitWorkerCheck(idOrWorkerNumber: string | number) {
+  workerChecks = workerChecks.map((item) => {
+    if (
+      item.id === idOrWorkerNumber ||
+      item.workerNumber === idOrWorkerNumber ||
+      String(item.workerNumber) === String(idOrWorkerNumber)
+    ) {
+      return {
+        ...item,
+        status: 'review',
+        timestamp: Date.now(),
+      };
+    }
+    return item;
+  });
+  notify();
+}
+
+/**
+ * Formats time display:
+ * - If today: returns just time (e.g., "10:42 AM")
+ * - If yesterday: returns just "Yesterday" (or Bengali "গতকাল") without time
+ */
+export function formatWorkerCheckTime(
+  timeKey: string,
+  t: (key: string, options?: any) => string
+): string {
+  const raw = t(`external.recent.${timeKey}`, { defaultValue: timeKey });
+  if (
+    timeKey.startsWith('yesterday') ||
+    raw.toLowerCase().includes('yesterday') ||
+    raw.includes('গতকাল')
+  ) {
+    return raw.includes('গতকাল') ? 'গতকাল' : 'Yesterday';
+  }
+  // Strip "Today, " or "আজ, " if present
+  return raw.replace(/^(Today,\s*|আজ,\s*)/i, '');
 }
 
 /**
@@ -236,8 +361,10 @@ export function useWorkerChecks() {
   return {
     allChecks: getAllWorkerChecks(),
     pendingChecks: getPendingWorkerChecks(),
-    recentChecks: getRecentSafeAndUnsafeChecks(10),
+    recentChecks: getRecentTodayChecks(10),
     safeChecks: getSafeWorkerChecks(),
+    unsafeChecks: getUnsafeWorkerChecks(),
     markWorkerSafe,
+    resubmitWorkerCheck,
   };
 }

@@ -6,28 +6,42 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
-import { useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
+import { formatWorkerCheckTime, useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
+
+type HistoryTab = 'all' | 'pending' | 'unsafe';
 
 export function SubmissionHistoryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ filter?: string }>();
   const { t } = useTranslation('home');
-  const { safeChecks, pendingChecks } = useWorkerChecks();
+  const { safeChecks, pendingChecks, unsafeChecks, resubmitWorkerCheck } = useWorkerChecks();
 
-  // "ALL" tab shows safe workers; "Pending" tab shows pending review workers
-  const initialTab = params.filter === 'pending' ? 'pending' : 'all';
-  const [activeTab, setActiveTab] = useState<'all' | 'pending'>(initialTab);
+  // Tabs: "all" (safe workers), "pending" (awaiting review), "unsafe" (action required)
+  const initialTab: HistoryTab =
+    params.filter === 'pending'
+      ? 'pending'
+      : params.filter === 'unsafe'
+        ? 'unsafe'
+        : 'all';
+  const [activeTab, setActiveTab] = useState<HistoryTab>(initialTab);
 
   useEffect(() => {
     if (params.filter === 'pending') {
       setActiveTab('pending');
+    } else if (params.filter === 'unsafe') {
+      setActiveTab('unsafe');
     } else {
       setActiveTab('all');
     }
   }, [params.filter]);
 
   // Both lists are sorted chronologically (latest time first)
-  const displayedList = activeTab === 'all' ? safeChecks : pendingChecks;
+  const displayedList =
+    activeTab === 'all'
+      ? safeChecks
+      : activeTab === 'pending'
+        ? pendingChecks
+        : unsafeChecks;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -49,7 +63,7 @@ export function SubmissionHistoryScreen() {
           <View style={styles.headerPlaceholder} />
         </View>
 
-        {/* Tab Segment Controls: "All History" and "All pending" */}
+        {/* Tab Segment Controls: "All History", "All pending", and "All Unsafe" */}
         <View style={styles.tabContainer}>
           <Pressable
             accessibilityRole="button"
@@ -58,15 +72,6 @@ export function SubmissionHistoryScreen() {
             <Text style={[styles.tabButtonText, activeTab === 'all' && styles.tabButtonTextActive]}>
               {t('external.history.allTab', { defaultValue: 'All History' })}
             </Text>
-            <View style={[styles.tabBadge, activeTab === 'all' && styles.tabBadgeActive]}>
-              <Text
-                style={[
-                  styles.tabBadgeText,
-                  activeTab === 'all' && styles.tabBadgeTextActive,
-                ]}>
-                {safeChecks.length}
-              </Text>
-            </View>
           </Pressable>
 
           <Pressable
@@ -80,33 +85,43 @@ export function SubmissionHistoryScreen() {
               ]}>
               {t('external.history.pendingTab', { defaultValue: 'All pending' })}
             </Text>
-            <View style={[styles.tabBadge, activeTab === 'pending' && styles.tabBadgeActive]}>
-              <Text
-                style={[
-                  styles.tabBadgeText,
-                  activeTab === 'pending' && styles.tabBadgeTextActive,
-                ]}>
-                {pendingChecks.length}
-              </Text>
-            </View>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setActiveTab('unsafe')}
+            style={[styles.tabButton, activeTab === 'unsafe' && styles.tabButtonActive]}>
+            <Text
+              style={[
+                styles.tabButtonText,
+                activeTab === 'unsafe' && styles.tabButtonTextActive,
+              ]}>
+              {t('external.history.unsafeTab', { defaultValue: 'All Unsafe' })}
+            </Text>
           </Pressable>
         </View>
 
-        {/* Info & Sorting Subtitle */}
-        <View style={styles.infoBanner}>
-          <Icon
-            color={colors.textMuted}
-            name={{ ios: 'arrow.up.arrow.down', android: 'sort', web: 'sort' }}
-            size={14}
-          />
-          <Text style={styles.infoText}>
-            {activeTab === 'all'
-              ? t('external.history.safeSub')
-              : t('external.history.pendingSub')}
-          </Text>
-        </View>
+        {/* Floating Counter Badge for Pending Checks (matches Reviewer floating pill) */}
+        {activeTab === 'pending' && pendingChecks.length > 0 && (
+          <View style={styles.floatingBadgeContainer}>
+            <View style={styles.floatingBadge}>
+              <Icon
+                color="#f59e0b"
+                name={{ ios: 'clock.fill', android: 'schedule', web: 'schedule' }}
+                size={14}
+                weight="bold"
+              />
+              <Text style={styles.floatingBadgeText}>
+                {t('external.history.waitingCount', {
+                  count: pendingChecks.length,
+                  defaultValue: `${pendingChecks.length} waiting for review`,
+                })}
+              </Text>
+            </View>
+          </View>
+        )}
 
-        {/* Worker Cards Feed (Sorted by time) */}
+        {/* Worker Cards Feed (Sorted chronologically by time) */}
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -120,8 +135,10 @@ export function SubmissionHistoryScreen() {
               />
               <Text style={styles.emptyText}>
                 {activeTab === 'all'
-                  ? t('external.history.noSafe')
-                  : t('external.history.noPending')}
+                  ? t('external.history.noSafe', { defaultValue: 'No safe records found' })
+                  : activeTab === 'pending'
+                    ? t('external.history.noPending', { defaultValue: 'No pending submissions' })
+                    : t('external.history.noUnsafe', { defaultValue: 'No unsafe records found' })}
               </Text>
             </View>
           ) : (
@@ -138,7 +155,7 @@ export function SubmissionHistoryScreen() {
                     key={item.id}
                     onPress={
                       !isSafe && item.status === 'unsafe'
-                        ? () => router.push('/submission-details')
+                        ? () => router.push(`/submission-details?id=${item.id}` as any)
                         : undefined
                     }
                     style={({ pressed }) => [
@@ -166,7 +183,7 @@ export function SubmissionHistoryScreen() {
                           })}
                         </Text>
                         <Text style={styles.time}>
-                          {t(`external.recent.${item.timeKey}`, { defaultValue: item.timeKey })}
+                          {formatWorkerCheckTime(item.timeKey, t)}
                         </Text>
                       </View>
 
@@ -282,6 +299,7 @@ const colors = {
   outlineVariant: '#c0c7d5',
   primary: '#005cad',
   safetyBlue: '#0082F0',
+  secondaryContainer: '#63a1ff',
   successGreen: '#16A34A',
   surface: '#ffffff',
   surfaceContainer: '#ebedf7',
@@ -339,6 +357,7 @@ const styles = StyleSheet.create({
     gap: 6,
     marginHorizontal: 16,
     marginTop: 12,
+    marginBottom: 8,
     padding: 4,
   },
   tabButton: {
@@ -346,7 +365,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     flex: 1,
     flexDirection: 'row',
-    gap: 8,
     justifyContent: 'center',
     paddingVertical: 10,
   },
@@ -359,43 +377,56 @@ const styles = StyleSheet.create({
   },
   tabButtonText: {
     color: colors.textMuted,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
   tabButtonTextActive: {
     color: colors.white,
   },
-  tabBadge: {
-    backgroundColor: '#dbe0ea',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+  floatingBadgeContainer: {
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 2,
+    marginBottom: 8,
   },
-  tabBadgeActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  floatingBadge: {
+    alignItems: 'center',
+    backgroundColor: '#fffbeb',
+    borderColor: '#fde68a',
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    shadowColor: '#000000',
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  tabBadgeText: {
-    color: colors.textMuted,
+  floatingBadgeText: {
+    color: '#b45309',
     fontSize: 12,
     fontWeight: '700',
   },
-  tabBadgeTextActive: {
-    color: colors.white,
-  },
-  infoBanner: {
+  resubmitButton: {
     alignItems: 'center',
+    backgroundColor: '#ebedf7',
+    borderColor: '#c0c7d5',
+    borderRadius: 14,
+    borderWidth: 1,
     flexDirection: 'row',
-    gap: 6,
-    marginHorizontal: 16,
-    marginTop: 10,
-    marginBottom: 4,
+    gap: 4,
+    marginLeft: 'auto',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
-  infoText: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '500',
-    lineHeight: 16,
+  resubmitButtonText: {
+    color: '#00376f',
+    fontSize: 11,
+    fontWeight: '700',
   },
   scroll: {
     flex: 1,
@@ -514,38 +545,47 @@ const styles = StyleSheet.create({
   },
   bottomNav: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: '#ffffff',
     borderTopColor: colors.outlineVariant,
     borderTopWidth: 1,
     flexDirection: 'row',
     height: 70,
     justifyContent: 'space-around',
-    paddingBottom: 8,
-    paddingTop: 8,
-  },
-  navItem: {
-    alignItems: 'center',
-    flex: 1,
-    gap: 4,
-    justifyContent: 'center',
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    shadowColor: '#000000',
+    shadowOffset: { height: -2, width: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 8,
   },
   navItemActive: {
     alignItems: 'center',
-    flex: 1,
-    gap: 4,
+    backgroundColor: colors.secondaryContainer,
+    borderRadius: 999,
     justifyContent: 'center',
+    minWidth: 84,
+    paddingHorizontal: 16,
     paddingVertical: 4,
+    transform: [{ scale: 0.95 }],
+  },
+  navItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 72,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   navText: {
     color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
   },
   navTextActive: {
     color: '#00376f',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '700',
+    marginTop: 2,
   },
   navPressed: {
     opacity: 0.7,
