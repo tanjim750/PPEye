@@ -1,4 +1,4 @@
-import { Href, useRouter } from 'expo-router';
+import { Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -27,6 +27,10 @@ const User = ({ color = colors.outline, size = 20 }: { color?: string; size?: nu
   <Icon color={color} name={{ ios: 'person.fill', android: 'person', web: 'person' }} size={size} />
 );
 
+const UserPlus = ({ color = colors.outline, size = 20 }: { color?: string; size?: number }) => (
+  <Icon color={color} name={{ ios: 'person.badge.plus', android: 'person_add', web: 'person_add' }} size={size} />
+);
+
 const Lock = ({ color = colors.outline, size = 20 }: { color?: string; size?: number }) => (
   <Icon color={color} name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }} size={size} />
 );
@@ -53,12 +57,15 @@ const LogOut = ({ color = colors.error, size = 20 }: { color?: string; size?: nu
 
 export function SettingsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ role?: string }>();
   const { i18n, t } = useTranslation('settings');
   const { user } = useAuth();
   const { language, setLanguage } = useLanguage();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const isVendor = user?.role === 'vendor' || user?.role === 'external';
+  const effectiveRole = params.role || user?.role;
+  const isVendor = effectiveRole === 'vendor' || effectiveRole === 'external';
+  const isReviewer = effectiveRole === 'reviewer' || effectiveRole === 'internal';
   const fullName = user?.name || (isVendor ? 'Rahim Mia' : 'Mahmud Hasan');
   const roleName = isVendor ? t('fieldOperations') : t('ehsRepresentative');
   const email = user?.email || (isVendor ? 'rahim@example.com' : 'mahmud@example.com');
@@ -184,6 +191,28 @@ export function SettingsScreen() {
                 {t('appSection')}
               </Text>
               <View className="border-t border-[#c0c7d5]" style={styles.sectionList}>
+                {/* Item 0: Add User (Reviewer only) */}
+                {isReviewer && (
+                  <Pressable
+                    accessibilityRole="button"
+                    className="flex flex-row items-center px-5 py-4 border-b border-[#c0c7d5]"
+                    onPress={() => router.push('/settings/add-user' as Href)}
+                    style={({ pressed }) => [styles.rowItem, pressed && styles.rowPressed]}>
+                    <View style={styles.rowIcon}>
+                      <UserPlus color={colors.outline} size={20} />
+                    </View>
+                    <View className="flex-1" style={styles.rowCopy}>
+                      <Text className="text-base font-medium text-[#181c22]" style={styles.rowTitle}>
+                        {t('addUser', { defaultValue: 'Add User' })}
+                      </Text>
+                      <Text className="text-sm text-[#404753]" style={styles.rowSubtitle}>
+                        {t('addUserSub', { defaultValue: 'Create a new account' })}
+                      </Text>
+                    </View>
+                    <ChevronRight color={colors.outlineVariant} size={20} />
+                  </Pressable>
+                )}
+
                 {/* Item 1: Notifications */}
                 <Pressable
                   accessibilityRole="button"

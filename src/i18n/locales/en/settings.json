@@ -6,6 +6,8 @@
   "changePassword": "Change Password",
   "changePasswordSub": "Update your password",
   "appSection": "APP",
+  "addUser": "Add User",
+  "addUserSub": "Create a new account",
   "notifications": "Notifications",
   "notificationsSub": "Manage app notifications",
   "language": "Language",
