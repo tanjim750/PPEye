@@ -1,7 +1,7 @@
-import { Href, useLocalSearchParams, useRouter } from 'expo-router';
+import { Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTranslation } from 'react-i18next';
@@ -71,6 +71,24 @@ export function SettingsScreen() {
   const email = user?.email || (isVendor ? 'rahim@example.com' : 'mahmud@example.com');
   const avatar = isVendor ? assets.fieldRahimAvatar : assets.ehsProfile;
 
+  const handleGoHome = useCallback(() => {
+    const homeRoute = isReviewer ? '/(internal)' : '/(external)';
+    router.replace(homeRoute as Href);
+  }, [isReviewer, router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        handleGoHome();
+        return true;
+      });
+
+      return () => {
+        subscription.remove();
+      };
+    }, [handleGoHome])
+  );
+
   function handleLanguageToggle(nextLang: 'en' | 'bn') {
     setLanguage(nextLang);
     i18n.changeLanguage(nextLang);
@@ -99,7 +117,7 @@ export function SettingsScreen() {
           <Pressable
             accessibilityLabel="Go back"
             accessibilityRole="button"
-            onPress={() => router.back()}
+            onPress={handleGoHome}
             style={({ pressed }) => [styles.backButton, pressed && styles.pressedOpacity]}>
             <ArrowLeft color={colors.primary} size={22} />
           </Pressable>
