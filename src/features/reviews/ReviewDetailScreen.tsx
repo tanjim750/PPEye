@@ -13,7 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
@@ -73,6 +73,7 @@ const unsafeReasons = [
 
 export function ReviewDetailScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { submissionId } = useLocalSearchParams<{ submissionId: string }>();
   const { allReviews } = useReviews();
 
@@ -346,7 +347,14 @@ export function ReviewDetailScreen() {
         </ScrollView>
 
         {/* 6. Footer Navigation: Previous and Next Worker */}
-        <View style={styles.footerNav}>
+        <View
+          style={[
+            styles.footerNav,
+            {
+              paddingBottom: Math.max(insets.bottom, 12),
+              height: 56 + Math.max(insets.bottom, 12),
+            },
+          ]}>
           <Pressable
             accessibilityRole="button"
             onPress={handlePrevious}

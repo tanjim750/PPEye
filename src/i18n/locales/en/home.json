@@ -1,8 +1,13 @@
 {
   "externalTitle": "PPE submissions",
   "internalTitle": "Review dashboard",
+  "greetings": {
+    "morning": "Good morning",
+    "afternoon": "Good afternoon",
+    "evening": "Good evening"
+  },
   "external": {
-    "greeting": "Good morning,\n{{name}}",
+    "greeting": "{{timeGreeting}},\n{{name}}",
     "company": "{{vendor}} · {{team}}",
     "captureTitle": "Submit PPE Check",
     "captureDescription": "Add front, back and other site photos",
@@ -70,7 +75,7 @@
     }
   },
   "internal": {
-    "greeting": "Good morning, {{name}}",
+    "greeting": "{{timeGreeting}}, {{name}}",
     "role": "EHS Representative",
     "reviewTitle": "PPE Pendings Reviewes",
     "waitingCount": "{{count}} waiting for review",

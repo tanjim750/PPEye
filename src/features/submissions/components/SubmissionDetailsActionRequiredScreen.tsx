@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
@@ -59,6 +59,7 @@ const colors = {
 
 export function SubmissionDetailsActionRequiredScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string; workerNumber?: string }>();
   const { t } = useTranslation('submission');
   const [selectedPhoto, setSelectedPhoto] = useState<{ uri: string; label: string } | null>(null);
@@ -147,7 +148,7 @@ export function SubmissionDetailsActionRequiredScreen() {
 
         {/* Scrollable Content */}
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: 100 + Math.max(insets.bottom, 16) }]}
           showsVerticalScrollIndicator={false}
           style={styles.scroll}>
           {/* Metadata Card */}
@@ -383,7 +384,7 @@ export function SubmissionDetailsActionRequiredScreen() {
         </ScrollView>
 
         {/* Bottom Action Bar */}
-        <View style={styles.actionBar}>
+        <View style={[styles.actionBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <Pressable
             accessibilityRole="button"
             onPress={fixAndResubmit}
@@ -862,6 +863,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   actionBar: {
+    alignSelf: 'center',
     backgroundColor: colors.surface,
     borderTopColor: colors.surfaceContainer,
     borderTopWidth: 1,
@@ -869,11 +871,11 @@ const styles = StyleSheet.create({
     gap: 10,
     left: 0,
     maxWidth: 448,
-    paddingBottom: 24,
     paddingHorizontal: 20,
     paddingTop: 12,
     position: 'absolute',
     right: 0,
+    width: '100%',
   },
   primaryButton: {
     alignItems: 'center',

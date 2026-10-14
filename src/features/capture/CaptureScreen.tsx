@@ -203,7 +203,7 @@ export function CaptureScreen() {
   const canRetakeSelectedWorker = hasCurrentWorkerPreview;
 
   return (
-    <SafeAreaView edges={["top"]} style={styles.safeArea}>
+    <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
       <StatusBar animated style="light" />
       <NativeStatusBar
         backgroundColor={colors.controlSurface}

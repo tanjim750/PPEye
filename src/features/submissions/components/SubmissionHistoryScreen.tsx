@@ -2,7 +2,7 @@ import { Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-rout
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
@@ -12,6 +12,7 @@ type HistoryTab = 'all' | 'pending' | 'unsafe';
 
 export function SubmissionHistoryScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ filter?: string }>();
   const { t } = useTranslation('home');
   const { safeChecks, pendingChecks, unsafeChecks, resubmitWorkerCheck } = useWorkerChecks();
@@ -86,7 +87,11 @@ export function SubmissionHistoryScreen() {
             accessibilityRole="button"
             onPress={() => setActiveTab('all')}
             style={[styles.tabButton, activeTab === 'all' && styles.tabButtonActive]}>
-            <Text style={[styles.tabButtonText, activeTab === 'all' && styles.tabButtonTextActive]}>
+            <Text
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+              numberOfLines={1}
+              style={[styles.tabButtonText, activeTab === 'all' && styles.tabButtonTextActive]}>
               {t('external.history.allTab', { defaultValue: 'All History' })}
             </Text>
           </Pressable>
@@ -96,6 +101,9 @@ export function SubmissionHistoryScreen() {
             onPress={() => setActiveTab('pending')}
             style={[styles.tabButton, activeTab === 'pending' && styles.tabButtonActive]}>
             <Text
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+              numberOfLines={1}
               style={[
                 styles.tabButtonText,
                 activeTab === 'pending' && styles.tabButtonTextActive,
@@ -109,6 +117,9 @@ export function SubmissionHistoryScreen() {
             onPress={() => setActiveTab('unsafe')}
             style={[styles.tabButton, activeTab === 'unsafe' && styles.tabButtonActive]}>
             <Text
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+              numberOfLines={1}
               style={[
                 styles.tabButtonText,
                 activeTab === 'unsafe' && styles.tabButtonTextActive,
@@ -265,7 +276,14 @@ export function SubmissionHistoryScreen() {
         </ScrollView>
 
         {/* Bottom Navigation */}
-        <View style={styles.bottomNav}>
+        <View
+          style={[
+            styles.bottomNav,
+            {
+              paddingBottom: Math.max(insets.bottom, 8),
+              height: 56 + Math.max(insets.bottom, 8),
+            },
+          ]}>
           <Pressable
             accessibilityRole="button"
             onPress={handleGoHome}
@@ -566,9 +584,8 @@ const styles = StyleSheet.create({
     borderTopColor: colors.outlineVariant,
     borderTopWidth: 1,
     flexDirection: 'row',
-    height: 70,
     justifyContent: 'space-around',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     shadowColor: '#000000',
     shadowOffset: { height: -2, width: 0 },
     shadowOpacity: 0.12,
@@ -579,18 +596,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.secondaryContainer,
     borderRadius: 999,
+    flex: 1,
     justifyContent: 'center',
-    minWidth: 84,
-    paddingHorizontal: 16,
+    marginHorizontal: 4,
     paddingVertical: 4,
     transform: [{ scale: 0.95 }],
   },
   navItem: {
     alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
-    minWidth: 72,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   navText: {
     color: colors.textMuted,

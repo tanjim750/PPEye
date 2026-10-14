@@ -34,19 +34,14 @@ export function getPendingSubmissionReviewTarget() {
   return pendingCaptureTarget ? { ...pendingCaptureTarget } : null;
 }
 
-let lastKnownSite = 'Gazipur-ER-102 - Tower Sector 3';
-
 export function setPendingSubmissionReviewSite(site: string) {
   const nextSite = site.trim();
 
   pendingReviewSite = nextSite || null;
-  if (nextSite) {
-    lastKnownSite = nextSite;
-  }
 }
 
 export function getPendingSubmissionReviewSite() {
-  return pendingReviewSite || lastKnownSite;
+  return pendingReviewSite;
 }
 
 export function clearPendingSubmissionReviewCaptures() {

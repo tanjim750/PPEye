@@ -11,7 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
@@ -51,6 +51,7 @@ const reasonIcons: Record<string, { ios: string; android: string; web: string }>
 
 export function ReviewHistoryScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation('home');
   const { safeReviews, unsafeReviews } = useReviews();
 
@@ -288,7 +289,14 @@ export function ReviewHistoryScreen() {
         </ScrollView>
 
         {/* Bottom Navigation */}
-        <View style={styles.bottomNav}>
+        <View
+          style={[
+            styles.bottomNav,
+            {
+              paddingBottom: Math.max(insets.bottom, 10),
+              height: 56 + Math.max(insets.bottom, 10),
+            },
+          ]}>
           <Pressable
             accessibilityRole="button"
             onPress={() => router.push('/' as any)}
@@ -723,14 +731,15 @@ const styles = StyleSheet.create({
     borderTopColor: reviewerColors.outlineVariant,
     borderTopWidth: 1,
     flexDirection: 'row',
-    height: 64,
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
   },
   navItem: {
     alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
+    marginHorizontal: 2,
     paddingVertical: 4,
   },
   navPressed: {
@@ -740,8 +749,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#64a1fe',
     borderRadius: 999,
+    flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    marginHorizontal: 2,
     paddingVertical: 4,
   },
   navText: {

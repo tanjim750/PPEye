@@ -1,8 +1,13 @@
 {
   "externalTitle": "PPE জমা",
   "internalTitle": "রিভিউ ড্যাশবোর্ড",
+  "greetings": {
+    "morning": "শুভ সকাল",
+    "afternoon": "শুভ বিকেল",
+    "evening": "শুভ সন্ধ্যা"
+  },
   "external": {
-    "greeting": "শুভ সকাল,\n{{name}}",
+    "greeting": "{{timeGreeting}},\n{{name}}",
     "company": "{{vendor}} · {{team}}",
     "captureTitle": "PPE চেক জমা দিন",
     "captureDescription": "সামনের, পেছনের এবং সাইটের অন্যান্য ছবি যোগ করুন",
@@ -70,7 +75,7 @@
     }
   },
   "internal": {
-    "greeting": "শুভ সকাল, {{name}}",
+    "greeting": "{{timeGreeting}}, {{name}}",
     "role": "EHS প্রতিনিধি",
     "reviewTitle": "PPE Pendings Reviewes",
     "waitingCount": "{{count}}টি রিভিউ অপেক্ষমাণ",

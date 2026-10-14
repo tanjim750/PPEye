@@ -13,7 +13,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
@@ -80,13 +80,16 @@ const sampleWorkerPhotos: WorkerReviewPhoto[] = [
 export function SubmissionReviewScreen() {
   const router = useRouter();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const isExitingToHomeRef = useRef(false);
   const isSubmittingRef = useRef(false);
+  const carouselRef = useRef<ScrollView>(null);
+  const [isVerticalScrollEnabled, setIsVerticalScrollEnabled] = useState(true);
   const { t } = useTranslation('submission');
   const [activeWorkerIndex, setActiveWorkerIndex] = useState(0);
   const [isExitConfirmVisible, setIsExitConfirmVisible] = useState(false);
-  const [siteName, setSiteName] = useState(() => getPendingSubmissionReviewSite() || 'Gazipur-ER-102 - Tower Sector 3');
-  const [siteDraft, setSiteDraft] = useState(() => getPendingSubmissionReviewSite() || 'Gazipur-ER-102 - Tower Sector 3');
+  const [siteName, setSiteName] = useState(() => getPendingSubmissionReviewSite() ?? '');
+  const [siteDraft, setSiteDraft] = useState(() => getPendingSubmissionReviewSite() ?? '');
   const [isEditingSite, setIsEditingSite] = useState(false);
   const [siteError, setSiteError] = useState<string | null>(null);
   const [isBuildingWeatherMetadata, setIsBuildingWeatherMetadata] = useState(false);
@@ -159,6 +162,7 @@ export function SubmissionReviewScreen() {
       setSubmissionMetadata(metadata);
       console.warn('Submission metadata unavailable.', error);
       console.log('Submission metadata', JSON.stringify(metadata, null, 2));
+      setIsLocationServicesPromptVisible(true);
     } finally {
       setIsBuildingWeatherMetadata(false);
     }
@@ -276,12 +280,70 @@ export function SubmissionReviewScreen() {
     });
   }
 
-  function submitForReview() {
+  async function submitForReview() {
     if (isSubmittingRef.current) return;
+
+    // 1. Current Site Validation
+    const trimmedSite = siteName?.trim();
+    if (!trimmedSite) {
+      setSiteError(t('reviewScreen.siteRequired'));
+      setIsEditingSite(true);
+      Alert.alert(
+        t('reviewScreen.siteRequired'),
+        t('reviewScreen.siteEmptyHint'),
+      );
+      return;
+    }
+
+    // 2. Location Services Validation
+    const isLocationEnabled = await locationService.checkServicesEnabled();
+    if (!isLocationEnabled) {
+      setIsLocationServicesPromptVisible(true);
+      Alert.alert(
+        t('reviewScreen.locationServicesTitle'),
+        t('reviewScreen.locationRequiredMessage'),
+        [
+          { text: t('reviewScreen.cancel'), style: 'cancel' },
+          {
+            text: t('reviewScreen.turnOnLocation'),
+            onPress: turnOnLocationAndBuildWeatherMetadata,
+          },
+        ]
+      );
+      return;
+    }
+
+    if (!submissionMetadata?.location) {
+      try {
+        const permission = await locationService.checkPermission();
+        const location = permission.granted
+          ? await locationService.getCurrentLocation()
+          : await locationService.askPermissionAndGetCurrentLocation();
+        if (!location?.coords) {
+          throw new Error('Location unavailable');
+        }
+        buildWeatherMetadata();
+      } catch {
+        setIsLocationServicesPromptVisible(true);
+        Alert.alert(
+          t('reviewScreen.locationServicesTitle'),
+          t('reviewScreen.locationRequiredMessage'),
+          [
+            { text: t('reviewScreen.cancel'), style: 'cancel' },
+            {
+              text: t('reviewScreen.turnOnLocation'),
+              onPress: turnOnLocationAndBuildWeatherMetadata,
+            },
+          ]
+        );
+        return;
+      }
+    }
+
     isSubmittingRef.current = true;
     isExitingToHomeRef.current = true;
 
-    const finalSite = siteName?.trim() || getPendingSubmissionReviewSite() || 'Gazipur-ER-102 - Tower Sector 3';
+    const finalSite = trimmedSite;
     setPendingSubmissionReviewSite(finalSite);
 
     // Update/resubmit each worker check with the newly captured photos
@@ -315,7 +377,7 @@ export function SubmissionReviewScreen() {
     const nextIndex = Math.round(offsetX / slideWidth);
     const boundedIndex = Math.max(0, Math.min(workerPhotos.length - 1, nextIndex));
 
-    setActiveWorkerIndex(boundedIndex);
+    setActiveWorkerIndex((prevIndex) => (prevIndex === boundedIndex ? prevIndex : boundedIndex));
   }
 
   function startEditingSite() {
@@ -366,7 +428,8 @@ export function SubmissionReviewScreen() {
         </View>
 
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: 80 + Math.max(insets.bottom, 16) }]}
+          scrollEnabled={isVerticalScrollEnabled}
           showsVerticalScrollIndicator={false}
           style={styles.scroll}>
           <View style={[styles.siteCard, isEditingSite && styles.siteCardEditing]}>
@@ -403,11 +466,11 @@ export function SubmissionReviewScreen() {
                   <>
                     <Text
                       numberOfLines={1}
-                      style={[styles.siteName, !siteName && styles.siteNameEmpty]}>
-                      {siteName ?? t('reviewScreen.noSiteSelected')}
+                      style={[styles.siteName, !siteName?.trim() && styles.siteNameEmpty]}>
+                      {siteName?.trim() || t('reviewScreen.noSiteSelected')}
                     </Text>
                     <Text numberOfLines={1} style={styles.siteHint}>
-                      {siteName ? t('reviewScreen.siteReadyHint') : t('reviewScreen.siteEmptyHint')}
+                      {siteName?.trim() ? t('reviewScreen.siteReadyHint') : t('reviewScreen.siteEmptyHint')}
                     </Text>
                   </>
                 )}
@@ -497,11 +560,18 @@ export function SubmissionReviewScreen() {
 
             <View style={styles.workerMarkers}>
               {workerPhotos.map((worker, index) => (
-                <View
+                <Pressable
                   key={worker.sequenceNo}
-                  style={[
+                  accessibilityLabel={t('reviewScreen.worker', { number: worker.sequenceNo })}
+                  accessibilityRole="button"
+                  onPress={() => {
+                    carouselRef.current?.scrollTo({ x: index * slideWidth, animated: true });
+                    setActiveWorkerIndex(index);
+                  }}
+                  style={({ pressed }) => [
                     styles.workerMarker,
                     index === activeWorkerIndex && styles.workerMarkerActive,
+                    pressed && styles.pressed,
                   ]}
                 />
               ))}
@@ -509,13 +579,23 @@ export function SubmissionReviewScreen() {
 
             <View style={styles.workerCarousel}>
               <ScrollView
+                ref={carouselRef}
                 contentContainerStyle={styles.workerTrack}
                 decelerationRate="fast"
+                directionalLockEnabled
                 horizontal
-                onMomentumScrollEnd={(event) =>
-                  updateActiveWorker(event.nativeEvent.contentOffset.x)
-                }
+                nestedScrollEnabled
+                onMomentumScrollEnd={(event) => {
+                  setIsVerticalScrollEnabled(true);
+                  updateActiveWorker(event.nativeEvent.contentOffset.x);
+                }}
+                onScroll={(event) => {
+                  updateActiveWorker(event.nativeEvent.contentOffset.x);
+                }}
+                onScrollBeginDrag={() => setIsVerticalScrollEnabled(false)}
+                onScrollEndDrag={() => setIsVerticalScrollEnabled(true)}
                 pagingEnabled
+                scrollEventThrottle={16}
                 showsHorizontalScrollIndicator={false}
                 snapToInterval={slideWidth}
                 snapToAlignment="start">
@@ -524,6 +604,23 @@ export function SubmissionReviewScreen() {
                     key={worker.sequenceNo}
                     style={[styles.workerSlide, { width: slideWidth }]}>
                     <View style={styles.workerCard}>
+                      <View style={styles.workerCardHeader}>
+                        <View style={styles.workerBadge}>
+                          <Icon
+                            color={colors.primary}
+                            name={{ ios: 'person.fill', android: 'person', web: 'person' }}
+                            size={14}
+                            weight="bold"
+                          />
+                          <Text style={styles.workerBadgeText}>
+                            {t('reviewScreen.worker', { number: worker.sequenceNo })}
+                          </Text>
+                        </View>
+                        <Text style={styles.workerPhotoCount}>
+                          {t('reviewScreen.twoPhotos')}
+                        </Text>
+                      </View>
+
                       <View style={styles.photoGrid}>
                         <View style={styles.photoColumn}>
                           <ReviewPhoto
@@ -538,6 +635,7 @@ export function SubmissionReviewScreen() {
                           />
                         </View>
                       </View>
+
                       <View style={styles.cardStatus}>
                         <Icon
                           color={colors.safe}
@@ -546,11 +644,12 @@ export function SubmissionReviewScreen() {
                             android: 'check_circle',
                             web: 'check_circle',
                           }}
-                          size={20}
+                          size={18}
                           weight="bold"
                         />
                         <Text style={styles.cardStatusText}>{t('reviewScreen.photoPairReady')}</Text>
                       </View>
+
                       <View style={styles.workerActions}>
                         <Pressable
                           accessibilityRole="button"
@@ -561,13 +660,13 @@ export function SubmissionReviewScreen() {
                             pressed && styles.pressed,
                           ]}>
                           <Icon
-                            color={colors.actionBlue}
+                            color={colors.primary}
                             name={{
                               ios: 'camera.rotate.fill',
                               android: 'flip_camera_android',
                               web: 'flip_camera_android',
                             }}
-                            size={17}
+                            size={18}
                             weight="bold"
                           />
                           <Text style={styles.retakeText}>{t('reviewScreen.retake')}</Text>
@@ -583,7 +682,7 @@ export function SubmissionReviewScreen() {
                           <Icon
                             color={colors.danger}
                             name={{ ios: 'trash', android: 'delete', web: 'delete' }}
-                            size={17}
+                            size={18}
                             weight="semibold"
                           />
                           <Text style={styles.removeText}>{t('reviewScreen.remove')}</Text>
@@ -600,7 +699,7 @@ export function SubmissionReviewScreen() {
               onPress={continueCapture}
               style={({ pressed }) => [styles.continueButton, pressed && styles.pressed]}>
               <Icon
-                color={colors.actionBlue}
+                color={colors.primary}
                 name={{ ios: 'camera.fill', android: 'add_a_photo', web: 'add_a_photo' }}
                 size={20}
                 weight="bold"
@@ -621,7 +720,12 @@ export function SubmissionReviewScreen() {
 
             <ScrollView
               contentContainerStyle={styles.otherStrip}
+              directionalLockEnabled
               horizontal
+              nestedScrollEnabled
+              onMomentumScrollEnd={() => setIsVerticalScrollEnabled(true)}
+              onScrollBeginDrag={() => setIsVerticalScrollEnabled(false)}
+              onScrollEndDrag={() => setIsVerticalScrollEnabled(true)}
               showsHorizontalScrollIndicator={false}>
               {reviewOtherPhotos.map((photo) => (
                 <Image key={photo.id} contentFit="cover" source={photo.source} style={styles.otherPhoto} />
@@ -642,7 +746,7 @@ export function SubmissionReviewScreen() {
           </View>
         </ScrollView>
 
-        <View style={styles.submitBar}>
+        <View style={[styles.submitBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <Pressable
             accessibilityRole="button"
             onPress={submitForReview}
@@ -1045,20 +1149,20 @@ const styles = StyleSheet.create({
   workerMarkers: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 7,
+    gap: 8,
     justifyContent: 'center',
-    paddingBottom: 4,
-    paddingTop: 2,
+    paddingBottom: 6,
+    paddingTop: 4,
   },
   workerMarker: {
-    backgroundColor: colors.borderStrong,
+    backgroundColor: '#D1D5DB',
     borderRadius: 999,
-    height: 3,
-    width: 28,
+    height: 5,
+    width: 24,
   },
   workerMarkerActive: {
-    backgroundColor: colors.actionBlue,
-    height: 4,
+    backgroundColor: colors.primary,
+    height: 5,
     width: 36,
   },
   workerCarousel: {
@@ -1072,28 +1176,56 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   workerCard: {
-    backgroundColor: colors.photoStage,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderColor: 'rgba(0, 92, 173, 0.12)',
+    borderRadius: 16,
     borderWidth: 1,
-    padding: 10,
-    shadowColor: '#101214',
-    shadowOffset: { height: 10, width: 0 },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
+    padding: 14,
+    shadowColor: '#005cad',
+    shadowOffset: { height: 4, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  workerCardHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  workerBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.siteSurface,
+    borderColor: 'rgba(0, 92, 173, 0.12)',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  workerBadgeText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  workerPhotoCount: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
   },
   photoGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 10,
   },
   photoColumn: {
-    width: '48.5%',
+    flex: 1,
   },
   photoFrame: {
     aspectRatio: 9 / 16,
-    backgroundColor: '#171b20',
-    borderColor: 'rgba(255, 255, 255, 0.16)',
-    borderRadius: 10,
+    backgroundColor: colors.surfaceLow,
+    borderColor: colors.border,
+    borderRadius: 12,
     borderWidth: 1,
     overflow: 'hidden',
     position: 'relative',
@@ -1104,6 +1236,7 @@ const styles = StyleSheet.create({
   },
   photoFallback: {
     alignItems: 'center',
+    backgroundColor: colors.surfaceLow,
     gap: 8,
     height: '100%',
     justifyContent: 'center',
@@ -1117,37 +1250,39 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   photoLabel: {
-    backgroundColor: 'rgba(0, 0, 0, 0.62)',
-    borderColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 24, 40, 0.72)',
+    borderColor: 'rgba(255, 255, 255, 0.24)',
     borderRadius: 999,
     borderWidth: 1,
-    bottom: 10,
-    left: 10,
+    bottom: 8,
+    left: 8,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 4,
     position: 'absolute',
   },
   photoLabelText: {
     color: colors.white,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 0.3,
     lineHeight: 14,
   },
   cardStatus: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
+    borderColor: 'rgba(22, 163, 74, 0.24)',
+    borderRadius: 10,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'center',
-    marginTop: 10,
-    minHeight: 38,
+    marginTop: 12,
+    minHeight: 40,
     paddingHorizontal: 12,
   },
   cardStatusText: {
-    color: colors.white,
+    color: '#15803D',
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
@@ -1159,49 +1294,55 @@ const styles = StyleSheet.create({
   },
   workerActionButton: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 10,
+    borderWidth: 1,
     flex: 1,
     flexDirection: 'row',
-    gap: 7,
+    gap: 8,
     justifyContent: 'center',
-    minHeight: 42,
-    paddingHorizontal: 10,
+    minHeight: 44,
+    paddingHorizontal: 12,
   },
   retakeButton: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.siteSurface,
+    borderColor: 'rgba(0, 92, 173, 0.16)',
   },
   removeButton: {
-    backgroundColor: 'rgba(220, 38, 38, 0.12)',
-    borderColor: 'rgba(248, 113, 113, 0.24)',
-    borderWidth: 1,
+    backgroundColor: '#FEF2F2',
+    borderColor: 'rgba(220, 38, 38, 0.2)',
   },
   retakeText: {
-    color: colors.actionBlue,
+    color: colors.primary,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     lineHeight: 18,
   },
   removeText: {
-    color: '#F87171',
+    color: colors.danger,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     lineHeight: 18,
   },
   continueButton: {
     alignItems: 'center',
-    borderColor: colors.actionBlue,
-    borderRadius: 8,
-    borderWidth: 2,
+    backgroundColor: colors.white,
+    borderColor: 'rgba(0, 92, 173, 0.28)',
+    borderRadius: 12,
+    borderWidth: 1.5,
     flexDirection: 'row',
     gap: 8,
     height: 48,
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 12,
+    shadowColor: '#005cad',
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
   },
   continueText: {
-    color: colors.actionBlue,
+    color: colors.primary,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     lineHeight: 20,
   },
   otherStrip: {
@@ -1236,14 +1377,18 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   submitBar: {
+    alignSelf: 'center',
     backgroundColor: 'rgba(252, 249, 248, 0.94)',
     borderTopColor: colors.border,
     borderTopWidth: 1,
     bottom: 0,
     left: 0,
-    padding: 16,
+    maxWidth: 448,
+    paddingHorizontal: 16,
+    paddingTop: 12,
     position: 'absolute',
     right: 0,
+    width: '100%',
   },
   submitButton: {
     alignItems: 'center',

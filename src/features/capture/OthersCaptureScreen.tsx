@@ -116,7 +116,7 @@ export function OthersCaptureScreen() {
   const shouldShowInstructionCard = capture.photos.length === 0 && isInstructionCardVisible;
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <StatusBar animated style="light" />
       <NativeStatusBar backgroundColor={colors.controlSurface} barStyle="light-content" />
       <View style={styles.shell}>

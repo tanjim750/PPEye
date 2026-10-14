@@ -1,7 +1,17 @@
 import { Href, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -43,8 +53,13 @@ export function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.content}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.keyboardAvoid}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <View style={styles.logoFrame}>
               <Image source={assets.logo} style={styles.logo} />
@@ -108,7 +123,7 @@ export function LoginScreen() {
                 <Pressable
                   accessibilityLabel={t('auth:loginScreen.togglePasswordVisibility')}
                   accessibilityRole="button"
-                  onPress={() => setIsPasswordVisible((visible) => !visible)}
+                  onPress={() => setIsPasswordVisible((visible: boolean) => !visible)}
                   style={({ pressed }) => [styles.eyeButton, pressed && styles.textPressed]}>
                   <Icon
                     color={colors.outline}
@@ -144,8 +159,8 @@ export function LoginScreen() {
             </Text>
             <Text style={styles.version}>{t('common:version', { version: '1.0.0' })}</Text>
           </View>
-        </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -166,18 +181,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  container: {
+  keyboardAvoid: {
     flex: 1,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
     paddingHorizontal: 20,
   },
-  content: {
+  scrollContent: {
     alignSelf: 'center',
-    gap: 48,
+    flexGrow: 1,
+    gap: 36,
     justifyContent: 'space-between',
-    minHeight: 707,
-    paddingVertical: 32,
+    paddingVertical: 24,
     width: '100%',
     maxWidth: 448,
   },

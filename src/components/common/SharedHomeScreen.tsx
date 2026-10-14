@@ -1,7 +1,7 @@
 import { Image, ImageSource } from 'expo-image';
 import { useSegments } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
@@ -83,13 +83,31 @@ const recentChecks: RecentCheck[] = [
   { status: 'review', timeKey: 'today', titleKey: 'worker131' },
 ];
 
+function getBdtTimeOfDayKey(): 'morning' | 'afternoon' | 'evening' {
+  const now = new Date();
+  // BDT is UTC+6
+  const utcHours = now.getUTCHours();
+  const bdtHours = (utcHours + 6) % 24;
+
+  if (bdtHours >= 5 && bdtHours < 12) {
+    return 'morning';
+  }
+  if (bdtHours >= 12 && bdtHours < 18) {
+    return 'afternoon';
+  }
+  return 'evening';
+}
+
 export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {}) {
   const navigate = useNavigate();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const segments = useSegments();
   const { t } = useTranslation('home');
   const { recentChecks: vendorRecentChecks } = useWorkerChecks();
   const { pendingReviews, recentPendingReviews } = useReviews();
+  const timeOfDayKey = getBdtTimeOfDayKey();
+  const timeGreeting = t(`greetings.${timeOfDayKey}`);
 
   // Determine whether to show Vendor or Reviewer UI
   const resolvedRole =
@@ -115,7 +133,9 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
         <View style={vendorStyles.shell}>
           <View style={vendorStyles.header}>
             <View style={vendorStyles.headerCopy}>
-              <Text style={vendorStyles.greeting}>{t('external.greeting', { name: 'Rahim' })}</Text>
+              <Text style={vendorStyles.greeting}>
+                {t('external.greeting', { timeGreeting, name: 'Rahim' })}
+              </Text>
               <View style={vendorStyles.companyRow}>
                 <Icon
                   color={vendorColors.textMuted}
@@ -298,7 +318,14 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             </View>
           </ScrollView>
 
-          <View style={vendorStyles.bottomNav}>
+          <View
+            style={[
+              vendorStyles.bottomNav,
+              {
+                paddingBottom: Math.max(insets.bottom, 12),
+                height: 60 + Math.max(insets.bottom, 12),
+              },
+            ]}>
             <Pressable accessibilityRole="button" style={vendorStyles.navItemActive}>
               <Icon
                 color="#00376f"
@@ -342,8 +369,10 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
     <SafeAreaView style={reviewerStyles.safeArea}>
       <View style={reviewerStyles.shell}>
         <View style={reviewerStyles.header}>
-          <View>
-            <Text style={reviewerStyles.greeting}>{t('internal.greeting', { name: 'Mahmud' })}</Text>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text numberOfLines={1} style={reviewerStyles.greeting}>
+              {t('internal.greeting', { timeGreeting, name: 'Mahmud' })}
+            </Text>
             <Text style={reviewerStyles.role}>{t('internal.role')}</Text>
           </View>
           <Pressable
@@ -456,7 +485,14 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
           </View>
         </ScrollView>
 
-        <View style={reviewerStyles.bottomNav}>
+        <View
+          style={[
+            reviewerStyles.bottomNav,
+            {
+              paddingBottom: Math.max(insets.bottom, 10),
+              height: 56 + Math.max(insets.bottom, 10),
+            },
+          ]}>
           <Pressable accessibilityRole="button" style={reviewerStyles.navItemActive}>
             <Icon
               color="#00376f"
@@ -555,10 +591,10 @@ const vendorStyles = StyleSheet.create({
   },
   greeting: {
     color: vendorColors.text,
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
     letterSpacing: 0,
-    lineHeight: 40,
+    lineHeight: 36,
   },
   companyRow: {
     alignItems: 'center',
@@ -795,14 +831,15 @@ const vendorStyles = StyleSheet.create({
   },
   bottomNav: {
     alignItems: 'center',
+    alignSelf: 'center',
     backgroundColor: vendorColors.surface,
     borderTopColor: vendorColors.outlineVariant,
     borderTopWidth: 1,
     bottom: 0,
     flexDirection: 'row',
-    height: 64,
     justifyContent: 'space-around',
     left: 0,
+    maxWidth: 448,
     paddingHorizontal: 12,
     position: 'absolute',
     right: 0,
@@ -810,22 +847,22 @@ const vendorStyles = StyleSheet.create({
     shadowOffset: { height: -2, width: 0 },
     shadowOpacity: 0.12,
     shadowRadius: 8,
+    width: '100%',
   },
   navItemActive: {
     alignItems: 'center',
     backgroundColor: vendorColors.secondaryContainer,
     borderRadius: 999,
+    flex: 1,
     justifyContent: 'center',
-    minWidth: 84,
-    paddingHorizontal: 16,
+    marginHorizontal: 4,
     paddingVertical: 4,
     transform: [{ scale: 0.95 }],
   },
   navItem: {
     alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
-    minWidth: 72,
-    paddingHorizontal: 16,
     paddingVertical: 4,
     transform: [{ scale: 0.95 }],
   },
@@ -1110,35 +1147,39 @@ const reviewerStyles = StyleSheet.create({
   },
   bottomNav: {
     alignItems: 'center',
+    alignSelf: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderTopColor: 'rgba(192, 199, 213, 0.3)',
     borderTopWidth: 1,
     bottom: 0,
     flexDirection: 'row',
-    height: 64,
     justifyContent: 'space-around',
     left: 0,
-    paddingHorizontal: 12,
+    maxWidth: 448,
+    paddingHorizontal: 8,
     position: 'absolute',
     right: 0,
     shadowColor: '#000000',
     shadowOffset: { height: -4, width: 0 },
     shadowOpacity: 0.08,
     shadowRadius: 20,
+    width: '100%',
   },
   navItemActive: {
     alignItems: 'center',
     backgroundColor: reviewerColors.secondaryContainer,
     borderRadius: 999,
+    flex: 1,
     justifyContent: 'center',
-    minWidth: 92,
-    paddingHorizontal: 20,
+    marginHorizontal: 2,
     paddingVertical: 4,
   },
   navItem: {
     alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
-    minWidth: 72,
+    marginHorizontal: 2,
+    paddingVertical: 4,
   },
   navTextActive: {
     color: '#00376f',

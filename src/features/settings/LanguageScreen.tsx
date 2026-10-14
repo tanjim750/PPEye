@@ -1,7 +1,7 @@
 import { Href, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -79,7 +79,10 @@ export function LanguageScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <View style={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <View style={styles.brandRow}>
               <View style={styles.brandIcon}>
@@ -150,7 +153,7 @@ export function LanguageScreen() {
             </Pressable>
             <Text style={styles.version}>{t('version', { version: '1.0.0' })}</Text>
           </View>
-        </View>
+        </ScrollView>
       </View>
     </SafeAreaView>
   );
@@ -175,15 +178,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    justifyContent: 'center',
     paddingHorizontal: 20,
   },
-  content: {
+  scrollContent: {
     alignSelf: 'center',
+    flexGrow: 1,
     gap: 32,
     justifyContent: 'space-between',
-    minHeight: 707,
-    paddingVertical: 32,
+    paddingVertical: 24,
     width: '100%',
     maxWidth: 448,
   },

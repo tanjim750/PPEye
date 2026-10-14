@@ -3,6 +3,7 @@ import '@/i18n';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { LanguageProvider, useLanguage } from '@/hooks/useLanguage';
 
@@ -30,8 +31,10 @@ function RootNavigator() {
 
 export default function RootLayout() {
   return (
-    <LanguageProvider>
-      <RootNavigator />
-    </LanguageProvider>
+    <SafeAreaProvider>
+      <LanguageProvider>
+        <RootNavigator />
+      </LanguageProvider>
+    </SafeAreaProvider>
   );
 }
