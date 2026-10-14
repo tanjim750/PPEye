@@ -5,14 +5,16 @@ import { Button } from '@/components/ui/Button';
 import { Screen } from '@/components/ui/Screen';
 import { typography } from '@/theme';
 import { markWorkerSafe } from '@/features/submissions/services/workerChecks.service';
+import { markReviewReviewed } from '@/features/reviews/services/reviews.service';
 
 export function ReviewDetailScreen() {
   const router = useRouter();
   const { submissionId } = useLocalSearchParams<{ submissionId: string }>();
 
   function handleApprove() {
-    // Marks the worker as safe
+    // Marks the worker and review as safe/reviewed
     markWorkerSafe(submissionId || 'w131');
+    markReviewReviewed(submissionId || 'rev-01');
     Alert.alert('Approved', 'Submission marked as Safe!', [
       {
         text: 'OK',

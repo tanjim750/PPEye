@@ -9,6 +9,7 @@ import { assets } from '@/constants/assets';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from '@/hooks/useNavigate';
 import { useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
+import { useReviews } from '@/features/reviews/services/reviews.service';
 import { DummyUserRole } from '@/utils/dummy-users';
 import { UserRole } from '@/features/auth/types';
 
@@ -88,6 +89,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   const segments = useSegments();
   const { t } = useTranslation('home');
   const { recentChecks: vendorRecentChecks } = useWorkerChecks();
+  const { pendingReviews, recentPendingReviews } = useReviews();
 
   // Determine whether to show Vendor or Reviewer UI
   const resolvedRole =
@@ -319,8 +321,8 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              onPress={() => navigate('/settings')}
-              {...({ onClick: () => navigate('/settings') } as any)}
+              onPress={() => navigate('/settings?role=vendor')}
+              {...({ onClick: () => navigate('/settings?role=vendor') } as any)}
               style={({ pressed }) => [vendorStyles.navItem, pressed && vendorStyles.navPressed]}>
               <Icon
                 color={vendorColors.textMuted}
@@ -367,7 +369,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             <View style={reviewerStyles.reviewMetaRow}>
               <View style={reviewerStyles.waitingDot} />
               <Text style={reviewerStyles.reviewMeta}>
-                {t('internal.waitingCount', { count: 12 })}
+                {t('internal.waitingCount', { count: pendingReviews.length })}
               </Text>
             </View>
             <View style={reviewerStyles.reviewButton}>
@@ -385,21 +387,21 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             <Text style={reviewerStyles.sectionTitle}>{t('internal.recent')}</Text>
             <Pressable
               accessibilityRole="button"
-              onPress={() => navigate('/history')}
+              onPress={() => navigate('/reviews')}
               style={({ pressed }) => pressed && reviewerStyles.textPressed}>
               <Text style={reviewerStyles.viewAll}>{t('internal.viewAll')}</Text>
             </Pressable>
           </View>
 
           <View style={reviewerStyles.feed}>
-            {recentReviews.map((item, index) => (
+            {recentPendingReviews.map((item, index) => (
               <Pressable
                 accessibilityRole="button"
-                key={`${item.vendor}-${item.timeKey}`}
-                onPress={() => navigate('/reviews')}
+                key={item.id}
+                onPress={() => navigate(`/review/${item.id}`)}
                 style={({ pressed }) => [
                   reviewerStyles.feedRow,
-                  index < recentReviews.length - 1 && reviewerStyles.feedDivider,
+                  index < recentPendingReviews.length - 1 && reviewerStyles.feedDivider,
                   pressed && reviewerStyles.pressed,
                 ]}>
                 <View style={reviewerStyles.rowHeader}>
@@ -416,11 +418,22 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                     <View style={reviewerStyles.identityCopy}>
                       <Text style={reviewerStyles.vendor}>{item.vendor}</Text>
                       <Text style={reviewerStyles.teamLead}>
-                        {t(`internal.reviewItems.${item.teamLeadKey}`, { count: 5 })}
+                        {item.teamLeadKey
+                          ? t(`internal.reviewItems.${item.teamLeadKey}`, {
+                              count: item.workers,
+                              defaultValue: item.teamLead,
+                            })
+                          : item.teamLead}
                       </Text>
                     </View>
                   </View>
-                  <Text style={reviewerStyles.time}>{t(`internal.reviewItems.${item.timeKey}`)}</Text>
+                  <Text style={reviewerStyles.time}>
+                    {item.timeKey
+                      ? t(`internal.reviewItems.${item.timeKey}`, {
+                          defaultValue: item.timeDisplay,
+                        })
+                      : item.timeDisplay}
+                  </Text>
                 </View>
 
                 <View style={reviewerStyles.detailBlock}>
@@ -431,38 +444,14 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                       workers: item.workers,
                     })}
                   </Text>
-                  <View
-                    style={[
-                      reviewerStyles.statusChip,
-                      item.status === 'waiting'
-                        ? reviewerStyles.waitingChip
-                        : reviewerStyles.reviewedChip,
-                    ]}>
-                    {item.status === 'waiting' ? (
-                      <Icon
-                        color={reviewerColors.warningOrange}
-                        name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
-                        size={14}
-                      />
-                    ) : (
-                      <Icon
-                        color={reviewerColors.successGreen}
-                        name={{
-                          ios: 'checkmark.circle.fill',
-                          android: 'check_circle',
-                          web: 'check_circle',
-                        }}
-                        size={14}
-                      />
-                    )}
-                    <Text
-                      style={[
-                        reviewerStyles.statusText,
-                        item.status === 'waiting'
-                          ? reviewerStyles.waitingText
-                          : reviewerStyles.reviewedText,
-                      ]}>
-                      {t(`internal.statuses.${item.status}`)}
+                  <View style={[reviewerStyles.statusChip, reviewerStyles.waitingChip]}>
+                    <Icon
+                      color={reviewerColors.warningOrange}
+                      name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+                      size={14}
+                    />
+                    <Text style={[reviewerStyles.statusText, reviewerStyles.waitingText]}>
+                      {t('internal.statuses.waiting')}
                     </Text>
                   </View>
                 </View>
@@ -505,8 +494,8 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            onPress={() => navigate('/settings')}
-            {...({ onClick: () => navigate('/settings') } as any)}
+            onPress={() => navigate('/settings?role=reviewer')}
+            {...({ onClick: () => navigate('/settings?role=reviewer') } as any)}
             style={({ pressed }) => [reviewerStyles.navItem, pressed && reviewerStyles.navPressed]}>
             <Icon
               color={reviewerColors.textMuted}
