@@ -476,7 +476,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             style={({ pressed }) => [reviewerStyles.navItem, pressed && reviewerStyles.navPressed]}>
             <Icon
               color={reviewerColors.textMuted}
-              name={{ ios: 'arrow.triangle.2.circlepath', android: 'repeat', web: 'repeat' }}
+              name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
               size={20}
             />
             <Text style={reviewerStyles.navText}>{t('internal.bottomNav.reviews')}</Text>
@@ -487,7 +487,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             style={({ pressed }) => [reviewerStyles.navItem, pressed && reviewerStyles.navPressed]}>
             <Icon
               color={reviewerColors.textMuted}
-              name={{ ios: 'clock.arrow.circlepath', android: 'history', web: 'history' }}
+              name={{ ios: 'checklist', android: 'checklist', web: 'checklist' }}
               size={20}
             />
             <Text style={reviewerStyles.navText}>{t('internal.bottomNav.history')}</Text>

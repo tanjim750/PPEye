@@ -5,15 +5,26 @@ export type ReviewItem = {
   id: string;
   initials?: string;
   location: string;
+  otherReasonText?: string;
   photos: number;
-  status: 'waiting' | 'reviewed';
+  status: 'waiting' | 'reviewed' | 'unsafe';
   teamLead: string;
   teamLeadKey?: string;
   timeDisplay: string;
   timeKey?: string;
   timestamp: number;
+  unsafeReasons?: string[];
   vendor: string;
   workers: number;
+};
+
+export const unsafeReasonLabels: Record<string, string> = {
+  anchorage: 'Anchorage / connection',
+  harness: 'Full-body harness',
+  helmet: 'Helmet',
+  lanyard: 'Lanyard',
+  other: 'Other violation',
+  shoes: 'Safety shoes',
 };
 
 const now = Date.now();
@@ -21,9 +32,9 @@ const minute = 60 * 1000;
 const hour = 60 * minute;
 const day = 24 * hour;
 
-// Initial state: Pending reviews (status === 'waiting') and Reviewed/Safe reviews (status === 'reviewed')
+// Initial state: Pending reviews (status === 'waiting'), Safe (status === 'reviewed'), and Unsafe (status === 'unsafe')
 let reviews: ReviewItem[] = [
-  // Pending for review (waiting)
+  // 1. Pending for review (waiting)
   {
     avatar: 'RM',
     id: 'rev-01',
@@ -112,7 +123,7 @@ let reviews: ReviewItem[] = [
     workers: 6,
   },
 
-  // Safe / Completed reviews (reviewed)
+  // 2. Safe / Completed reviews (reviewed)
   {
     id: 'rev-08',
     initials: 'K',
@@ -152,6 +163,36 @@ let reviews: ReviewItem[] = [
     timeKey: 'yesterday',
     timestamp: now - 1 * day - 6 * hour,
     vendor: 'Vertex Tower',
+    workers: 4,
+  },
+
+  // 3. Unsafe reviews (marked unsafe by reviewer with reasons)
+  {
+    avatar: 'TA',
+    id: 'rev-unsafe-01',
+    location: 'Banani-DH-088',
+    otherReasonText: 'Chinstrap of helmet was unbuckled during climb',
+    photos: 6,
+    status: 'unsafe',
+    teamLead: 'Tanvir Ahmed · Team Leader',
+    timeDisplay: 'Today, 11:15 AM',
+    timestamp: now - 90 * minute,
+    unsafeReasons: ['helmet', 'lanyard', 'other'],
+    vendor: 'Sigma Tech',
+    workers: 3,
+  },
+  {
+    id: 'rev-unsafe-02',
+    initials: 'J',
+    location: 'Mirpur-DH-044',
+    otherReasonText: 'Lanyard carabiner not locked to anchor point',
+    photos: 8,
+    status: 'unsafe',
+    teamLead: 'Jalal Uddin · Team Leader',
+    timeDisplay: 'Yesterday, 04:20 PM',
+    timestamp: now - 1 * day - 3 * hour,
+    unsafeReasons: ['harness', 'anchorage', 'other'],
+    vendor: 'SpeedNet Ltd',
     workers: 4,
   },
 ];
@@ -199,6 +240,15 @@ export function getSafeReviews(): ReviewItem[] {
 }
 
 /**
+ * Returns unsafe reviews ONLY, sorted chronologically (latest time first).
+ */
+export function getUnsafeReviews(): ReviewItem[] {
+  return reviews
+    .filter((item) => item.status === 'unsafe')
+    .sort((a, b) => b.timestamp - a.timestamp);
+}
+
+/**
  * Mark a review as reviewed/safe.
  */
 export function markReviewReviewed(id: string) {
@@ -208,6 +258,25 @@ export function markReviewReviewed(id: string) {
         ...item,
         status: 'reviewed',
         timestamp: Date.now(),
+      };
+    }
+    return item;
+  });
+  notify();
+}
+
+/**
+ * Mark a review as unsafe with specified reasons and notes.
+ */
+export function markReviewUnsafe(id: string, reasons: string[], customReason?: string) {
+  reviews = reviews.map((item) => {
+    if (item.id === id) {
+      return {
+        ...item,
+        otherReasonText: customReason,
+        status: 'unsafe',
+        timestamp: Date.now(),
+        unsafeReasons: reasons,
       };
     }
     return item;
@@ -230,13 +299,16 @@ export function useReviews() {
 
   const pending = getPendingReviews();
   const safe = getSafeReviews();
+  const unsafe = getUnsafeReviews();
   const recentPending = getRecentPendingReviews(5);
 
   return {
     allReviews: getAllReviews(),
     markReviewReviewed,
+    markReviewUnsafe,
     pendingReviews: pending,
     recentPendingReviews: recentPending,
     safeReviews: safe,
+    unsafeReviews: unsafe,
   };
 }

@@ -69,15 +69,15 @@
   "internal": {
     "greeting": "Good morning, {{name}}",
     "role": "EHS Representative",
-    "reviewTitle": "PPE Reviews",
+    "reviewTitle": "PPE Pendings Reviewes",
     "waitingCount": "{{count}} waiting for review",
     "reviewNow": "Review Now",
     "recent": "Recent",
     "viewAll": "View all",
     "bottomNav": {
       "home": "Home",
-      "reviews": "Reviews",
-      "history": "History",
+      "reviews": "Pendings",
+      "history": "Reviews",
       "settings": "Settings"
     },
     "statuses": {

@@ -41,9 +41,7 @@ export function ReviewQueueScreen() {
               size={22}
             />
           </Pressable>
-          <Text style={styles.headerTitle}>
-            {t('internal.bottomNav.reviews', { defaultValue: 'Reviews' })}
-          </Text>
+          <Text style={styles.headerTitle}>Reviewes Pending</Text>
           <View style={styles.headerPlaceholder} />
         </View>
 
@@ -167,12 +165,12 @@ export function ReviewQueueScreen() {
           <Pressable accessibilityRole="button" style={styles.navItemActive}>
             <Icon
               color="#00376f"
-              name={{ ios: 'arrow.triangle.2.circlepath', android: 'repeat', web: 'repeat' }}
+              name={{ ios: 'clock.fill', android: 'schedule', web: 'schedule' }}
               size={20}
               weight="bold"
             />
             <Text style={styles.navTextActive}>
-              {t('internal.bottomNav.reviews', { defaultValue: 'Reviews' })}
+              {t('internal.bottomNav.reviews', { defaultValue: 'Pendings' })}
             </Text>
           </Pressable>
           <Pressable
@@ -181,11 +179,11 @@ export function ReviewQueueScreen() {
             style={({ pressed }) => [styles.navItem, pressed && styles.navPressed]}>
             <Icon
               color={reviewerColors.textMuted}
-              name={{ ios: 'clock.arrow.circlepath', android: 'history', web: 'history' }}
+              name={{ ios: 'checklist', android: 'checklist', web: 'checklist' }}
               size={20}
             />
             <Text style={styles.navText}>
-              {t('internal.bottomNav.history', { defaultValue: 'History' })}
+              {t('internal.bottomNav.history', { defaultValue: 'Reviews' })}
             </Text>
           </Pressable>
           <Pressable

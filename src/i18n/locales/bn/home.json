@@ -69,15 +69,15 @@
   "internal": {
     "greeting": "শুভ সকাল, {{name}}",
     "role": "EHS প্রতিনিধি",
-    "reviewTitle": "PPE রিভিউ",
+    "reviewTitle": "PPE Pendings Reviewes",
     "waitingCount": "{{count}}টি রিভিউ অপেক্ষমাণ",
     "reviewNow": "এখন রিভিউ করুন",
     "recent": "সাম্প্রতিক",
     "viewAll": "সব দেখুন",
     "bottomNav": {
       "home": "হোম",
-      "reviews": "রিভিউ",
-      "history": "ইতিহাস",
+      "reviews": "Pendings",
+      "history": "Reviews",
       "settings": "সেটিংস"
     },
     "statuses": {
