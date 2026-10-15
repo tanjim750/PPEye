@@ -30,6 +30,7 @@ import {
 } from '@/features/submissions/services/pendingSubmissionReview.service';
 import { resubmitWorkerCheck } from '@/features/submissions/services/workerChecks.service';
 import { createOrUpdatePendingReview } from '@/features/reviews/services/reviews.service';
+import { createPPESubmission } from '@/services/supabase/ppeyeDb.service';
 import { locationService } from '@/services/location';
 import {
   getSubmissionWeatherMetadata,
@@ -361,6 +362,24 @@ export function SubmissionReviewScreen() {
       photos: workerPhotos.length * 2 + reviewOtherPhotos.length,
       workers: workerPhotos.length,
       teamLead: 'Rahim Mia · Team Leader',
+    });
+
+    // Also persist to Supabase in background
+    createPPESubmission({
+      siteName: finalSite,
+      metadata: {
+        latitude: submissionMetadata?.location?.latitude ?? null,
+        longitude: submissionMetadata?.location?.longitude ?? null,
+        weather: submissionMetadata?.weather ?? null,
+      },
+      workers: workerPhotos.map((w) => ({
+        sequenceNo: w.sequenceNo,
+        frontUri: w.frontUri,
+        backUri: w.backUri,
+      })),
+      otherPhotos: reviewOtherPhotos.map((p) => p.uri),
+    }).catch((err) => {
+      console.warn('[PPEye] Supabase submission sync error:', err);
     });
 
     clearPendingSubmissionReviewCaptures();
