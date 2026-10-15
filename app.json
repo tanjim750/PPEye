@@ -52,7 +52,13 @@
           "locationWhenInUsePermission": "Allow PPEye to access your location for site safety submissions."
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.175589809991-9mv0c5pia4j5sbvt41bj0ttjci7s2hqi"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

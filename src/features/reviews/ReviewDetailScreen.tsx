@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -23,6 +23,7 @@ import {
   markReviewUnsafe,
   useReviews,
 } from '@/features/reviews/services/reviews.service';
+import { getImageUri, getSubmissionImages } from '@/services/storage';
 
 const colors = {
   background: '#f9f9ff',
@@ -96,6 +97,69 @@ export function ReviewDetailScreen() {
   const [isUnsafeModalVisible, setIsUnsafeModalVisible] = useState(false);
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [otherReasonText, setOtherReasonText] = useState('');
+
+  // Private authorized image previews for FRONT and BACK
+  const [frontUri, setFrontUri] = useState<string | null>(null);
+  const [backUri, setBackUri] = useState<string | null>(null);
+  const [, setIsLoadingImages] = useState(false);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadWorkerImages() {
+      const parsedSubId = Number(submissionId);
+      if (!parsedSubId || isNaN(parsedSubId)) {
+        return;
+      }
+
+      setIsLoadingImages(true);
+      try {
+        const subData = await getSubmissionImages(parsedSubId);
+        const worker =
+          subData.workers.find((w) => w.sequenceNo === currentWorkerIndex) ||
+          subData.workers[currentWorkerIndex - 1];
+
+        if (worker && !isCancelled) {
+          if (worker.front?.file?.id) {
+            try {
+              const uri = await getImageUri(String(worker.front.file.id), { isSensitive: true });
+              if (!isCancelled) setFrontUri(uri);
+            } catch {
+              if (!isCancelled) setFrontUri(null);
+            }
+          } else {
+            setFrontUri(null);
+          }
+
+          if (worker.back?.file?.id) {
+            try {
+              const uri = await getImageUri(String(worker.back.file.id), { isSensitive: true });
+              if (!isCancelled) setBackUri(uri);
+            } catch {
+              if (!isCancelled) setBackUri(null);
+            }
+          } else {
+            setBackUri(null);
+          }
+        }
+      } catch {
+        if (!isCancelled) {
+          setFrontUri(null);
+          setBackUri(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingImages(false);
+        }
+      }
+    }
+
+    loadWorkerImages();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [submissionId, currentWorkerIndex]);
 
   const progressPercent = Math.min(
     100,
@@ -287,7 +351,7 @@ export function ReviewDetailScreen() {
               </View>
               <Image
                 contentFit="cover"
-                source={assets.fieldSafeCheck}
+                source={frontUri ? { uri: frontUri } : assets.fieldSafeCheck}
                 style={styles.imagePhoto}
               />
             </View>
@@ -299,7 +363,7 @@ export function ReviewDetailScreen() {
               </View>
               <Image
                 contentFit="cover"
-                source={assets.captureRecentPhoto}
+                source={backUri ? { uri: backUri } : assets.captureRecentPhoto}
                 style={styles.imagePhoto}
               />
             </View>

@@ -31,6 +31,8 @@ import {
 import { resubmitWorkerCheck } from '@/features/submissions/services/workerChecks.service';
 import { createOrUpdatePendingReview } from '@/features/reviews/services/reviews.service';
 import { createPPESubmission } from '@/services/supabase/ppeyeDb.service';
+import { uploadSubmissionPhotosToDrive } from '@/services/google-drive';
+import { uploadSubmissionImages, validateSubmissionImages } from '@/services/storage';
 import { locationService } from '@/services/location';
 import {
   getSubmissionWeatherMetadata,
@@ -341,6 +343,26 @@ export function SubmissionReviewScreen() {
       }
     }
 
+    // Validate submission images against domain rules: require exactly one active FRONT and BACK per worker
+    const validation = await validateSubmissionImages({
+      workers: workerPhotos.map((w) => ({
+        sequenceNo: w.sequenceNo,
+        frontLocalUri: w.frontUri,
+        backLocalUri: w.backUri,
+      })),
+      otherImages: reviewOtherPhotos.map((p) => p.uri),
+    });
+
+    if (!validation.isValid) {
+      const errorMsg = validation.errors.map((e) => e.message).join('\n');
+      Alert.alert(
+        'Incomplete Photos',
+        `Please ensure all worker inspection photos are complete:\n\n${errorMsg}`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     isSubmittingRef.current = true;
     isExitingToHomeRef.current = true;
 
@@ -364,25 +386,63 @@ export function SubmissionReviewScreen() {
       teamLead: 'Rahim Mia · Team Leader',
     });
 
-    // Also persist to Supabase in background
-    createPPESubmission({
-      siteName: finalSite,
-      metadata: {
-        latitude: submissionMetadata?.location?.latitude ?? null,
-        longitude: submissionMetadata?.location?.longitude ?? null,
-        weather: submissionMetadata?.weather ?? null,
-      },
-      workers: workerPhotos.map((w) => ({
-        sequenceNo: w.sequenceNo,
-        frontUri: w.frontUri,
-        backUri: w.backUri,
-      })),
-      otherPhotos: reviewOtherPhotos.map((p) => p.uri),
-    }).catch((err) => {
-      console.warn('[PPEye] Supabase submission sync error:', err);
-    });
+    // Background async pipeline: Supabase submission creation -> Storage upload & relationship persistence
+    (async () => {
+      try {
+        // Step 1: Create initial submission record in Supabase in DRAFT status
+        const subRecord = await createPPESubmission({
+          siteName: finalSite,
+          metadata: {
+            latitude: submissionMetadata?.location?.latitude ?? null,
+            longitude: submissionMetadata?.location?.longitude ?? null,
+            weather: submissionMetadata?.weather ?? null,
+          },
+          workers: [],
+          otherPhotos: [],
+        });
 
-    clearPendingSubmissionReviewCaptures();
+        const submissionId =
+          typeof subRecord?.submissionId === 'number'
+            ? subRecord.submissionId
+            : parseInt(String(subRecord?.submissionId), 10);
+
+        if (submissionId && !isNaN(submissionId)) {
+          // Step 2: Upload images and persist relationships (ppe_images, other_images, files)
+          const result = await uploadSubmissionImages({
+            submissionId,
+            siteName: finalSite,
+            workers: workerPhotos.map((w) => ({
+              sequenceNo: w.sequenceNo,
+              frontLocalUri: w.frontUri,
+              backLocalUri: w.backUri,
+            })),
+            otherImages: reviewOtherPhotos.map((p) => p.uri),
+            markCompleteOnSuccess: true,
+          });
+
+          // Step 3: Only clear pending local captures if upload and relationships succeeded!
+          if (result.isComplete) {
+            clearPendingSubmissionReviewCaptures();
+          } else {
+            console.warn('[PPEye] Partial upload encountered: keeping local captures for retry.');
+          }
+        } else {
+          // Fallback legacy Drive upload if DB submissionId unavailable
+          await uploadSubmissionPhotosToDrive({
+            siteName: finalSite,
+            workers: workerPhotos.map((w) => ({
+              sequenceNo: w.sequenceNo,
+              frontUri: w.frontUri,
+              backUri: w.backUri,
+            })),
+            otherPhotos: reviewOtherPhotos.map((p) => p.uri),
+          });
+          clearPendingSubmissionReviewCaptures();
+        }
+      } catch (err) {
+        console.warn('[PPEye] Pipeline sync error (Drive -> Supabase):', err);
+      }
+    })();
 
     // Immediately navigate to history pending page
     router.replace('/history?filter=pending' as Href);

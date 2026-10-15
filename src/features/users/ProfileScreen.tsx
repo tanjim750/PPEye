@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
+import { getProfilePictureUri, uploadProfilePicture } from '@/services/storage';
 
 type EditableField = 'fullName' | 'phoneNumber' | 'email';
 
@@ -22,6 +23,16 @@ export function ProfileScreen() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    getProfilePictureUri(1)
+      .then((cachedUri) => {
+        if (cachedUri) {
+          setProfileImage(cachedUri);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (!toastMessage) return;
     const timer = setTimeout(() => setToastMessage(null), 2500);
     return () => clearTimeout(timer);
@@ -34,8 +45,12 @@ export function ProfileScreen() {
       quality: 1,
     });
 
-    if (!result.canceled) {
-      setProfileImage(result.assets[0].uri);
+    if (!result.canceled && result.assets[0]?.uri) {
+      const pickedUri = result.assets[0].uri;
+      setProfileImage(pickedUri);
+      uploadProfilePicture({ localUri: pickedUri, userId: 1 }).catch((err) => {
+        console.warn('[ProfileScreen] Profile image upload error:', err);
+      });
     }
   }
 
