@@ -6,7 +6,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
-import { formatWorkerCheckTime, useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
+import { formatWorkerCheckTime, formatWorkerCheckTitle, useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
 
 type HistoryTab = 'all' | 'pending' | 'unsafe';
 
@@ -14,7 +14,7 @@ export function SubmissionHistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ filter?: string }>();
-  const { t } = useTranslation('home');
+  const { t, i18n } = useTranslation('home');
   const { safeChecks, pendingChecks, unsafeChecks, resubmitWorkerCheck } = useWorkerChecks();
 
   const handleGoHome = useCallback(() => {
@@ -54,12 +54,15 @@ export function SubmissionHistoryScreen() {
   }, [params.filter]);
 
   // Both lists are sorted chronologically (latest time first)
-  const displayedList =
+  const displayedList = (
     activeTab === 'all'
       ? safeChecks
       : activeTab === 'pending'
         ? pendingChecks
-        : unsafeChecks;
+        : unsafeChecks
+  )
+    .slice()
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -206,9 +209,7 @@ export function SubmissionHistoryScreen() {
                     <View style={styles.feedCopy}>
                       <View style={styles.feedTitleRow}>
                         <Text numberOfLines={1} style={styles.workerName}>
-                          {t(`external.recent.${item.titleKey}`, {
-                            defaultValue: `Worker #${item.workerNumber}`,
-                          })}
+                          {formatWorkerCheckTitle(item, t, i18n.language)}
                         </Text>
                         <Text style={styles.time}>
                           {formatWorkerCheckTime(item, t)}

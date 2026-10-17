@@ -27,6 +27,7 @@
       "review": "Review"
     },
     "recent": {
+      "worker": "Worker #{{number}}",
       "worker121": "Worker #121",
       "worker122": "Worker #122",
       "worker123": "Worker #123",

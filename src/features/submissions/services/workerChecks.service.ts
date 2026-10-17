@@ -231,7 +231,7 @@ export function getRecentTodayChecks(limit = 10): WorkerCheck[] {
         (item.status === 'safe' || item.status === 'unsafe') &&
         !item.timeKey.startsWith('yesterday')
     )
-    .sort((a, b) => b.timestamp - a.timestamp)
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
     .slice(0, limit);
 }
 
@@ -286,14 +286,14 @@ export function getUnsafeWorkerChecks(): WorkerCheck[] {
  */
 export function resubmitWorkerCheck(
   idOrWorkerNumber: string | number,
-  options?: { backUri?: string; frontUri?: string; siteName?: string }
+  options?: { backUri?: string; frontUri?: string; siteName?: string; capturedAt?: number }
 ) {
+  const itemTimestamp = options?.capturedAt || Date.now();
   let matched = false;
   workerChecks = workerChecks.map((item) => {
     if (
       item.id === idOrWorkerNumber ||
-      item.workerNumber === idOrWorkerNumber ||
-      String(item.workerNumber) === String(idOrWorkerNumber) ||
+      (item.workerNumber === idOrWorkerNumber && item.status === 'unsafe') ||
       (typeof idOrWorkerNumber === 'string' &&
         item.id.toLowerCase() === idOrWorkerNumber.toLowerCase())
     ) {
@@ -303,7 +303,7 @@ export function resubmitWorkerCheck(
         image: options?.frontUri ? { uri: options.frontUri } : item.image,
         siteName: options?.siteName || item.siteName,
         status: 'review' as const,
-        timestamp: Date.now(),
+        timestamp: itemTimestamp,
       };
     }
     return item;
@@ -313,22 +313,54 @@ export function resubmitWorkerCheck(
     const num =
       typeof idOrWorkerNumber === 'number'
         ? idOrWorkerNumber
-        : parseInt(String(idOrWorkerNumber).replace(/\D/g, ''), 10) || 135;
+        : parseInt(String(idOrWorkerNumber).replace(/\D/g, ''), 10) || 1;
     workerChecks = [
       {
-        id: `w${num}`,
+        id: `w${num}_${itemTimestamp}_${Math.random().toString(36).slice(2, 6)}`,
         image: options?.frontUri ? { uri: options.frontUri } : undefined,
         siteName: options?.siteName || 'Gazipur-ER-102 - Tower Sector 3',
         status: 'review' as const,
-        timeKey: 'time1042',
-        timestamp: Date.now(),
+        timeKey: 'today',
+        timestamp: itemTimestamp,
         titleKey: `worker${num}`,
         workerNumber: num,
       },
       ...workerChecks,
     ];
   }
+  workerChecks = [...workerChecks].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   notify();
+}
+
+export function toBengaliNumerals(num: number | string): string {
+  const bnDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+  return String(num).replace(/[0-9]/g, (digit) => bnDigits[Number(digit)] || digit);
+}
+
+export function extractSiteCode(siteName?: string): string {
+  if (!siteName) return 'Gazipur-ER-102';
+  const trimmed = siteName.trim();
+  const dashIndex = trimmed.indexOf(' - ');
+  if (dashIndex !== -1) {
+    return trimmed.slice(0, dashIndex).trim();
+  }
+  return trimmed;
+}
+
+/**
+ * Returns dynamic title for worker check on vendor side:
+ * Displays "Worker - <site code>" (or Bengali "কর্মী - <site code>")
+ * Worker ID is removed as per user request.
+ */
+export function formatWorkerCheckTitle(
+  item: { siteName?: string; workerNumber?: number; titleKey?: string },
+  t?: (key: string, options?: any) => string,
+  language?: string
+): string {
+  const siteCode = extractSiteCode(item.siteName);
+  const isBn = language === 'bn' || language?.startsWith('bn');
+  const prefix = isBn ? 'কর্মী' : 'Worker';
+  return `${prefix} - ${siteCode}`;
 }
 
 /**
@@ -473,6 +505,100 @@ export function markWorkerUnsafe(
 }
 
 /**
+ * Synchronizes real worker submissions from Supabase to provide fully dynamic worker IDs and checks.
+ */
+export async function syncWorkerChecksFromSupabase() {
+  try {
+    const supabase = require('@/services/supabase/client').supabase;
+    if (!supabase) return;
+
+    const { data: subs, error } = await supabase
+      .from('ppe_submissions')
+      .select(`
+        id,
+        site_name,
+        status,
+        created_at,
+        ppe_worker_instances (
+          id,
+          sequence_no,
+          ppe_reviews (
+            id,
+            verdict,
+            ppe_review_reasons (
+              note,
+              unsafe_reasons (code, label)
+            )
+          ),
+          ppe_images (
+            id,
+            side,
+            files (
+              id,
+              provider_file_id
+            )
+          )
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error || !subs || subs.length === 0) {
+      return;
+    }
+
+    const liveChecks: WorkerCheck[] = [];
+    for (const sub of subs) {
+      const workers = (sub.ppe_worker_instances as any[]) || [];
+      for (const w of workers) {
+        const review = w.ppe_reviews?.[0];
+        let status: 'safe' | 'unsafe' | 'review' = 'review';
+        let unsafeReasons: string[] = [];
+        let reviewerNote: string | undefined;
+
+        if (review?.verdict === 'SAFE') {
+          status = 'safe';
+        } else if (review?.verdict === 'UNSAFE') {
+          status = 'unsafe';
+          if (review.ppe_review_reasons) {
+            unsafeReasons = review.ppe_review_reasons
+              .map((rr: any) => rr.unsafe_reasons?.label || rr.unsafe_reasons?.code)
+              .filter(Boolean);
+            reviewerNote = review.ppe_review_reasons[0]?.note;
+          }
+        }
+
+        const frontImg = w.ppe_images?.find((img: any) => img.side === 'FRONT');
+        const fileId = frontImg?.files?.provider_file_id;
+        const imageUrl = fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w400` : undefined;
+
+        liveChecks.push({
+          id: `sub_${sub.id}_w_${w.sequence_no}`,
+          image: imageUrl ? ({ uri: imageUrl } as any) : undefined,
+          siteName: sub.site_name,
+          status,
+          timeKey: 'today',
+          timestamp: new Date(sub.created_at).getTime(),
+          titleKey: `worker${w.sequence_no}`,
+          workerNumber: w.sequence_no,
+          unsafeReasons,
+          reviewerNote,
+        });
+      }
+    }
+
+    if (liveChecks.length > 0) {
+      const liveIds = new Set(liveChecks.map((c) => c.id));
+      const nonLive = workerChecks.filter((c) => !liveIds.has(c.id));
+      workerChecks = [...liveChecks, ...nonLive];
+      notify();
+    }
+  } catch (err) {
+    console.warn('[WorkerChecks] syncWorkerChecksFromSupabase caught:', err);
+  }
+}
+
+/**
  * Hook providing reactive access to worker checks with time sorting
  */
 export function useWorkerChecks() {
@@ -482,6 +608,7 @@ export function useWorkerChecks() {
     const unsubscribe = subscribeWorkerChecks(() => {
       setTick((t) => t + 1);
     });
+    syncWorkerChecksFromSupabase();
     return unsubscribe;
   }, []);
 
@@ -494,5 +621,6 @@ export function useWorkerChecks() {
     markWorkerSafe,
     markWorkerUnsafe,
     resubmitWorkerCheck,
+    syncWorkerChecksFromSupabase,
   };
 }

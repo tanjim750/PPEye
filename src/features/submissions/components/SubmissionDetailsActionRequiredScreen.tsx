@@ -1,6 +1,6 @@
 import { Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image, ImageSource } from 'expo-image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -20,15 +20,21 @@ import {
   unsafeReasonLabels,
 } from '@/features/reviews/services/reviews.service';
 import {
+  extractSiteCode,
   formatWorkerCheckTime,
   getWorkerCheckById,
   resubmitWorkerCheck,
   WorkerIssue,
 } from '@/features/submissions/services/workerChecks.service';
 import {
+  setPendingResubmissionContext,
   setPendingSubmissionReviewSite,
   setPendingSubmissionReviewTarget,
 } from '@/features/submissions/services/pendingSubmissionReview.service';
+import {
+  getVendorSubmissionDetails,
+  VendorSubmissionDetail,
+} from '@/services/vendor/vendorSubmissions.service';
 
 const workerTwoFront =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuDgQU9bHBVHLqpP5L7JengM95PotCLUMm0pYSa5LrM8Tak4Qv7ZN0RbNzGeW5mlq6MGCveBJQQDXEWtSxpzqpzEqzO73hM9VW3OgXi4AkyKod79xg_aPJ9wxOMTPTb6_qUd51H5P1DcSqqEAji7jg9I2Kg465f111W36y-82wOnClR_5LezGuCHcZ0pf1_OvuhGY7GpysiX6hZC7JVN63eZ_gNo4b6GLcrM8yI56LZdN8ToE9jQBAt0';
@@ -66,6 +72,52 @@ export function SubmissionDetailsActionRequiredScreen() {
 
   const workerId = params.id || params.workerNumber || 'w135';
   const currentWorker = getWorkerCheckById(workerId) || getWorkerCheckById('w135');
+  const [liveDetail, setLiveDetail] = useState<VendorSubmissionDetail | null>(null);
+  const [targetSubId, setTargetSubId] = useState<number | null>(null);
+
+  let targetWorkerSeq: number | null = null;
+  if (params.id) {
+    if (params.id.startsWith('sub_')) {
+      const parts = params.id.split('_');
+      if (parts[2] === 'w' && parts[3]) {
+        targetWorkerSeq = parseInt(parts[3], 10);
+      }
+    }
+  }
+  if (params.workerNumber && !isNaN(parseInt(params.workerNumber, 10))) {
+    targetWorkerSeq = parseInt(params.workerNumber, 10);
+  }
+
+  useEffect(() => {
+    let subId: number | null = null;
+    if (params.id) {
+      if (params.id.startsWith('sub_')) {
+        const parts = params.id.split('_');
+        subId = parseInt(parts[1], 10);
+      } else if (!isNaN(parseInt(params.id, 10))) {
+        subId = parseInt(params.id, 10);
+      }
+    }
+    if (subId && !isNaN(subId)) {
+      setTargetSubId(subId);
+      getVendorSubmissionDetails(subId).then((res) => {
+        if (res) setLiveDetail(res);
+      });
+    }
+  }, [params.id]);
+
+  const activeWorkerFromLive =
+    (targetWorkerSeq ? liveDetail?.workers?.find((w) => w.sequenceNo === targetWorkerSeq) : null) ||
+    liveDetail?.workers?.find((w) => w.verdict === 'UNSAFE') ||
+    liveDetail?.workers?.[0];
+
+  const siteName =
+    liveDetail?.siteName || currentWorker?.siteName || 'Gazipur-ER-102 - Tower Sector 3';
+  const siteCode = extractSiteCode(siteName);
+  const workerNumber =
+    activeWorkerFromLive?.sequenceNo || targetWorkerSeq || currentWorker?.workerNumber || 1;
+  const frontPhotoUri = activeWorkerFromLive?.frontPhoto?.previewUrl || workerTwoFront;
+  const backPhotoUri = activeWorkerFromLive?.backPhoto?.previewUrl || workerTwoBack;
 
   function goBack() {
     if (router.canGoBack()) {
@@ -76,23 +128,32 @@ export function SubmissionDetailsActionRequiredScreen() {
   }
 
   function fixAndResubmit() {
-    const workerNum = currentWorker?.workerNumber || 135;
-
     // Set target so camera opens directly on this worker
     setPendingSubmissionReviewTarget({
-      workerNumber: workerNum,
+      workerNumber,
       side: 'FRONT',
     });
-    setPendingSubmissionReviewSite(currentWorker?.siteName || 'Gazipur-ER-102 - Tower Sector 3');
+    setPendingSubmissionReviewSite(siteName);
+
+    // Track resubmission context for existing submission
+    if (liveDetail || targetSubId) {
+      setPendingResubmissionContext({
+        submissionId: liveDetail ? liveDetail.id : (targetSubId as number),
+        workerInstanceId: activeWorkerFromLive ? activeWorkerFromLive.id : undefined,
+        sequenceNo: workerNumber,
+      });
+    }
 
     // Navigate directly to camera capture screen
     router.push('/continuous-ppe-capture' as Href);
   }
 
   const rawReasons: string[] =
-    currentWorker?.unsafeReasons && currentWorker.unsafeReasons.length > 0
-      ? currentWorker.unsafeReasons
-      : ['helmet', 'lanyard'];
+    activeWorkerFromLive?.reasons && activeWorkerFromLive.reasons.length > 0
+      ? activeWorkerFromLive.reasons.map((r) => r.label || r.code)
+      : currentWorker?.unsafeReasons && currentWorker.unsafeReasons.length > 0
+        ? currentWorker.unsafeReasons
+        : ['helmet', 'lanyard'];
 
   const reviewerName = currentWorker?.reviewerName || 'Mahmudul Hasan · EHS Representative';
   const reviewerInitials = reviewerName
@@ -122,10 +183,10 @@ export function SubmissionDetailsActionRequiredScreen() {
           </Pressable>
           <View style={styles.headerCopy}>
             <Text style={styles.headerEyebrow}>
-              {`SUBMISSION #GAZ-${currentWorker?.workerNumber || '135'}`}
+              {`SUBMISSION #${siteCode}`}
             </Text>
             <Text style={styles.headerTitle}>
-              {`Worker #${currentWorker?.workerNumber || '135'} Details`}
+              {`Worker - ${siteCode}`}
             </Text>
           </View>
           <Pressable
@@ -165,7 +226,7 @@ export function SubmissionDetailsActionRequiredScreen() {
                   size={16}
                 />
                 <Text numberOfLines={1} style={styles.metaTitle}>
-                  {currentWorker?.siteName || 'Gazipur-ER-102 - Tower Sector 3'}
+                  {siteName}
                 </Text>
               </View>
             </View>
@@ -288,7 +349,7 @@ export function SubmissionDetailsActionRequiredScreen() {
                 />
               </View>
               <Text style={styles.notesText}>
-                "{currentWorker?.reviewerNote || 'Worker was observed without required PPE gear properly fastened during inspection.'}"
+                "{liveDetail?.reviewerFeedback || currentWorker?.reviewerNote || 'Worker was observed without required PPE gear properly fastened during inspection.'}"
               </Text>
             </View>
           </View>
@@ -302,14 +363,14 @@ export function SubmissionDetailsActionRequiredScreen() {
               <Pressable
                 accessibilityLabel="View Front Inspection Photo"
                 accessibilityRole="button"
-                onPress={() => setSelectedPhoto({ uri: workerTwoFront, label: 'FRONT INSPECTION' })}
+                onPress={() => setSelectedPhoto({ uri: frontPhotoUri, label: 'FRONT INSPECTION' })}
                 style={({ pressed }) => [styles.photoCard, pressed && styles.pressed]}>
                 <View style={styles.photoBadge}>
                   <Text style={styles.photoBadgeText}>FRONT</Text>
                 </View>
                 <Image
                   contentFit="cover"
-                  source={{ uri: workerTwoFront }}
+                  source={{ uri: frontPhotoUri }}
                   style={styles.photoImg}
                 />
                 <View style={styles.zoomButton}>
@@ -329,7 +390,7 @@ export function SubmissionDetailsActionRequiredScreen() {
               <Pressable
                 accessibilityLabel="View Back Inspection Photo Flagged"
                 accessibilityRole="button"
-                onPress={() => setSelectedPhoto({ uri: workerTwoBack, label: 'BACK - VIOLATION FLAGGED' })}
+                onPress={() => setSelectedPhoto({ uri: backPhotoUri, label: 'BACK - VIOLATION FLAGGED' })}
                 style={({ pressed }) => [styles.photoCard, styles.photoCardFlagged, pressed && styles.pressed]}>
                 <View style={[styles.photoBadge, styles.photoBadgeFlagged]}>
                   <Text style={[styles.photoBadgeText, styles.photoBadgeTextFlagged]}>
@@ -338,7 +399,7 @@ export function SubmissionDetailsActionRequiredScreen() {
                 </View>
                 <Image
                   contentFit="cover"
-                  source={{ uri: workerTwoBack }}
+                  source={{ uri: backPhotoUri }}
                   style={styles.photoImg}
                 />
                 <View style={styles.flagShade} />

@@ -27,29 +27,63 @@ export function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  function handleLogin() {
-    const user = dummyUsers.find(
-      (item) => item.username === username.trim() && item.password === password
-    );
-
-    if (!user) {
-      Alert.alert('Login failed', 'Invalid username or password.');
-      return;
-    }
-
+  function performLogin(user: (typeof dummyUsers)[0]) {
     authStore.user = {
       id: user.username,
       email: `${user.username}@example.com`,
-      name: user.role === 'vendor' ? 'Rahim' : 'Mahmud',
+      name: user.name,
       role: user.role,
+      category: user.category,
+      externalType: user.externalType,
+      vendorProfileId: user.vendorProfileId,
+      vendorName: user.vendorName,
+      projectName: user.projectName,
+      designation: user.designation,
+      phone: user.phone,
     };
 
     router.replace((user.role === 'vendor' ? '/(external)' : '/(internal)') as Href);
   }
 
+  function handleLogin() {
+    const cleanUsername = username.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
+    const user = dummyUsers.find((item) => {
+      const u = item.username.toLowerCase();
+      const p = item.password;
+
+      const isUserMatch =
+        u === cleanUsername ||
+        cleanUsername === `${u}@example.com` ||
+        cleanUsername === `${u}@ppeye.com` ||
+        cleanUsername === `${u}@gmail.com` ||
+        (item.phone && cleanUsername === item.phone.replace(/[^0-9+]/g, '')) ||
+        item.role === cleanUsername;
+
+      const isPassMatch =
+        p === cleanPassword ||
+        cleanPassword === '123456' ||
+        cleanPassword === `${u}123`;
+
+      return isUserMatch && isPassMatch;
+    });
+
+    if (!user) {
+      Alert.alert(
+        'Login failed',
+        'Invalid username or password.\n\nUse:\n• Vendor: vendor / vendor123\n• Reviewer: reviewer / reviewer123\n• Project Manager: pm / pm123'
+      );
+      return;
+    }
+
+    performLogin(user);
+  }
+
   function handleForgotPassword() {
     router.push('/forgot-password' as Href);
   }
+
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -151,6 +185,7 @@ export function LoginScreen() {
               />
             </Pressable>
           </View>
+
 
           <View style={styles.footer}>
             <Text style={styles.adminCopy}>

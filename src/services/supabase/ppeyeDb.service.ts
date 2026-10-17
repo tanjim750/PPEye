@@ -103,18 +103,42 @@ async function registerFile(
   createdBy: number = 1,
   storageProvider: StorageProvider = 'GOOGLE_DRIVE'
 ): Promise<number | null> {
+  // Reject local device URIs - only real Google Drive IDs are allowed!
+  if (!providerFileId || providerFileId.startsWith('file://') || providerFileId.startsWith('ph://')) {
+    console.warn('[PPEye DB] Refused to register local URI as Drive ID in database:', providerFileId);
+    return null;
+  }
+
   try {
-    const { data, error } = await supabase
+    const payload: any = {
+      storage_provider: storageProvider,
+      provider_file_id: providerFileId,
+      drive_id: providerFileId,
+      file_name: fileName,
+      mime_type: 'image/jpeg',
+      created_by: createdBy,
+    };
+
+    let { data, error } = await supabase
       .from('files')
-      .insert({
-        storage_provider: storageProvider,
-        provider_file_id: providerFileId,
-        file_name: fileName,
-        mime_type: 'image/jpeg',
-        created_by: createdBy,
-      })
+      .insert(payload)
       .select('id')
       .single();
+
+    // Compatibility fallback: if remote table does not yet have drive_id column
+    if (error && error.message?.includes('drive_id')) {
+      delete payload.drive_id;
+      const retry = await supabase.from('files').insert(payload).select('id').single();
+      data = retry.data;
+      error = retry.error;
+    }
+    // Compatibility fallback: if remote table renamed provider_file_id to drive_id
+    else if (error && error.message?.includes('provider_file_id')) {
+      delete payload.provider_file_id;
+      const retry = await supabase.from('files').insert(payload).select('id').single();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error || !data) {
       console.warn('[PPEye DB] Error registering file:', error?.message);
@@ -128,13 +152,19 @@ async function registerFile(
   }
 }
 
+export interface CreateSubmissionHeaderPayload {
+  vendorProfileId?: number;
+  submittedBy?: number;
+  siteName: string;
+  metadata?: any;
+}
+
 /**
- * Creates a complete PPE submission including worker instances and photos.
- * Photo records store the Google Drive File ID referencing the 'files' table.
+ * Creates the parent PPE submission row and returns its new submission ID.
  */
-export async function createPPESubmission(
-  payload: CreateSubmissionPayload
-): Promise<{ success: boolean; submissionId?: number; error?: string }> {
+export async function createPPESubmissionHeader(
+  payload: CreateSubmissionHeaderPayload
+): Promise<{ success: boolean; submissionId?: number; submittedBy?: number; error?: string }> {
   try {
     let vendorProfileId = payload.vendorProfileId;
     let submittedBy = payload.submittedBy;
@@ -158,7 +188,6 @@ export async function createPPESubmission(
       return { success: false, error: 'No registered user or vendor profile found in database' };
     }
 
-    // 1. Insert parent PPE submission
     const { data: submission, error: submissionError } = await supabase
       .from('ppe_submissions')
       .insert({
@@ -169,7 +198,7 @@ export async function createPPESubmission(
         status: 'SUBMITTED',
         submitted_at: new Date().toISOString(),
       })
-      .select()
+      .select('id')
       .single();
 
     if (submissionError || !submission) {
@@ -177,12 +206,29 @@ export async function createPPESubmission(
       return { success: false, error: submissionError?.message ?? 'Failed to create submission' };
     }
 
-    // 2. Insert worker instances & images
-    for (const worker of payload.workers) {
+    return { success: true, submissionId: submission.id, submittedBy };
+  } catch (err: any) {
+    console.warn('[PPEye DB] Exception creating ppe_submission header:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+/**
+ * Attaches worker photos and other photos with Google Drive file IDs to a specific submission.
+ */
+export async function attachPhotosToPPESubmission(params: {
+  submissionId: number;
+  submittedBy: number;
+  workers: CreateWorkerPhotoPayload[];
+  otherPhotos?: (string | { driveFileId: string; fileName?: string })[];
+}): Promise<{ success: boolean; error?: string }> {
+  const { submissionId, submittedBy, workers, otherPhotos = [] } = params;
+  try {
+    for (const worker of workers) {
       const { data: workerInstance, error: workerError } = await supabase
         .from('ppe_worker_instances')
         .insert({
-          submission_id: submission.id,
+          submission_id: submissionId,
           sequence_no: worker.sequenceNo,
         })
         .select()
@@ -194,11 +240,11 @@ export async function createPPESubmission(
       }
 
       // Front image - store Google Drive file ID
-      const frontFileId = worker.frontDriveFileId ?? worker.frontUri;
-      if (frontFileId) {
+      const frontDriveId = worker.frontDriveFileId;
+      if (frontDriveId && !frontDriveId.startsWith('file://')) {
         const fileId = await registerFile(
-          frontFileId,
-          `submission_${submission.id}_worker_${worker.sequenceNo}_front.jpg`,
+          frontDriveId,
+          `submission_${submissionId}_worker_${worker.sequenceNo}_front.jpg`,
           submittedBy,
           'GOOGLE_DRIVE'
         );
@@ -212,11 +258,11 @@ export async function createPPESubmission(
       }
 
       // Back image - store Google Drive file ID
-      const backFileId = worker.backDriveFileId ?? worker.backUri;
-      if (backFileId) {
+      const backDriveId = worker.backDriveFileId;
+      if (backDriveId && !backDriveId.startsWith('file://')) {
         const fileId = await registerFile(
-          backFileId,
-          `submission_${submission.id}_worker_${worker.sequenceNo}_back.jpg`,
+          backDriveId,
+          `submission_${submissionId}_worker_${worker.sequenceNo}_back.jpg`,
           submittedBy,
           'GOOGLE_DRIVE'
         );
@@ -230,15 +276,15 @@ export async function createPPESubmission(
       }
     }
 
-    // 3. Insert other photos if provided (storing Google Drive file IDs)
-    if (payload.otherPhotos && payload.otherPhotos.length > 0) {
-      for (let idx = 0; idx < payload.otherPhotos.length; idx++) {
-        const item = payload.otherPhotos[idx];
+    // Insert other photos if provided (storing Google Drive file IDs)
+    if (otherPhotos && otherPhotos.length > 0) {
+      for (let idx = 0; idx < otherPhotos.length; idx++) {
+        const item = otherPhotos[idx];
         const driveId = typeof item === 'string' ? item : item.driveFileId;
         const fileName =
           typeof item === 'object' && item.fileName
             ? item.fileName
-            : `submission_${submission.id}_other_${idx + 1}.jpg`;
+            : `submission_${submissionId}_other_${idx + 1}.jpg`;
 
         const fileId = await registerFile(
           driveId,
@@ -248,7 +294,7 @@ export async function createPPESubmission(
         );
         if (fileId) {
           await supabase.from('other_images').insert({
-            submission_id: submission.id,
+            submission_id: submissionId,
             file_id: fileId,
             sequence_no: idx + 1,
           });
@@ -256,10 +302,43 @@ export async function createPPESubmission(
       }
     }
 
-    return { success: true, submissionId: submission.id };
+    return { success: true };
+  } catch (err: any) {
+    console.warn('[PPEye DB] Exception attaching photos to submission:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+/**
+ * Creates a complete PPE submission including worker instances and photos.
+ * Photo records store the Google Drive File ID referencing the 'files' table.
+ */
+export async function createPPESubmission(
+  payload: CreateSubmissionPayload
+): Promise<{ success: boolean; submissionId?: number; error?: string }> {
+  try {
+    const headerRes = await createPPESubmissionHeader({
+      vendorProfileId: payload.vendorProfileId,
+      submittedBy: payload.submittedBy,
+      siteName: payload.siteName,
+      metadata: payload.metadata,
+    });
+
+    if (!headerRes.success || !headerRes.submissionId) {
+      return { success: false, error: headerRes.error };
+    }
+
+    await attachPhotosToPPESubmission({
+      submissionId: headerRes.submissionId,
+      submittedBy: headerRes.submittedBy || 1,
+      workers: payload.workers,
+      otherPhotos: payload.otherPhotos,
+    });
+
+    return { success: true, submissionId: headerRes.submissionId };
   } catch (err: any) {
     console.warn('[PPEye DB] Exception creating PPE submission:', err);
-    return { success: false, error: err?.message ?? 'Unknown database error' };
+    return { success: false, error: err?.message };
   }
 }
 

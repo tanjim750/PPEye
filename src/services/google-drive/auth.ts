@@ -385,10 +385,17 @@ export async function isGoogleAuthenticated(): Promise<boolean> {
  * Never logs the token content.
  */
 export async function getValidAccessToken(): Promise<string | null> {
+  // 0. Check explicit environment token (useful for Expo Go and manual testing)
+  const envToken = process.env.EXPO_PUBLIC_GOOGLE_ACCESS_TOKEN;
+  if (envToken && envToken.trim()) {
+    return envToken.trim();
+  }
+
   // 1. Check in-memory validity (with 60-second safety margin)
   if (inMemoryToken && !isTokenExpired(inMemoryExpiresAt)) {
     return inMemoryToken;
   }
+
 
   // 2. Check stored token validity
   const stored = await getStoredTokenInfo();

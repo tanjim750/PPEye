@@ -12,6 +12,7 @@ export interface UploadSubmissionPhotosParams {
   workers: LocalWorkerToUpload[];
   otherPhotos?: string[];
   folderId?: string;
+  submissionId?: number;
 }
 
 export interface UploadedSubmissionPhotosResult {
@@ -26,7 +27,7 @@ export interface UploadedSubmissionPhotosResult {
 export async function uploadSubmissionPhotosToDrive(
   params: UploadSubmissionPhotosParams
 ): Promise<UploadedSubmissionPhotosResult> {
-  const { siteName, workers, otherPhotos = [], folderId } = params;
+  const { siteName, workers, otherPhotos = [], folderId, submissionId } = params;
   const sanitizedSite = siteName.replace(/[^a-zA-Z0-9_-]/g, '_');
 
   // 1. Upload worker photos (front & back)
@@ -35,11 +36,19 @@ export async function uploadSubmissionPhotosToDrive(
       let frontDriveFileId: string | null = null;
       let backDriveFileId: string | null = null;
 
+      const frontFileName = submissionId
+        ? `submission_${submissionId}_worker_${worker.sequenceNo}_front.jpg`
+        : `${sanitizedSite}_w${worker.sequenceNo}_front.jpg`;
+
+      const backFileName = submissionId
+        ? `submission_${submissionId}_worker_${worker.sequenceNo}_back.jpg`
+        : `${sanitizedSite}_w${worker.sequenceNo}_back.jpg`;
+
       if (worker.frontUri) {
         try {
           const frontRes = await uploadFileToDrive({
             localUri: worker.frontUri,
-            fileName: `${sanitizedSite}_w${worker.sequenceNo}_front.jpg`,
+            fileName: frontFileName,
             folderId,
           });
           frontDriveFileId = frontRes.fileId;
@@ -52,7 +61,7 @@ export async function uploadSubmissionPhotosToDrive(
         try {
           const backRes = await uploadFileToDrive({
             localUri: worker.backUri,
-            fileName: `${sanitizedSite}_w${worker.sequenceNo}_back.jpg`,
+            fileName: backFileName,
             folderId,
           });
           backDriveFileId = backRes.fileId;
@@ -75,9 +84,13 @@ export async function uploadSubmissionPhotosToDrive(
   const uploadedOtherPhotos: string[] = await Promise.all(
     otherPhotos.map(async (uri, index) => {
       try {
+        const otherFileName = submissionId
+          ? `submission_${submissionId}_other_${index + 1}.jpg`
+          : `${sanitizedSite}_other_${index + 1}.jpg`;
+
         const otherRes = await uploadFileToDrive({
           localUri: uri,
-          fileName: `${sanitizedSite}_other_${index + 1}.jpg`,
+          fileName: otherFileName,
           folderId,
         });
         return otherRes.fileId;

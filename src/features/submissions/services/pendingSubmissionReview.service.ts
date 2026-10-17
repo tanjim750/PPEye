@@ -5,10 +5,17 @@ type PendingSubmissionReviewTarget = {
   workerNumber: number;
 };
 
+export type PendingResubmissionContext = {
+  submissionId: number;
+  workerInstanceId?: number;
+  sequenceNo: number;
+};
+
 let pendingCaptureReview: PPEWorkerCapture[] | null = null;
 let pendingOtherCaptureReview: OtherCapturePhoto[] | null = null;
 let pendingCaptureTarget: PendingSubmissionReviewTarget | null = null;
 let pendingReviewSite: string | null = null;
+let pendingResubmissionContext: PendingResubmissionContext | null = null;
 
 export function setPendingSubmissionReviewCaptures(captures: PPEWorkerCapture[]) {
   pendingCaptureReview = captures.map((capture) => ({ ...capture }));
@@ -20,6 +27,14 @@ export function setPendingSubmissionReviewOtherPhotos(photos: OtherCapturePhoto[
 
 export function setPendingSubmissionReviewTarget(target: PendingSubmissionReviewTarget | null) {
   pendingCaptureTarget = target ? { ...target } : null;
+}
+
+export function setPendingResubmissionContext(context: PendingResubmissionContext | null) {
+  pendingResubmissionContext = context ? { ...context } : null;
+}
+
+export function getPendingResubmissionContext() {
+  return pendingResubmissionContext ? { ...pendingResubmissionContext } : null;
 }
 
 export function getPendingSubmissionReviewCaptures() {
@@ -49,4 +64,6 @@ export function clearPendingSubmissionReviewCaptures() {
   pendingOtherCaptureReview = null;
   pendingCaptureTarget = null;
   pendingReviewSite = null;
+  pendingResubmissionContext = null;
 }
+

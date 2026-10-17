@@ -20,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon } from "@/components/ui/Icon";
 import { useContinuousPPECapture } from "@/features/capture/hooks/useContinuousPPECapture";
 import {
+  clearPendingSubmissionReviewCaptures,
   getPendingSubmissionReviewCaptures,
   getPendingSubmissionReviewTarget,
   setPendingSubmissionReviewCaptures,
@@ -57,16 +58,34 @@ export function CaptureScreen() {
   // console.log('CaptureScreen: hasLocalWorkerImages', hasLocalWorkerImages);
   const completeCapture = capture.completeCapture;  
 
+  const hasAtLeastOneCompleteWorker = capture.captures.some(
+    (c) => Boolean(c.frontUri && c.backUri)
+  );
+  const hasAnyIncompleteWorker =
+    capture.captures.some(
+      (c) => Boolean((c.frontUri && !c.backUri) || (!c.frontUri && c.backUri))
+    ) ||
+    Boolean(
+      (capture.currentWorkerCapture?.frontUri && !capture.currentWorkerCapture?.backUri) ||
+      (!capture.currentWorkerCapture?.frontUri && capture.currentWorkerCapture?.backUri)
+    );
+  const isCapturePairComplete = hasAtLeastOneCompleteWorker && !hasAnyIncompleteWorker;
+
   const handleDone = useCallback(() => {
+    if (!isCapturePairComplete) {
+      return;
+    }
+
     let completedCaptures = completeCapture();
 
     if (!completedCaptures || completedCaptures.length === 0) {
-      if (capture.currentWorkerCapture?.frontUri || capture.currentWorkerCapture?.backUri) {
+      if (capture.currentWorkerCapture?.frontUri && capture.currentWorkerCapture?.backUri) {
         completedCaptures = [
           {
             sequenceNo: capture.currentWorkerNumber,
-            frontUri: capture.currentWorkerCapture.frontUri || capture.currentWorkerCapture.backUri,
-            backUri: capture.currentWorkerCapture.backUri || capture.currentWorkerCapture.frontUri,
+            frontUri: capture.currentWorkerCapture.frontUri,
+            backUri: capture.currentWorkerCapture.backUri,
+            capturedAt: capture.currentWorkerCapture.capturedAt || Date.now(),
           },
         ];
       } else {
@@ -76,7 +95,7 @@ export function CaptureScreen() {
 
     setPendingSubmissionReviewCaptures(completedCaptures);
     router.push("/submission-review" as Href);
-  }, [capture.currentWorkerCapture, capture.currentWorkerNumber, completeCapture, router]);
+  }, [capture.currentWorkerCapture, capture.currentWorkerNumber, completeCapture, isCapturePairComplete, router]);
 
   const exitToHome = useCallback(() => {
     if (isExitingToHomeRef.current) {
@@ -84,17 +103,18 @@ export function CaptureScreen() {
     }
 
     isExitingToHomeRef.current = true;
+    clearPendingSubmissionReviewCaptures();
     router.replace("/(external)" as Href);
   }, [router]);
 
   const requestExitToHome = useCallback(() => {
-    if (!hasLocalWorkerImages) {
+    if (!hasLocalWorkerImages || !isCapturePairComplete) {
       exitToHome();
       return;
     }
 
     handleDone();
-  }, [exitToHome, handleDone, hasLocalWorkerImages]);
+  }, [exitToHome, handleDone, hasLocalWorkerImages, isCapturePairComplete]);
 
   useFocusEffect(
     useCallback(() => {
@@ -228,13 +248,23 @@ export function CaptureScreen() {
           </View>
           <Pressable
             accessibilityRole="button"
-            onPress={handleDone}
+            accessibilityState={{ disabled: !isCapturePairComplete }}
+            disabled={!isCapturePairComplete}
+            onPress={isCapturePairComplete ? handleDone : undefined}
             style={({ pressed }) => [
               styles.doneButton,
-              pressed && styles.textPressed,
+              !isCapturePairComplete && styles.doneButtonDisabled,
+              pressed && isCapturePairComplete && styles.textPressed,
             ]}
           >
-            <Text style={styles.doneText}>{t("captureScreen.done")}</Text>
+            <Text
+              style={[
+                styles.doneText,
+                !isCapturePairComplete && styles.doneTextDisabled,
+              ]}
+            >
+              {t("captureScreen.done")}
+            </Text>
           </Pressable>
         </View>
 
@@ -673,11 +703,18 @@ const styles = StyleSheet.create({
     minWidth: 68,
     paddingHorizontal: 16,
   },
+  doneButtonDisabled: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    opacity: 0.4,
+  },
   doneText: {
     color: colors.background,
     fontSize: 14,
     fontWeight: "800",
     lineHeight: 20,
+  },
+  doneTextDisabled: {
+    color: "rgba(255, 255, 255, 0.4)",
   },
   cameraPane: {
     backgroundColor: "#000000",

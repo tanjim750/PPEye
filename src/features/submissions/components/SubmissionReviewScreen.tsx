@@ -20,6 +20,7 @@ import { Icon } from '@/components/ui/Icon';
 import { OtherCapturePhoto, PPEWorkerCapture } from '@/features/capture/types';
 import {
   clearPendingSubmissionReviewCaptures,
+  getPendingResubmissionContext,
   getPendingSubmissionReviewCaptures,
   getPendingSubmissionReviewOtherPhotos,
   getPendingSubmissionReviewSite,
@@ -30,10 +31,20 @@ import {
 } from '@/features/submissions/services/pendingSubmissionReview.service';
 import { resubmitWorkerCheck } from '@/features/submissions/services/workerChecks.service';
 import { createOrUpdatePendingReview } from '@/features/reviews/services/reviews.service';
-import { createPPESubmission } from '@/services/supabase/ppeyeDb.service';
+import {
+  attachPhotosToPPESubmission,
+  createPPESubmission,
+  createPPESubmissionHeader,
+} from '@/services/supabase/ppeyeDb.service';
 import { uploadSubmissionPhotosToDrive } from '@/services/google-drive';
 import { uploadSubmissionImages, validateSubmissionImages } from '@/services/storage';
+import {
+  resubmitUnsafeWorker,
+  saveDraftSubmission,
+} from '@/services/vendor/vendorSubmissions.service';
+import { useAuth } from '@/hooks/useAuth';
 import { locationService } from '@/services/location';
+
 import {
   getSubmissionWeatherMetadata,
   SubmissionWeatherMetadata,
@@ -45,7 +56,20 @@ type WorkerReviewPhoto = {
   front: ImageSource;
   frontUri: string;
   sequenceNo: number;
+  capturedAt?: number;
 };
+
+function formatCaptureTime(timestamp?: number): string {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  let hours = date.getHours();
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const formattedHours = hours < 10 ? `0${hours}` : `${hours}`;
+  return `${formattedHours}:${minutes} ${ampm}`;
+}
 
 type OtherReviewPhoto = {
   id: string;
@@ -84,17 +108,21 @@ export function SubmissionReviewScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const isExitingToHomeRef = useRef(false);
+
   const isSubmittingRef = useRef(false);
   const carouselRef = useRef<ScrollView>(null);
   const [isVerticalScrollEnabled, setIsVerticalScrollEnabled] = useState(true);
   const { t } = useTranslation('submission');
   const [activeWorkerIndex, setActiveWorkerIndex] = useState(0);
   const [isExitConfirmVisible, setIsExitConfirmVisible] = useState(false);
-  const [siteName, setSiteName] = useState(() => getPendingSubmissionReviewSite() ?? '');
-  const [siteDraft, setSiteDraft] = useState(() => getPendingSubmissionReviewSite() ?? '');
+  const [siteName, setSiteName] = useState(() => getPendingSubmissionReviewSite() || 'Site-01');
+  const [siteDraft, setSiteDraft] = useState(() => getPendingSubmissionReviewSite() || 'Site-01');
+
   const [isEditingSite, setIsEditingSite] = useState(false);
   const [siteError, setSiteError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isBuildingWeatherMetadata, setIsBuildingWeatherMetadata] = useState(false);
   const [isLocationServicesPromptVisible, setIsLocationServicesPromptVisible] = useState(false);
   const [submissionMetadata, setSubmissionMetadata] = useState<SubmissionReviewMetadata | null>(
@@ -285,10 +313,14 @@ export function SubmissionReviewScreen() {
 
   async function submitForReview() {
     if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
 
     // 1. Current Site Validation
     const trimmedSite = siteName?.trim();
     if (!trimmedSite) {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       setSiteError(t('reviewScreen.siteRequired'));
       setIsEditingSite(true);
       Alert.alert(
@@ -301,6 +333,8 @@ export function SubmissionReviewScreen() {
     // 2. Location Services Validation
     const isLocationEnabled = await locationService.checkServicesEnabled();
     if (!isLocationEnabled) {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       setIsLocationServicesPromptVisible(true);
       Alert.alert(
         t('reviewScreen.locationServicesTitle'),
@@ -327,6 +361,8 @@ export function SubmissionReviewScreen() {
         }
         buildWeatherMetadata();
       } catch {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
         setIsLocationServicesPromptVisible(true);
         Alert.alert(
           t('reviewScreen.locationServicesTitle'),
@@ -354,6 +390,8 @@ export function SubmissionReviewScreen() {
     });
 
     if (!validation.isValid) {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       const errorMsg = validation.errors.map((e) => e.message).join('\n');
       Alert.alert(
         'Incomplete Photos',
@@ -363,81 +401,132 @@ export function SubmissionReviewScreen() {
       return;
     }
 
-    isSubmittingRef.current = true;
     isExitingToHomeRef.current = true;
 
     const finalSite = trimmedSite;
     setPendingSubmissionReviewSite(finalSite);
 
-    // Update/resubmit each worker check with the newly captured photos
-    workerPhotos.forEach((worker) => {
+    // Register individual worker check profile for each worker with distinct capture time
+    workerPhotos.forEach((worker, index) => {
+      const workerTimestamp =
+        worker.capturedAt || Date.now() - (workerPhotos.length - index) * 1000;
+
       resubmitWorkerCheck(worker.sequenceNo, {
         backUri: worker.backUri,
         frontUri: worker.frontUri,
         siteName: finalSite,
+        capturedAt: workerTimestamp,
+      });
+
+      // Also register individual review profile in Reviewer queue
+      createOrUpdatePendingReview({
+        location: `${finalSite} • Worker ${worker.sequenceNo}`,
+        photos: 2,
+        workers: 1,
+        teamLead: 'Rahim Mia · Team Leader',
+        timestamp: workerTimestamp,
       });
     });
 
-    // Also register the pending review in Reviewer queue
-    createOrUpdatePendingReview({
-      location: finalSite,
-      photos: workerPhotos.length * 2 + reviewOtherPhotos.length,
-      workers: workerPhotos.length,
-      teamLead: 'Rahim Mia · Team Leader',
-    });
+    const resubmissionCtx = getPendingResubmissionContext();
+    // Immediately clear pending captures so returning to camera or start inspection is fresh
+    clearPendingSubmissionReviewCaptures();
 
     // Background async pipeline: Supabase submission creation -> Storage upload & relationship persistence
     (async () => {
       try {
-        // Step 1: Create initial submission record in Supabase in DRAFT status
-        const subRecord = await createPPESubmission({
-          siteName: finalSite,
-          metadata: {
-            latitude: submissionMetadata?.location?.latitude ?? null,
-            longitude: submissionMetadata?.location?.longitude ?? null,
-            weather: submissionMetadata?.weather ?? null,
-          },
-          workers: [],
-          otherPhotos: [],
-        });
+        if (resubmissionCtx?.submissionId && resubmissionCtx?.workerInstanceId) {
+          // Legitimate Resubmission flow for an Unsafe worker
+          const targetWorker =
+            workerPhotos.find((w) => w.sequenceNo === resubmissionCtx.sequenceNo) ||
+            workerPhotos[0];
 
-        const submissionId =
-          typeof subRecord?.submissionId === 'number'
-            ? subRecord.submissionId
-            : parseInt(String(subRecord?.submissionId), 10);
-
-        if (submissionId && !isNaN(submissionId)) {
-          // Step 2: Upload images and persist relationships (ppe_images, other_images, files)
-          const result = await uploadSubmissionImages({
-            submissionId,
-            siteName: finalSite,
-            workers: workerPhotos.map((w) => ({
-              sequenceNo: w.sequenceNo,
-              frontLocalUri: w.frontUri,
-              backLocalUri: w.backUri,
-            })),
-            otherImages: reviewOtherPhotos.map((p) => p.uri),
-            markCompleteOnSuccess: true,
-          });
-
-          // Step 3: Only clear pending local captures if upload and relationships succeeded!
-          if (result.isComplete) {
-            clearPendingSubmissionReviewCaptures();
-          } else {
-            console.warn('[PPEye] Partial upload encountered: keeping local captures for retry.');
+          if (targetWorker?.frontUri) {
+            await resubmitUnsafeWorker(
+              resubmissionCtx.submissionId,
+              resubmissionCtx.workerInstanceId,
+              'FRONT',
+              targetWorker.frontUri
+            );
           }
-        } else {
-          // Fallback legacy Drive upload if DB submissionId unavailable
-          await uploadSubmissionPhotosToDrive({
-            siteName: finalSite,
-            workers: workerPhotos.map((w) => ({
-              sequenceNo: w.sequenceNo,
-              frontUri: w.frontUri,
-              backUri: w.backUri,
-            })),
-            otherPhotos: reviewOtherPhotos.map((p) => p.uri),
-          });
+          if (targetWorker?.backUri) {
+            await resubmitUnsafeWorker(
+              resubmissionCtx.submissionId,
+              resubmissionCtx.workerInstanceId,
+              'BACK',
+              targetWorker.backUri
+            );
+          }
           clearPendingSubmissionReviewCaptures();
+          return;
+        }
+
+        // Standard New Submission creation:
+        // Process each worker as an individual submission in Google Drive and Database so each worker is counted separately!
+        for (let i = 0; i < workerPhotos.length; i++) {
+          const worker = workerPhotos[i];
+          const workerTimestamp =
+            worker.capturedAt || Date.now() - (workerPhotos.length - i) * 1000;
+
+          try {
+            // Step 1: Create distinct DB submission header to get official submission ID
+            console.log(`[PPEye] Creating DB submission record for Worker ${worker.sequenceNo}...`);
+            const subHeader = await createPPESubmissionHeader({
+              vendorProfileId: user?.vendorProfileId || 1,
+              submittedBy: typeof user?.id === 'number' ? user.id : undefined,
+              siteName: finalSite,
+              metadata: {
+                latitude: submissionMetadata?.location?.latitude ?? null,
+                longitude: submissionMetadata?.location?.longitude ?? null,
+                weather: submissionMetadata?.weather ?? null,
+                workerSequenceNo: worker.sequenceNo,
+                capturedAt: workerTimestamp,
+              },
+            });
+
+            if (!subHeader.success || !subHeader.submissionId) {
+              console.warn(`[PPEye] Failed to create submission header for worker ${worker.sequenceNo}`);
+              continue;
+            }
+
+            const currentSubId = subHeader.submissionId;
+            const submittedBy = subHeader.submittedBy || 1;
+
+            // Step 2: Upload this worker's inspection photos to Google Drive with submission ID in file name!
+            console.log(`[PPEye] Uploading Worker ${worker.sequenceNo} photos to Google Drive (submission_${currentSubId})...`);
+            const driveResult = await uploadSubmissionPhotosToDrive({
+              submissionId: currentSubId,
+              siteName: finalSite,
+              workers: [
+                {
+                  sequenceNo: worker.sequenceNo,
+                  frontUri: worker.frontUri,
+                  backUri: worker.backUri,
+                },
+              ],
+              otherPhotos: i === 0 ? reviewOtherPhotos.map((p) => p.uri) : [],
+            });
+
+            const uploadedWorker = driveResult.workers[0];
+            const hasDriveFiles =
+              Boolean(uploadedWorker?.frontDriveFileId) || Boolean(uploadedWorker?.backDriveFileId);
+
+            if (!hasDriveFiles) {
+              console.warn(`[PPEye] Google Drive upload failed for worker ${worker.sequenceNo}`);
+              continue;
+            }
+
+            // Step 3: Link Drive file IDs with worker instances & files in Supabase
+            console.log(`[PPEye] Attaching Drive IDs to DB submission ${currentSubId}...`);
+            await attachPhotosToPPESubmission({
+              submissionId: currentSubId,
+              submittedBy,
+              workers: [uploadedWorker],
+              otherPhotos: i === 0 ? driveResult.otherPhotos : [],
+            });
+          } catch (workerErr) {
+            console.error(`[PPEye] Error creating individual submission for worker ${worker.sequenceNo}:`, workerErr);
+          }
         }
       } catch (err) {
         console.warn('[PPEye] Pipeline sync error (Drive -> Supabase):', err);
@@ -684,16 +773,30 @@ export function SubmissionReviewScreen() {
                     style={[styles.workerSlide, { width: slideWidth }]}>
                     <View style={styles.workerCard}>
                       <View style={styles.workerCardHeader}>
-                        <View style={styles.workerBadge}>
-                          <Icon
-                            color={colors.primary}
-                            name={{ ios: 'person.fill', android: 'person', web: 'person' }}
-                            size={14}
-                            weight="bold"
-                          />
-                          <Text style={styles.workerBadgeText}>
-                            {t('reviewScreen.worker', { number: worker.sequenceNo })}
-                          </Text>
+                        <View style={styles.workerBadgeRow}>
+                          <View style={styles.workerBadge}>
+                            <Icon
+                              color={colors.primary}
+                              name={{ ios: 'person.fill', android: 'person', web: 'person' }}
+                              size={14}
+                              weight="bold"
+                            />
+                            <Text style={styles.workerBadgeText}>
+                              {t('reviewScreen.worker', { number: worker.sequenceNo })}
+                            </Text>
+                          </View>
+                          {worker.capturedAt ? (
+                            <View style={styles.captureTimeBadge}>
+                              <Icon
+                                color={colors.primary}
+                                name={{ ios: 'clock.fill', android: 'schedule', web: 'schedule' }}
+                                size={12}
+                              />
+                              <Text style={styles.captureTimeText}>
+                                {formatCaptureTime(worker.capturedAt)}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
                         <Text style={styles.workerPhotoCount}>
                           {t('reviewScreen.twoPhotos')}
@@ -828,11 +931,15 @@ export function SubmissionReviewScreen() {
         <View style={[styles.submitBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <Pressable
             accessibilityRole="button"
+            disabled={isSubmitting}
             onPress={submitForReview}
-            style={({ pressed }) => [styles.submitButton, pressed && styles.pressed]}>
-            <Text style={styles.submitText}>{t('reviewScreen.submit')}</Text>
+            style={({ pressed }) => [styles.submitButton, (pressed || isSubmitting) && styles.pressed]}>
+            <Text style={styles.submitText}>
+              {isSubmitting ? 'Submitting...' : t('reviewScreen.submit')}
+            </Text>
           </Pressable>
         </View>
+
 
         <Modal
           animationType="fade"
@@ -892,6 +999,7 @@ function getWorkerPhotosFromCaptures(captures: PPEWorkerCapture[]) {
       front: { uri: capture.frontUri ?? '' },
       frontUri: capture.frontUri ?? '',
       sequenceNo: capture.sequenceNo,
+      capturedAt: capture.capturedAt ?? Date.now(),
     }));
 }
 
@@ -900,6 +1008,7 @@ function getCapturesFromWorkerPhotos(workers: WorkerReviewPhoto[]): PPEWorkerCap
     backUri: worker.backUri,
     frontUri: worker.frontUri,
     sequenceNo: worker.sequenceNo,
+    capturedAt: worker.capturedAt,
   }));
 }
 
@@ -1271,6 +1380,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 12,
+  },
+  workerBadgeRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  captureTimeBadge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 92, 173, 0.06)',
+    borderColor: 'rgba(0, 92, 173, 0.12)',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  captureTimeText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
   },
   workerBadge: {
     alignItems: 'center',

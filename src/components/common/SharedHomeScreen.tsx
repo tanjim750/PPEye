@@ -8,8 +8,12 @@ import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from '@/hooks/useNavigate';
-import { formatWorkerCheckTime, useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
+import { formatWorkerCheckTime, formatWorkerCheckTitle, useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
 import { formatReviewTime, useReviews } from '@/features/reviews/services/reviews.service';
+import {
+  clearPendingSubmissionReviewCaptures,
+  setPendingSubmissionReviewTarget,
+} from '@/features/submissions/services/pendingSubmissionReview.service';
 import { DummyUserRole } from '@/utils/dummy-users';
 import { UserRole } from '@/features/auth/types';
 
@@ -70,18 +74,6 @@ const recentReviews: RecentReview[] = [
   },
 ];
 
-type RecentCheck = {
-  image?: ImageSource;
-  status: 'safe' | 'unsafe' | 'review';
-  timeKey: 'time1042' | 'today' | 'yesterday';
-  titleKey: 'worker124' | 'worker127' | 'worker131';
-};
-
-const recentChecks: RecentCheck[] = [
-  { image: assets.fieldSafeCheck, status: 'safe', timeKey: 'time1042', titleKey: 'worker124' },
-  { image: assets.fieldUnsafeCheck, status: 'unsafe', timeKey: 'yesterday', titleKey: 'worker127' },
-  { status: 'review', timeKey: 'today', titleKey: 'worker131' },
-];
 
 function getBdtTimeOfDayKey(): 'morning' | 'afternoon' | 'evening' {
   const now = new Date();
@@ -103,7 +95,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const segments = useSegments();
-  const { t } = useTranslation('home');
+  const { t, i18n } = useTranslation('home');
   const { recentChecks: vendorRecentChecks } = useWorkerChecks();
   const { pendingReviews, recentPendingReviews } = useReviews();
   const timeOfDayKey = getBdtTimeOfDayKey();
@@ -163,7 +155,11 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             style={vendorStyles.scroll}>
             <Pressable
               accessibilityRole="button"
-              onPress={() => navigate('/continuous-ppe-capture')}
+              onPress={() => {
+                clearPendingSubmissionReviewCaptures();
+                setPendingSubmissionReviewTarget(null);
+                navigate('/continuous-ppe-capture');
+              }}
               style={({ pressed }) => [vendorStyles.captureCard, pressed && vendorStyles.pressed]}>
               <View style={vendorStyles.captureGlow} />
               <View style={vendorStyles.cameraIconBox}>
@@ -216,7 +212,10 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
               </View>
 
               <View style={vendorStyles.feed}>
-                {vendorRecentChecks.map((item, index) => {
+                {vendorRecentChecks
+                  .slice()
+                  .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+                  .map((item, index) => {
                   const isSafe = item.status === 'safe';
                   const statusLabel = t(`external.statuses.${item.status}`);
 
@@ -247,7 +246,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                       <View style={vendorStyles.feedCopy}>
                         <View style={vendorStyles.feedTitleRow}>
                           <Text numberOfLines={1} style={vendorStyles.workerName}>
-                            {t(`external.recent.${item.titleKey}`, { defaultValue: `Worker #${item.workerNumber}` })}
+                            {formatWorkerCheckTitle(item, t, i18n.language)}
                           </Text>
                           <Text style={vendorStyles.time}>
                             {formatWorkerCheckTime(item, t)}

@@ -3,11 +3,13 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
+import { useAuth } from '@/hooks/useAuth';
+import { authStore } from '@/stores/auth.store';
 import { getProfilePictureUri, uploadProfilePicture } from '@/services/storage';
 
 type EditableField = 'fullName' | 'phoneNumber' | 'email';
@@ -15,22 +17,31 @@ type EditableField = 'fullName' | 'phoneNumber' | 'email';
 export function ProfileScreen() {
   const router = useRouter();
   const { t } = useTranslation('settings');
+  const { user } = useAuth();
+  const activeUserId = typeof user?.id === 'number' ? user.id : 1;
+
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [fullName, setFullName] = useState('Mahmud Hasan');
-  const [phoneNumber, setPhoneNumber] = useState('+880 1712 345678');
-  const [email, setEmail] = useState('mahmud@example.com');
+  const [fullName, setFullName] = useState(user?.name || 'User Profile');
+  const [phoneNumber, setPhoneNumber] = useState(user?.phone || '+880 1712 345678');
+  const [email, setEmail] = useState(user?.email || 'user@example.com');
   const [focusedField, setFocusedField] = useState<EditableField | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    getProfilePictureUri(1)
+    if (user?.name) setFullName(user.name);
+    if (user?.phone) setPhoneNumber(user.phone);
+    if (user?.email) setEmail(user.email);
+  }, [user]);
+
+  useEffect(() => {
+    getProfilePictureUri(activeUserId)
       .then((cachedUri) => {
         if (cachedUri) {
           setProfileImage(cachedUri);
         }
       })
       .catch(() => {});
-  }, []);
+  }, [activeUserId]);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -48,14 +59,40 @@ export function ProfileScreen() {
     if (!result.canceled && result.assets[0]?.uri) {
       const pickedUri = result.assets[0].uri;
       setProfileImage(pickedUri);
-      uploadProfilePicture({ localUri: pickedUri, userId: 1 }).catch((err) => {
+      uploadProfilePicture({ localUri: pickedUri, userId: activeUserId }).catch((err) => {
         console.warn('[ProfileScreen] Profile image upload error:', err);
       });
     }
   }
 
   function handleSave() {
-    console.log('Profile saved:', { fullName, phoneNumber, email, profileImage });
+    const trimmedName = fullName.trim();
+    const trimmedPhone = phoneNumber.trim();
+    const trimmedEmail = email.trim();
+
+    if (!trimmedName) {
+      Alert.alert('Required Field', 'Full name cannot be empty.');
+      return;
+    }
+    if (!trimmedPhone) {
+      Alert.alert('Required Field', 'Phone number cannot be empty.');
+      return;
+    }
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
+
+    if (authStore.user) {
+      authStore.user = {
+        ...authStore.user,
+        name: trimmedName,
+        phone: trimmedPhone,
+        email: trimmedEmail,
+      };
+    }
+
+    console.log('Profile saved:', { fullName: trimmedName, phoneNumber: trimmedPhone, email: trimmedEmail, profileImage });
     setToastMessage(t('profileScreen.saveSuccess'));
   }
 

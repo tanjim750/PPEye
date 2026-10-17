@@ -341,20 +341,21 @@ export function createOrUpdatePendingReview(data: {
   photos: number;
   workers: number;
   teamLead?: string;
+  timestamp?: number;
 }) {
-  const currentNow = Date.now();
+  const currentNow = data.timestamp || Date.now();
   const newReview: ReviewItem = {
     avatar: 'RM',
-    id: `rev-${currentNow}`,
+    id: `rev-${currentNow}-${Math.random().toString(36).slice(2, 6)}`,
     location: data.location,
-    photos: data.photos || 8,
+    photos: data.photos || 2,
     status: 'waiting',
     teamLead: data.teamLead || 'Rahim Mia · Team Leader',
     timeDisplay: formatReviewTime({ timestamp: currentNow }),
     timestamp: currentNow,
     vendor: 'ABC Telecom',
-    workers: data.workers || 4,
+    workers: data.workers || 1,
   };
-  reviews = [newReview, ...reviews];
+  reviews = [newReview, ...reviews].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   notify();
 }

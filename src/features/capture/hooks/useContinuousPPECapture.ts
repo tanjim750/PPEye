@@ -22,6 +22,7 @@ function upsertWorkerCapture(
       {
         sequenceNo,
         [nextSideKey]: uri,
+        capturedAt: Date.now(),
       },
     ];
   }
@@ -31,6 +32,7 @@ function upsertWorkerCapture(
       ? {
           ...capture,
           [nextSideKey]: uri,
+          capturedAt: capture.capturedAt ?? Date.now(),
         }
       : capture,
   );

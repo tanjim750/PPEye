@@ -63,6 +63,7 @@ export interface Database {
           id: number;
           storage_provider: StorageProvider;
           provider_file_id: string;
+          drive_id?: string | null;
           file_name: string;
           mime_type: string | null;
           size_bytes: number | null;
@@ -73,6 +74,7 @@ export interface Database {
           id?: number;
           storage_provider?: StorageProvider;
           provider_file_id: string;
+          drive_id?: string | null;
           file_name: string;
           mime_type?: string | null;
           size_bytes?: number | null;
@@ -83,6 +85,7 @@ export interface Database {
           id?: number;
           storage_provider?: StorageProvider;
           provider_file_id?: string;
+          drive_id?: string | null;
           file_name?: string;
           mime_type?: string | null;
           size_bytes?: number | null;

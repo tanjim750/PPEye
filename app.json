@@ -26,9 +26,10 @@
       "package": "com.tanjim.abubokor.PPEye"
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/ppeye-logo.png"
     },
+
     "plugins": [
       "expo-router",
       [

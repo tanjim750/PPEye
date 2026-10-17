@@ -6,8 +6,8 @@ import { DriveInitOptions, GoogleDriveClient } from './folders.types';
 export * from './folders.types';
 
 // Default folder names
-export const DEFAULT_ROOT_FOLDER_NAME = 'PPEye';
-export const SUBMISSIONS_FOLDER_NAME = 'submissions';
+export const DEFAULT_ROOT_FOLDER_NAME = config.googleDriveFolderName || 'PPEye_submit';
+export const SUBMISSIONS_FOLDER_NAME = config.googleDriveFolderName || 'PPEye_submit';
 export const PROFILES_FOLDER_NAME = 'profiles';
 
 // In-memory cache for resolved folder IDs
@@ -342,13 +342,7 @@ export async function ensureRootFolder(): Promise<string> {
  */
 export async function getSubmissionFolderId(submissionId?: number | string): Promise<string> {
   const rootId = await ensureRootFolder();
-  const submissionsRootId = await ensureFolder(SUBMISSIONS_FOLDER_NAME, rootId);
-
-  if (submissionId !== undefined && submissionId !== null && String(submissionId).trim() !== '') {
-    return await ensureFolder(String(submissionId).trim(), submissionsRootId);
-  }
-
-  return submissionsRootId;
+  return rootId;
 }
 
 /**

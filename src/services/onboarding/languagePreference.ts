@@ -10,10 +10,12 @@ function isSupportedLanguage(value: string | null): value is SupportedLanguage {
 }
 
 export async function storeLanguagePreference(language: SupportedLanguage) {
+  if (typeof window === 'undefined') return;
   await AsyncStorage.setItem(languagePreferenceKey, language);
 }
 
 export async function getLanguagePreference() {
+  if (typeof window === 'undefined') return null;
   const language = await AsyncStorage.getItem(languagePreferenceKey);
   return isSupportedLanguage(language) ? language : null;
 }
@@ -21,3 +23,4 @@ export async function getLanguagePreference() {
 export async function hasLanguagePreference() {
   return (await getLanguagePreference()) !== null;
 }
+
