@@ -127,7 +127,7 @@ export async function getFile(fileId: string): Promise<DriveFile | null> {
     );
   }
 
-  const token = await getValidAccessToken();
+  let token = await getValidAccessToken();
   if (!token) {
     throw new StorageError(
       StorageErrorCode.AUTHENTICATION_REQUIRED,
@@ -153,6 +153,16 @@ export async function getFile(fileId: string): Promise<DriveFile | null> {
       `Network error fetching file ${fileId}: ${netErr?.message ?? netErr}`,
       { cause: netErr }
     );
+  }
+
+  if (res.status === 401) {
+    const freshToken = await getValidAccessToken({ forceRefresh: true });
+    if (freshToken && freshToken !== token) {
+      token = freshToken;
+      try {
+        res = await fetchFn(url, { headers: { Authorization: `Bearer ${token}` } });
+      } catch {}
+    }
   }
 
   if (res.status === 404) {
@@ -219,7 +229,7 @@ export async function downloadFile(
     );
   }
 
-  const token = await getValidAccessToken();
+  let token = await getValidAccessToken();
   if (!token) {
     throw new StorageError(
       StorageErrorCode.AUTHENTICATION_REQUIRED,
@@ -233,6 +243,19 @@ export async function downloadFile(
   const cacheDir = FS?.cacheDirectory ?? '';
   const destPath = customDestPath ?? `${cacheDir}ppeye_drive_${fileId}_${safeName}`;
 
+  if (FS && typeof FS.getInfoAsync === 'function' && typeof FS.makeDirectoryAsync === 'function') {
+    const lastSlash = destPath.lastIndexOf('/');
+    if (lastSlash !== -1) {
+      const parentDir = destPath.substring(0, lastSlash + 1);
+      try {
+        const info = await FS.getInfoAsync(parentDir);
+        if (!info.exists) {
+          await FS.makeDirectoryAsync(parentDir, { intermediates: true });
+        }
+      } catch {}
+    }
+  }
+
   const downloadUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
     fileId
   )}?alt=media`;
@@ -240,11 +263,23 @@ export async function downloadFile(
   // 3. Download via native downloadAsync streaming into private cache storage
   try {
     if (FS && typeof FS.downloadAsync === 'function') {
-      const result = await FS.downloadAsync(downloadUrl, destPath, {
+      let result = await FS.downloadAsync(downloadUrl, destPath, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
+
+      if (result.status === 401) {
+        const freshToken = await getValidAccessToken({ forceRefresh: true });
+        if (freshToken && freshToken !== token) {
+          token = freshToken;
+          result = await FS.downloadAsync(downloadUrl, destPath, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+        }
+      }
 
       if (result.status < 200 || result.status >= 300) {
         throw new Error(`Download returned HTTP status ${result.status}`);
@@ -259,9 +294,19 @@ export async function downloadFile(
     } else {
       // Mock / fallback fetch for non-native test environments
       const fetchFn = customFilesFetchHandler ?? fetch;
-      const res = await fetchFn(downloadUrl, {
+      let res = await fetchFn(downloadUrl, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (res.status === 401) {
+        const freshToken = await getValidAccessToken({ forceRefresh: true });
+        if (freshToken && freshToken !== token) {
+          token = freshToken;
+          res = await fetchFn(downloadUrl, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }
+      }
 
       if (!res.ok) {
         throw await parseDriveError(res, `downloading file "${fileId}"`, StorageErrorCode.DOWNLOAD_FAILED);

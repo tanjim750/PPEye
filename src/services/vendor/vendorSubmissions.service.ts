@@ -138,7 +138,7 @@ export async function getVendorDashboardStats(
           id,
           sequence_no,
           ppe_reviews ( id, verdict, ppe_review_reasons ( unsafe_reasons ( code, label ), note ) ),
-          ppe_images ( id, file_id, side, files ( provider_file_id ) )
+          ppe_images ( id, file_id, side, files ( id, file_name, provider_file_id ) )
         ),
         submission_reviews ( verdict, reason, reviewed_at )
       `)
@@ -255,7 +255,7 @@ export async function getVendorDashboardStats(
           }
 
           const frontImg = worker.ppe_images?.find((img: any) => img.side === 'FRONT');
-          const providerFileId = frontImg?.files?.provider_file_id;
+          const providerFileId = frontImg?.files?.provider_file_id || frontImg?.files?.drive_id;
           const thumbnailUrl = providerFileId ? getDriveThumbnailUrl(providerFileId) : undefined;
 
           recentChecks.push({
@@ -331,7 +331,7 @@ export async function listVendorSubmissions(options: {
           id,
           sequence_no,
           ppe_reviews ( verdict ),
-          ppe_images ( id, file_id, side, files ( provider_file_id ) )
+          ppe_images ( id, file_id, side, files ( id, file_name, provider_file_id ) )
         ),
         submission_reviews ( verdict )
       `)
@@ -444,14 +444,14 @@ export async function getVendorSubmissionDetails(
             id,
             file_id,
             side,
-            files ( id, provider_file_id )
+            files ( id, file_name, provider_file_id )
           )
         ),
         other_images (
           id,
           file_id,
           sequence_no,
-          files ( id, provider_file_id )
+          files ( id, file_name, provider_file_id )
         ),
         submission_reviews (
           verdict,
@@ -486,8 +486,8 @@ export async function getVendorSubmissionDetails(
           note: rr.note,
         }));
 
-        const frontProviderId = front?.files?.provider_file_id;
-        const backProviderId = back?.files?.provider_file_id;
+        const frontProviderId = front?.files?.provider_file_id || front?.files?.drive_id;
+        const backProviderId = back?.files?.provider_file_id || back?.files?.drive_id;
 
         return {
           id: w.id,
@@ -512,7 +512,7 @@ export async function getVendorSubmissionDetails(
       });
 
     const otherPhotos = (subData.other_images || []).map((o: any) => {
-      const providerId = o.files?.provider_file_id;
+      const providerId = o.files?.provider_file_id || o.files?.drive_id;
       return {
         id: o.id,
         fileId: o.file_id,

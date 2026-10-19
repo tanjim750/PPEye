@@ -25,9 +25,8 @@ async function printSubmissions(limit = 3) {
           files (
             id,
             storage_provider,
-            provider_file_id,
-            drive_id,
             file_name,
+            provider_file_id,
             size_bytes,
             created_at
           )
@@ -72,7 +71,7 @@ async function printSubmissions(limit = 3) {
         const file = img.files;
         console.log(`      📷 সাইড: [${img.side}]`);
         if (file) {
-          const driveId = (file as any).drive_id || file.provider_file_id;
+          const driveId = file.provider_file_id || (file as any).drive_id;
           console.log(`         - Drive ID:        ${driveId}`);
           console.log(`         - ফাইলের নাম:      ${file.file_name}`);
           console.log(`         - ফাইলের সাইজ:     ${file.size_bytes ? (file.size_bytes / 1024).toFixed(1) + ' KB' : 'Unknown'}`);

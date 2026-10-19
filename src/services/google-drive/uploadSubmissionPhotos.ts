@@ -45,28 +45,40 @@ export async function uploadSubmissionPhotosToDrive(
         : `${sanitizedSite}_w${worker.sequenceNo}_back.jpg`;
 
       if (worker.frontUri) {
-        try {
-          const frontRes = await uploadFileToDrive({
-            localUri: worker.frontUri,
-            fileName: frontFileName,
-            folderId,
-          });
-          frontDriveFileId = frontRes.fileId;
-        } catch (err) {
-          console.warn(`[Drive Upload] Error uploading worker ${worker.sequenceNo} front photo:`, err);
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const frontRes = await uploadFileToDrive({
+              localUri: worker.frontUri,
+              fileName: frontFileName,
+              folderId,
+            });
+            frontDriveFileId = frontRes.fileId;
+            break;
+          } catch (err) {
+            console.warn(`[Drive Upload] Error uploading worker ${worker.sequenceNo} front photo (attempt ${attempt}):`, err);
+            if (attempt < 2) {
+              await new Promise((r) => setTimeout(r, 600));
+            }
+          }
         }
       }
 
       if (worker.backUri) {
-        try {
-          const backRes = await uploadFileToDrive({
-            localUri: worker.backUri,
-            fileName: backFileName,
-            folderId,
-          });
-          backDriveFileId = backRes.fileId;
-        } catch (err) {
-          console.warn(`[Drive Upload] Error uploading worker ${worker.sequenceNo} back photo:`, err);
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const backRes = await uploadFileToDrive({
+              localUri: worker.backUri,
+              fileName: backFileName,
+              folderId,
+            });
+            backDriveFileId = backRes.fileId;
+            break;
+          } catch (err) {
+            console.warn(`[Drive Upload] Error uploading worker ${worker.sequenceNo} back photo (attempt ${attempt}):`, err);
+            if (attempt < 2) {
+              await new Promise((r) => setTimeout(r, 600));
+            }
+          }
         }
       }
 

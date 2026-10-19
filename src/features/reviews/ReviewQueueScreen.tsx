@@ -1,10 +1,12 @@
-import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
-import { formatReviewTime, useReviews } from '@/features/reviews/services/reviews.service';
+import { formatReviewTime, ReviewItem, useReviews } from '@/features/reviews/services/reviews.service';
+import { InProgressLimitModal } from '@/features/reviews/components/InProgressLimitModal';
 
 const reviewerColors = {
   background: '#f9f9ff',
@@ -24,7 +26,32 @@ export function ReviewQueueScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation('home');
-  const { pendingReviews } = useReviews();
+  const { pendingReviews, inProgressCount, syncReviewsFromSupabase } = useReviews();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isInProgressLimitModalVisible, setIsInProgressLimitModalVisible] = useState(false);
+
+  const handleItemPress = useCallback(
+    (item: ReviewItem) => {
+      if (inProgressCount >= 3 && !item.isDraft) {
+        setIsInProgressLimitModalVisible(true);
+        return;
+      }
+      router.push(`/review/${item.id}` as any);
+    },
+    [inProgressCount, router]
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      syncReviewsFromSupabase();
+    }, [syncReviewsFromSupabase])
+  );
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await syncReviewsFromSupabase();
+    setIsRefreshing(false);
+  }, [syncReviewsFromSupabase]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -50,7 +77,14 @@ export function ReviewQueueScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          style={styles.scroll}>
+          style={styles.scroll}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor="#005cad"
+            />
+          }>
           {/* Floating Pill Counter Badge */}
           {pendingReviews.length > 0 && (
             <View style={styles.floatingBadgeContainer}>
@@ -86,7 +120,7 @@ export function ReviewQueueScreen() {
                 <Pressable
                   accessibilityRole="button"
                   key={item.id}
-                  onPress={() => router.push(`/review/${item.id}` as any)}
+                  onPress={() => handleItemPress(item)}
                   style={({ pressed }) => [
                     styles.feedRow,
                     index < pendingReviews.length - 1 && styles.feedDivider,
@@ -104,7 +138,19 @@ export function ReviewQueueScreen() {
                         </View>
                       )}
                       <View style={styles.identityCopy}>
-                        <Text style={styles.vendor}>{item.vendor}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.vendor}>{item.vendor}</Text>
+                          {item.isDraft && (
+                            <View style={styles.draftBadge}>
+                              <Icon
+                                color="#005cad"
+                                name={{ ios: 'pencil', android: 'edit', web: 'edit' }}
+                                size={10}
+                              />
+                              <Text style={styles.draftBadgeText}>In Progress</Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={styles.teamLead}>
                           {item.teamLeadKey
                             ? t(`internal.reviewItems.${item.teamLeadKey}`, {
@@ -124,21 +170,36 @@ export function ReviewQueueScreen() {
                     <Text style={styles.location}>
                       {item.location} ·{' '}
                       {t('internal.reviewItems.workersPhotos', {
-                        photos: item.photos,
+                        photos: item.workers * 2,
                         workers: item.workers,
-                        defaultValue: `${item.workers} workers · ${item.photos} PPE photos`,
+                        defaultValue: `${item.workers} workers · ${item.workers * 2} PPE photos`,
                       })}
                     </Text>
-                    <View style={[styles.statusChip, styles.waitingChip]}>
-                      <Icon
-                        color={reviewerColors.warningOrange}
-                        name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
-                        size={14}
-                      />
-                      <Text style={[styles.statusText, styles.waitingText]}>
-                        {t('internal.statuses.waiting', { defaultValue: 'Waiting for review' })}
-                      </Text>
-                    </View>
+                    {item.isDraft ? (
+                      <View style={[styles.statusChip, styles.inProgressChip]}>
+                        <Icon
+                          color="#005cad"
+                          name={{ ios: 'clock.arrow.circlepath', android: 'pending', web: 'pending' }}
+                          size={14}
+                        />
+                        <Text style={[styles.statusText, styles.inProgressText]}>
+                          {item.workerReviews && item.workerReviews.length > 0
+                            ? `In Progress · ${item.workerReviews.length} of ${item.workers} reviewed`
+                            : `Review Started · 0 of ${item.workers}`}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={[styles.statusChip, styles.waitingChip]}>
+                        <Icon
+                          color={reviewerColors.warningOrange}
+                          name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+                          size={14}
+                        />
+                        <Text style={[styles.statusText, styles.waitingText]}>
+                          {t('internal.statuses.waiting', { defaultValue: 'Waiting for review' })}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </Pressable>
               ))}
@@ -204,6 +265,12 @@ export function ReviewQueueScreen() {
             </Text>
           </Pressable>
         </View>
+
+        <InProgressLimitModal
+          visible={isInProgressLimitModalVisible}
+          inProgressCount={inProgressCount}
+          onClose={() => setIsInProgressLimitModalVisible(false)}
+        />
       </View>
     </SafeAreaView>
   );
@@ -376,6 +443,11 @@ const styles = StyleSheet.create({
   waitingChip: {
     backgroundColor: reviewerColors.chipOrange,
   },
+  inProgressChip: {
+    backgroundColor: '#eff6ff',
+    borderColor: 'rgba(0, 92, 173, 0.25)',
+    borderWidth: 1,
+  },
   statusText: {
     fontSize: 11,
     fontWeight: '500',
@@ -383,6 +455,26 @@ const styles = StyleSheet.create({
   },
   waitingText: {
     color: reviewerColors.warningOrange,
+  },
+  inProgressText: {
+    color: '#005cad',
+    fontWeight: '600',
+  },
+  draftBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#eff6ff',
+    borderColor: 'rgba(0, 92, 173, 0.25)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  draftBadgeText: {
+    color: '#005cad',
+    fontSize: 10,
+    fontWeight: '700',
   },
   emptyState: {
     alignItems: 'center',

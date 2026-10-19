@@ -1,6 +1,7 @@
+import { useCallback, useState } from 'react';
 import { Image, ImageSource } from 'expo-image';
-import { useSegments } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useSegments } from 'expo-router';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -9,7 +10,8 @@ import { assets } from '@/constants/assets';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from '@/hooks/useNavigate';
 import { formatWorkerCheckTime, formatWorkerCheckTitle, useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
-import { formatReviewTime, useReviews } from '@/features/reviews/services/reviews.service';
+import { formatReviewTime, ReviewItem, useReviews } from '@/features/reviews/services/reviews.service';
+import { InProgressLimitModal } from '@/features/reviews/components/InProgressLimitModal';
 import {
   clearPendingSubmissionReviewCaptures,
   setPendingSubmissionReviewTarget,
@@ -97,7 +99,30 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   const segments = useSegments();
   const { t, i18n } = useTranslation('home');
   const { recentChecks: vendorRecentChecks } = useWorkerChecks();
-  const { pendingReviews, recentPendingReviews } = useReviews();
+  const { pendingReviews, recentPendingReviews, inProgressCount, syncReviewsFromSupabase } = useReviews();
+  const [isRefreshingReviewer, setIsRefreshingReviewer] = useState(false);
+  const [isInProgressLimitModalVisible, setIsInProgressLimitModalVisible] = useState(false);
+
+  const handleReviewItemPress = useCallback((item: ReviewItem) => {
+    if (inProgressCount >= 3 && !item.isDraft) {
+      setIsInProgressLimitModalVisible(true);
+      return;
+    }
+    navigate(`/review/${item.id}`);
+  }, [inProgressCount, navigate]);
+
+  useFocusEffect(
+    useCallback(() => {
+      syncReviewsFromSupabase();
+    }, [syncReviewsFromSupabase])
+  );
+
+  const handleReviewerRefresh = useCallback(async () => {
+    setIsRefreshingReviewer(true);
+    await syncReviewsFromSupabase();
+    setIsRefreshingReviewer(false);
+  }, [syncReviewsFromSupabase]);
+
   const timeOfDayKey = getBdtTimeOfDayKey();
   const timeGreeting = t(`greetings.${timeOfDayKey}`);
 
@@ -387,7 +412,15 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
         <ScrollView
           contentContainerStyle={reviewerStyles.scrollContent}
           showsVerticalScrollIndicator={false}
-          style={reviewerStyles.scroll}>
+          style={reviewerStyles.scroll}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshingReviewer}
+              onRefresh={handleReviewerRefresh}
+              tintColor="#005cad"
+            />
+          }>
+          {/* 1. Hero Review Card - At Top */}
           <Pressable
             accessibilityRole="button"
             onPress={() => navigate('/reviews')}
@@ -411,6 +444,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             </View>
           </Pressable>
 
+          {/* 2. Recent Section */}
           <View style={reviewerStyles.sectionHeader}>
             <Text style={reviewerStyles.sectionTitle}>{t('internal.recent')}</Text>
             <Pressable
@@ -426,7 +460,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
               <Pressable
                 accessibilityRole="button"
                 key={item.id}
-                onPress={() => navigate(`/review/${item.id}`)}
+                onPress={() => handleReviewItemPress(item)}
                 style={({ pressed }) => [
                   reviewerStyles.feedRow,
                   index < recentPendingReviews.length - 1 && reviewerStyles.feedDivider,
@@ -444,7 +478,19 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                       </View>
                     )}
                     <View style={reviewerStyles.identityCopy}>
-                      <Text style={reviewerStyles.vendor}>{item.vendor}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={reviewerStyles.vendor}>{item.vendor}</Text>
+                        {item.isDraft && (
+                          <View style={reviewerStyles.draftBadge}>
+                            <Icon
+                              color="#005cad"
+                              name={{ ios: 'pencil', android: 'edit', web: 'edit' }}
+                              size={10}
+                            />
+                            <Text style={reviewerStyles.draftBadgeText}>In Progress</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={reviewerStyles.teamLead}>
                         {item.teamLeadKey
                           ? t(`internal.reviewItems.${item.teamLeadKey}`, {
@@ -464,20 +510,36 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                   <Text style={reviewerStyles.location}>
                     {item.location} ·{' '}
                     {t('internal.reviewItems.workersPhotos', {
-                      photos: item.photos,
+                      photos: item.workers * 2,
                       workers: item.workers,
+                      defaultValue: `${item.workers} workers · ${item.workers * 2} PPE photos`,
                     })}
                   </Text>
-                  <View style={[reviewerStyles.statusChip, reviewerStyles.waitingChip]}>
-                    <Icon
-                      color={reviewerColors.warningOrange}
-                      name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
-                      size={14}
-                    />
-                    <Text style={[reviewerStyles.statusText, reviewerStyles.waitingText]}>
-                      {t('internal.statuses.waiting')}
-                    </Text>
-                  </View>
+                  {item.isDraft ? (
+                    <View style={[reviewerStyles.statusChip, reviewerStyles.inProgressChip]}>
+                      <Icon
+                        color="#005cad"
+                        name={{ ios: 'clock.arrow.circlepath', android: 'pending', web: 'pending' }}
+                        size={14}
+                      />
+                      <Text style={[reviewerStyles.statusText, reviewerStyles.inProgressText]}>
+                        {item.workerReviews && item.workerReviews.length > 0
+                          ? `In Progress · ${item.workerReviews.length} of ${item.workers} reviewed`
+                          : `Review Started · 0 of ${item.workers}`}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={[reviewerStyles.statusChip, reviewerStyles.waitingChip]}>
+                      <Icon
+                        color={reviewerColors.warningOrange}
+                        name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+                        size={14}
+                      />
+                      <Text style={[reviewerStyles.statusText, reviewerStyles.waitingText]}>
+                        {t('internal.statuses.waiting')}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </Pressable>
             ))}
@@ -536,6 +598,12 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             <Text style={reviewerStyles.navText}>{t('internal.bottomNav.settings')}</Text>
           </Pressable>
         </View>
+
+        <InProgressLimitModal
+          visible={isInProgressLimitModalVisible}
+          inProgressCount={inProgressCount}
+          onClose={() => setIsInProgressLimitModalVisible(false)}
+        />
       </View>
     </SafeAreaView>
   );
@@ -1133,6 +1201,11 @@ const reviewerStyles = StyleSheet.create({
   reviewedChip: {
     backgroundColor: reviewerColors.chipGreen,
   },
+  inProgressChip: {
+    backgroundColor: '#eff6ff',
+    borderColor: 'rgba(0, 92, 173, 0.25)',
+    borderWidth: 1,
+  },
   statusText: {
     fontSize: 11,
     fontWeight: '500',
@@ -1143,6 +1216,26 @@ const reviewerStyles = StyleSheet.create({
   },
   reviewedText: {
     color: reviewerColors.successGreen,
+  },
+  inProgressText: {
+    color: '#005cad',
+    fontWeight: '600',
+  },
+  draftBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#eff6ff',
+    borderColor: 'rgba(0, 92, 173, 0.25)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  draftBadgeText: {
+    color: '#005cad',
+    fontSize: 10,
+    fontWeight: '700',
   },
   bottomNav: {
     alignItems: 'center',

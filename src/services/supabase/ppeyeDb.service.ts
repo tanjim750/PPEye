@@ -112,9 +112,8 @@ async function registerFile(
   try {
     const payload: any = {
       storage_provider: storageProvider,
-      provider_file_id: providerFileId,
-      drive_id: providerFileId,
       file_name: fileName,
+      provider_file_id: providerFileId,
       mime_type: 'image/jpeg',
       created_by: createdBy,
     };
@@ -125,15 +124,9 @@ async function registerFile(
       .select('id')
       .single();
 
-    // Compatibility fallback: if remote table does not yet have drive_id column
-    if (error && error.message?.includes('drive_id')) {
-      delete payload.drive_id;
-      const retry = await supabase.from('files').insert(payload).select('id').single();
-      data = retry.data;
-      error = retry.error;
-    }
-    // Compatibility fallback: if remote table renamed provider_file_id to drive_id
-    else if (error && error.message?.includes('provider_file_id')) {
+    // Compatibility fallback: if remote table only had drive_id
+    if (error && error.message?.includes('provider_file_id')) {
+      payload.drive_id = providerFileId;
       delete payload.provider_file_id;
       const retry = await supabase.from('files').insert(payload).select('id').single();
       data = retry.data;

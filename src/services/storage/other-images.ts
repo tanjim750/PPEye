@@ -189,16 +189,7 @@ export async function getOtherImages(
       file_id,
       sequence_no,
       created_at,
-      files (
-        id,
-        storage_provider,
-        provider_file_id,
-        file_name,
-        mime_type,
-        size_bytes,
-        created_by,
-        created_at
-      )
+      files (*)
     `)
     .eq('submission_id', submissionId)
     .order('sequence_no', { ascending: true, nullsFirst: false });
@@ -222,7 +213,7 @@ export async function getOtherImages(
       fileInfo = {
         id: rawFile.id,
         storageProvider: rawFile.storage_provider as StorageProvider,
-        providerFileId: rawFile.provider_file_id,
+        providerFileId: rawFile.drive_id || rawFile.provider_file_id || String(rawFile.id),
         fileName: rawFile.file_name,
         mimeType: rawFile.mime_type ?? null,
         sizeBytes: rawFile.size_bytes ?? null,
@@ -237,7 +228,7 @@ export async function getOtherImages(
       fileInfo = {
         id: fileRec.id,
         storageProvider: fileRec.storage_provider as StorageProvider,
-        providerFileId: fileRec.provider_file_id,
+        providerFileId: (fileRec as any).drive_id || fileRec.provider_file_id || String(fileRec.id),
         fileName: fileRec.file_name,
         mimeType: fileRec.mime_type ?? null,
         sizeBytes: fileRec.size_bytes ?? null,

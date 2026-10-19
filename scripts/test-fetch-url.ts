@@ -2,10 +2,68 @@
  * Test fetching Drive URLs from Drive File ID
  */
 declare const process: any;
+declare const require: any;
+declare const __dirname: string;
+const fs = require('fs');
+const path = require('path');
+
+function loadEnvFile(filePath: string) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      content.split('\n').forEach((line: string) => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const idx = trimmed.indexOf('=');
+          if (idx > 0) {
+            const key = trimmed.slice(0, idx).trim();
+            const val = trimmed.slice(idx + 1).trim();
+            if (!process.env[key]) {
+              process.env[key] = val;
+            }
+          }
+        }
+      });
+    }
+  } catch {}
+}
+
+loadEnvFile(path.resolve(__dirname, '../.env.local'));
+loadEnvFile(path.resolve(__dirname, '../.env'));
+
+async function getOrRefreshToken(): Promise<string> {
+  if (process.env.GOOGLE_ACCESS_TOKEN && process.env.GOOGLE_ACCESS_TOKEN.startsWith('ya29.')) {
+    return process.env.GOOGLE_ACCESS_TOKEN;
+  }
+  const refreshToken = process.env.EXPO_PUBLIC_GOOGLE_REFRESH_TOKEN || process.env.GOOGLE_REFRESH_TOKEN;
+  const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+
+  if (refreshToken && clientId && clientSecret) {
+    try {
+      const res = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token',
+        }),
+      });
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data.access_token) {
+          return data.access_token;
+        }
+      }
+    } catch {}
+  }
+  return process.env.GOOGLE_ACCESS_TOKEN || process.env.EXPO_PUBLIC_GOOGLE_ACCESS_TOKEN || "";
+}
 
 async function run() {
-  const token =
-    process.env.GOOGLE_ACCESS_TOKEN || "";
+  const token = await getOrRefreshToken();
   let fileId = process.argv[2];
 
   console.log("=================================================");

@@ -15,6 +15,7 @@
 declare const Buffer: any;
 declare const process: any;
 declare const require: any;
+declare const __dirname: string;
 
 const fs = require('fs');
 const path = require('path');
@@ -51,28 +52,96 @@ function logInfo(message: string) {
   console.log(`  ${colors.blue}ℹ INFO:${colors.reset} ${message}`);
 }
 
+function loadEnvFile(filePath: string) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      content.split('\n').forEach((line: string) => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const idx = trimmed.indexOf('=');
+          if (idx > 0) {
+            const key = trimmed.slice(0, idx).trim();
+            const val = trimmed.slice(idx + 1).trim();
+            if (!process.env[key]) {
+              process.env[key] = val;
+            }
+          }
+        }
+      });
+    }
+  } catch {}
+}
+
+loadEnvFile(path.resolve(__dirname, '../.env.local'));
+loadEnvFile(path.resolve(__dirname, '../.env'));
+
+async function getOrRefreshAccessToken(): Promise<string> {
+  // 1. Direct command line arg or explicit GOOGLE_ACCESS_TOKEN
+  if (process.argv[2] && process.argv[2].startsWith('ya29.')) {
+    return process.argv[2];
+  }
+  if (process.env.GOOGLE_ACCESS_TOKEN && process.env.GOOGLE_ACCESS_TOKEN.startsWith('ya29.')) {
+    return process.env.GOOGLE_ACCESS_TOKEN;
+  }
+
+  // 2. Refresh via permanent GOOGLE_REFRESH_TOKEN if available
+  const refreshToken =
+    process.env.EXPO_PUBLIC_GOOGLE_REFRESH_TOKEN ||
+    process.env.GOOGLE_REFRESH_TOKEN;
+  const clientId =
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ||
+    process.env.GOOGLE_CLIENT_ID;
+  const clientSecret =
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_SECRET ||
+    process.env.GOOGLE_CLIENT_SECRET;
+
+  if (refreshToken && clientId && clientSecret) {
+    console.log(`  ${colors.blue}ℹ Refreshing Google Drive token using permanent Refresh Token...${colors.reset}`);
+    try {
+      const res = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token',
+        }),
+      });
+
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data.access_token) {
+          console.log(`  ${colors.green}✔ Minted fresh Google OAuth Access Token!${colors.reset}\n`);
+          return data.access_token;
+        }
+      } else {
+        const err = await res.text();
+        console.log(`  ${colors.red}✖ Failed to refresh token: ${err}${colors.reset}\n`);
+      }
+    } catch (err: any) {
+      console.log(`  ${colors.red}✖ Refresh error: ${err?.message}${colors.reset}\n`);
+    }
+  }
+
+  return process.env.GOOGLE_ACCESS_TOKEN || process.env.EXPO_PUBLIC_GOOGLE_ACCESS_TOKEN || "";
+}
+
 async function runManualDriveTests() {
   console.log(`${colors.bright}====================================================`);
   console.log(` PPEye Google Drive Engine - Manual Verification Test`);
   console.log(`====================================================${colors.reset}\n`);
 
-  const defaultToken = "";
-
-  const token = process.env.GOOGLE_ACCESS_TOKEN || process.argv[2] || defaultToken;
+  const token = await getOrRefreshAccessToken();
 
   if (!token) {
     console.log(`${colors.yellow}No Google Access Token detected!${colors.reset}`);
-    console.log(`To run live tests against your Google Drive, please provide an OAuth Access Token:`);
-    console.log(`\nOption A (Environment Variable):`);
-    console.log(`  GOOGLE_ACCESS_TOKEN="ya29.your_token_here" npx tsx scripts/test-drive-manual.ts\n`);
-    console.log(`Option B (CLI Argument):`);
+    console.log(`To run live tests without recurring expiration, add your Refresh Token to .env.local:`);
+    console.log(`  EXPO_PUBLIC_GOOGLE_CLIENT_SECRET="your_client_secret"`);
+    console.log(`  EXPO_PUBLIC_GOOGLE_REFRESH_TOKEN="your_refresh_token"\n`);
+    console.log(`Or pass a temporary Access Token directly:`);
     console.log(`  npx tsx scripts/test-drive-manual.ts "ya29.your_token_here"\n`);
-    console.log(`How to get a quick test token:`);
-    console.log(`  1. From Google OAuth Playground (https://developers.google.com/oauthplayground)`);
-    console.log(`     - Select 'Drive API v3' -> 'https://www.googleapis.com/auth/drive.file'`);
-    console.log(`     - Authorize and copy the Access Token.`);
-    console.log(`  2. Or using Google Cloud CLI on your terminal:`);
-    console.log(`     gcloud auth print-access-token\n`);
     process.exit(1);
   }
 

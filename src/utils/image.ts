@@ -228,6 +228,39 @@ export async function getCachedImageUri(fileIdOrKey: string): Promise<string | n
     return entry.localUri;
   }
 
+  // 3. If key is already an existing local file URI, return it directly
+  const FS = getFileSystem();
+  if (key.startsWith('file://') && FS && typeof FS.getInfoAsync === 'function') {
+    try {
+      const info = await FS.getInfoAsync(key);
+      if (info.exists && (info as any).size > 0) {
+        return key;
+      }
+    } catch {}
+  }
+
+  // 4. Recover from disk cache if entry existed prior to app reload
+  if (FS && typeof FS.getInfoAsync === 'function') {
+    try {
+      const cacheDir = getCacheDir();
+      const diskPath = `${cacheDir}ppeye_drive_${key}.jpg`;
+      const info = await FS.getInfoAsync(diskPath);
+      if (info.exists && (info as any).size > 0) {
+        const metadata: CachedImageMetadata = {
+          fileId: key,
+          localUri: diskPath,
+          fileName: `ppeye_drive_${key}.jpg`,
+          cachedAt: Date.now(),
+          expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS,
+          sizeBytes: (info as any).size,
+          isSensitive: false,
+        };
+        cacheIndex.set(key, metadata);
+        return diskPath;
+      }
+    } catch {}
+  }
+
   return null;
 }
 

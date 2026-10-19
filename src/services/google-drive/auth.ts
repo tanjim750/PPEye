@@ -380,38 +380,210 @@ export async function isGoogleAuthenticated(): Promise<boolean> {
 }
 
 /**
+ * Refreshes Google Drive access token using a permanent OAuth Refresh Token if provided in env.
+ * This ensures that in development, Expo Go, Web, and CI environments, tokens never expire.
+ */
+async function refreshViaOAuthRefreshToken(): Promise<string | null> {
+  const refreshToken =
+    process.env.EXPO_PUBLIC_GOOGLE_REFRESH_TOKEN ||
+    process.env.GOOGLE_REFRESH_TOKEN;
+  const clientId =
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ||
+    process.env.GOOGLE_CLIENT_ID;
+  const clientSecret =
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_SECRET ||
+    process.env.GOOGLE_CLIENT_SECRET;
+
+  if (!refreshToken || !clientId || !clientSecret) {
+    return null;
+  }
+
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    });
+
+    if (!res.ok) {
+      return null;
+    }
+
+    const data = await res.json();
+    if (data.access_token) {
+      const expiresInMs = (data.expires_in || 3600) * 1000;
+      inMemoryToken = data.access_token;
+      inMemoryExpiresAt = Date.now() + expiresInMs;
+      await persistAccessToken(data.access_token, inMemoryExpiresAt);
+      return data.access_token;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+let supabaseClientModule: any = null;
+
+export function setSupabaseClient(client: any): void {
+  supabaseClientModule = client;
+}
+
+function getSupabase(): any {
+  if (supabaseClientModule) {
+    return supabaseClientModule;
+  }
+  try {
+    supabaseClientModule = require('../supabase/client').supabase;
+    if (supabaseClientModule) return supabaseClientModule;
+  } catch {}
+
+  // Safe fallback for Node.js / CLI testing / script environments
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const url = process.env.EXPO_PUBLIC_SUPABASE_URL || config.supabaseUrl;
+    const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_KEY || config.supabaseAnonKey;
+    if (url && key) {
+      supabaseClientModule = createClient(url, key);
+      return supabaseClientModule;
+    }
+  } catch {}
+
+  return null;
+}
+
+/**
+ * Attempts to retrieve an active Google Drive Access Token from Supabase database.
+ * Supports tables: 'system_settings' or 'app_settings'.
+ * This enables the Centralized Token Broker pattern where all vendors automatically
+ * share the server-refreshed, active Google Drive access token.
+ */
+export async function fetchTokenFromDatabase(): Promise<string | null> {
+  const sb = getSupabase();
+  if (!sb) {
+    return null;
+  }
+
+  try {
+    // 1. Try system_settings table first
+    const { data: sysData, error: sysErr } = await sb
+      .from('system_settings')
+      .select('google_drive_access_token, expires_at, updated_at')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (!sysErr && sysData?.google_drive_access_token) {
+      const token = sysData.google_drive_access_token.trim();
+      if (token) {
+        const dbExpiresAt = sysData.expires_at ? new Date(sysData.expires_at).getTime() : 0;
+        // Verify database token itself hasn't already expired
+        if (dbExpiresAt > 0 && isTokenExpired(dbExpiresAt)) {
+          console.warn('[Google Drive Auth] Database access token has already expired at:', sysData.expires_at);
+          return null;
+        }
+        const expiresAt = dbExpiresAt > 0 ? dbExpiresAt : Date.now() + 45 * 60 * 1000;
+        await persistAccessToken(token, expiresAt);
+        return token;
+      }
+    }
+
+    // 2. Try app_settings table as alias
+    const { data: appData, error: appErr } = await sb
+      .from('app_settings')
+      .select('google_drive_access_token, expires_at, updated_at')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (!appErr && appData?.google_drive_access_token) {
+      const token = appData.google_drive_access_token.trim();
+      if (token) {
+        const dbExpiresAt = appData.expires_at ? new Date(appData.expires_at).getTime() : 0;
+        if (dbExpiresAt > 0 && isTokenExpired(dbExpiresAt)) {
+          console.warn('[Google Drive Auth] Database app_settings token has expired at:', appData.expires_at);
+          return null;
+        }
+        const expiresAt = dbExpiresAt > 0 ? dbExpiresAt : Date.now() + 45 * 60 * 1000;
+        await persistAccessToken(token, expiresAt);
+        return token;
+      }
+    }
+  } catch {
+    // Database query failed (e.g. offline or table not yet created) - silent fallback
+  }
+
+  return null;
+}
+
+/**
+ * Invalidates the currently cached Google Drive access token.
+ * Called when an API request returns 401 Unauthorized so that subsequent
+ * calls immediately re-fetch the latest token from the database.
+ */
+export async function invalidateCachedAccessToken(): Promise<void> {
+  inMemoryToken = null;
+  inMemoryExpiresAt = 0;
+  const storage = getAsyncStorage();
+  if (storage) {
+    try {
+      await storage.multiRemove([STORAGE_KEY_ACCESS_TOKEN, STORAGE_KEY_EXPIRES_AT]);
+    } catch {}
+  }
+}
+
+/**
  * Retrieve a valid, unexpired Google Drive OAuth Access Token.
- * Automatically refreshes if expired, or restores session silently.
+ * Automatically checks memory and AsyncStorage cache, queries Supabase database,
+ * refreshes via OAuth Refresh Token, or restores session silently.
  * Never logs the token content.
  */
-export async function getValidAccessToken(): Promise<string | null> {
-  // 0. Check explicit environment token (useful for Expo Go and manual testing)
-  const envToken = process.env.EXPO_PUBLIC_GOOGLE_ACCESS_TOKEN;
-  if (envToken && envToken.trim()) {
-    return envToken.trim();
-  }
+export async function getValidAccessToken(options?: { forceRefresh?: boolean }): Promise<string | null> {
+  const forceRefresh = options?.forceRefresh ?? false;
 
   // 1. Check in-memory validity (with 60-second safety margin)
-  if (inMemoryToken && !isTokenExpired(inMemoryExpiresAt)) {
+  if (!forceRefresh && inMemoryToken && !isTokenExpired(inMemoryExpiresAt)) {
     return inMemoryToken;
   }
 
-
-  // 2. Check stored token validity
-  const stored = await getStoredTokenInfo();
-  if (stored && !isTokenExpired(stored.expiresAt)) {
-    inMemoryToken = stored.token;
-    inMemoryExpiresAt = stored.expiresAt;
-    return inMemoryToken;
+  // 2. Check stored token validity in AsyncStorage
+  if (!forceRefresh) {
+    const stored = await getStoredTokenInfo();
+    if (stored && !isTokenExpired(stored.expiresAt)) {
+      inMemoryToken = stored.token;
+      inMemoryExpiresAt = stored.expiresAt;
+      return inMemoryToken;
+    }
   }
 
-  // 3. Token is missing or expired -> attempt refresh where supported
+  // 3. Primary acquisition: Fetch fresh token from Supabase database (centralized server relay)
+  const dbToken = await fetchTokenFromDatabase();
+  if (dbToken) {
+    return dbToken;
+  }
+
+  // 4. Token is missing or expired -> attempt local refresh (OAuth Refresh Token or Native SDK)
   const refreshedToken = await refreshAccessToken();
   if (refreshedToken) {
     return refreshedToken;
   }
 
-  // 4. Fallback to silent session restore
+  // 5. Fallback to explicit environment static token (useful for quick overrides or tests)
+  const envToken = process.env.EXPO_PUBLIC_GOOGLE_ACCESS_TOKEN || process.env.GOOGLE_ACCESS_TOKEN;
+  if (
+    envToken &&
+    envToken.trim() &&
+    envToken.trim() !== 'your_google_access_token_here' &&
+    envToken.startsWith('ya29.')
+  ) {
+    return envToken.trim();
+  }
+
+  // 6. Fallback to silent session restore
   const restored = await restoreGoogleSession();
   if (restored?.accessToken) {
     return restored.accessToken;
@@ -421,20 +593,25 @@ export async function getValidAccessToken(): Promise<string | null> {
 }
 
 /**
- * Refresh the Google Drive Access Token using native SDK token refresh.
+ * Refresh the Google Drive Access Token using OAuth Refresh Token or native SDK token refresh.
  * 
  * Supported Flow:
- * Native Google Play Services / iOS SDK manages the refresh token internally and does not
- * expose it to JS. Calling clearCachedAccessToken() clears the expired cached token,
- * and a subsequent getTokens() call causes Google Play Services / iOS SDK to mint a fresh access token.
+ * 1. If permanent Refresh Token is in environment, auto-mints a fresh token with Google OAuth REST API.
+ * 2. Native Google Play Services / iOS SDK manages session tokens when available.
  * 
  * NOTE: For corporate storage operations requiring client secrets or service accounts,
  * PPEye strictly uses Server-Mediated Mode via Supabase Edge Functions.
  */
 export async function refreshAccessToken(): Promise<string | null> {
+  // 1. Prioritize OAuth Refresh Token (permanent solution across development/Expo Go/CLI)
+  const oauthRefreshed = await refreshViaOAuthRefreshToken();
+  if (oauthRefreshed) {
+    return oauthRefreshed;
+  }
+
   const native = getNativeGoogleSignIn();
 
-  // Native SDK token refresh
+  // 2. Native SDK token refresh
   if (native && typeof native.clearCachedAccessToken === 'function') {
     try {
       const currentToken = inMemoryToken ?? (await getStoredTokenInfo())?.token;

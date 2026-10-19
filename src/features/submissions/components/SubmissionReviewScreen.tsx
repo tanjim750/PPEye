@@ -30,14 +30,16 @@ import {
   setPendingSubmissionReviewTarget,
 } from '@/features/submissions/services/pendingSubmissionReview.service';
 import { resubmitWorkerCheck } from '@/features/submissions/services/workerChecks.service';
-import { createOrUpdatePendingReview } from '@/features/reviews/services/reviews.service';
+import {
+  broadcastNewSubmission,
+} from '@/features/reviews/services/reviews.service';
 import {
   attachPhotosToPPESubmission,
   createPPESubmission,
   createPPESubmissionHeader,
 } from '@/services/supabase/ppeyeDb.service';
 import { uploadSubmissionPhotosToDrive } from '@/services/google-drive';
-import { uploadSubmissionImages, validateSubmissionImages } from '@/services/storage';
+import { cacheImage, uploadSubmissionImages, validateSubmissionImages } from '@/services/storage';
 import {
   resubmitUnsafeWorker,
   saveDraftSubmission,
@@ -417,15 +419,6 @@ export function SubmissionReviewScreen() {
         siteName: finalSite,
         capturedAt: workerTimestamp,
       });
-
-      // Also register individual review profile in Reviewer queue
-      createOrUpdatePendingReview({
-        location: `${finalSite} • Worker ${worker.sequenceNo}`,
-        photos: 2,
-        workers: 1,
-        teamLead: 'Rahim Mia · Team Leader',
-        timestamp: workerTimestamp,
-      });
     });
 
     const resubmissionCtx = getPendingResubmissionContext();
@@ -516,6 +509,14 @@ export function SubmissionReviewScreen() {
               continue;
             }
 
+            // Immediately register in local cache so reviewer can display instantly without downloading
+            if (uploadedWorker?.frontDriveFileId && worker.frontUri) {
+              cacheImage(uploadedWorker.frontDriveFileId, worker.frontUri, { isSensitive: true }).catch(() => {});
+            }
+            if (uploadedWorker?.backDriveFileId && worker.backUri) {
+              cacheImage(uploadedWorker.backDriveFileId, worker.backUri, { isSensitive: true }).catch(() => {});
+            }
+
             // Step 3: Link Drive file IDs with worker instances & files in Supabase
             console.log(`[PPEye] Attaching Drive IDs to DB submission ${currentSubId}...`);
             await attachPhotosToPPESubmission({
@@ -524,10 +525,16 @@ export function SubmissionReviewScreen() {
               workers: [uploadedWorker],
               otherPhotos: i === 0 ? driveResult.otherPhotos : [],
             });
+
+            // Immediately broadcast new submission to Reviewer phones via Supabase realtime
+            broadcastNewSubmission(currentSubId);
           } catch (workerErr) {
             console.error(`[PPEye] Error creating individual submission for worker ${worker.sequenceNo}:`, workerErr);
           }
         }
+
+        // Final broadcast trigger when all worker uploads have settled
+        broadcastNewSubmission();
       } catch (err) {
         console.warn('[PPEye] Pipeline sync error (Drive -> Supabase):', err);
       }

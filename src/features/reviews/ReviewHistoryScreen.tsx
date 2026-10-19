@@ -1,8 +1,10 @@
-import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
+  Dimensions,
   Modal,
   PanResponder,
   Pressable,
@@ -17,11 +19,16 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
 import {
+  formatReviewDateTime,
   formatReviewTime,
   ReviewItem,
+  sortReviewsChronologically,
   unsafeReasonLabels,
   useReviews,
 } from '@/features/reviews/services/reviews.service';
+import { supabase } from '@/services/supabase/client';
+import { getCachedImageUri, getImageUri } from '@/utils/image';
+import { getValidAccessToken } from '@/services/google-drive/auth';
 
 const reviewerColors = {
   background: '#f9f9ff',
@@ -49,17 +56,300 @@ const reasonIcons: Record<string, { ios: string; android: string; web: string }>
   shoes: { ios: 'shoeprints.fill', android: 'directions_walk', web: 'directions_walk' },
 };
 
+const sampleWorkerPhotos: Record<number, { front: any; back: any }> = {
+  1: { front: assets.fieldSafeCheck, back: assets.captureRecentPhoto },
+  2: { front: assets.fieldUnsafeCheck, back: assets.captureRecentPhoto },
+  3: { front: assets.fieldSafeCheck, back: assets.captureRecentPhoto },
+  4: { front: assets.fieldUnsafeCheck, back: assets.captureRecentPhoto },
+};
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+function extractDriveId(fileIdOrUri?: string | null): string | null {
+  if (!fileIdOrUri || !fileIdOrUri.trim()) return null;
+  const clean = fileIdOrUri.trim();
+  if (
+    clean.startsWith('file://') ||
+    clean.startsWith('ph://') ||
+    clean.startsWith('content://')
+  ) {
+    return null;
+  }
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    const match =
+      clean.match(/\/files\/([a-zA-Z0-9_-]+)/) ||
+      clean.match(/\/d\/([a-zA-Z0-9_-]+)/) ||
+      clean.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      return match[1];
+    }
+    return null;
+  }
+  if (/^[a-zA-Z0-9_-]{15,}$/.test(clean)) {
+    return clean;
+  }
+  return null;
+}
+
+interface HistoryInspectionPhotoProps {
+  badgeLabel: 'FRONT' | 'BACK';
+  fileIdOrUri?: string | null;
+  driveId?: string | null;
+  submissionId?: string;
+  workerSequenceNo: number;
+  fallbackAsset: any;
+  workerTitle: string;
+  onPressZoom?: (source: any, title: string) => void;
+}
+
+function HistoryInspectionPhoto({
+  badgeLabel,
+  fileIdOrUri,
+  driveId: directDriveId,
+  submissionId,
+  workerSequenceNo,
+  fallbackAsset,
+  workerTitle,
+  onPressZoom,
+}: HistoryInspectionPhotoProps) {
+  const [photoSource, setPhotoSource] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const retryCountRef = useRef(0);
+
+  useEffect(() => {
+    let isCancelled = false;
+    setIsLoading(true);
+    setHasError(false);
+
+    async function resolveSource() {
+      // 1. Direct local file URI
+      if (
+        fileIdOrUri &&
+        (fileIdOrUri.startsWith('file://') ||
+          fileIdOrUri.startsWith('ph://') ||
+          fileIdOrUri.startsWith('content://'))
+      ) {
+        if (!isCancelled) {
+          setPhotoSource({ uri: fileIdOrUri });
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      // 2. Resolve Drive File ID
+      let resolvedDriveId = directDriveId || extractDriveId(fileIdOrUri);
+
+      // If no drive ID from URL and submissionId is a database numeric ID, fetch from Supabase
+      const parsedSubId = Number(submissionId);
+      if (!resolvedDriveId && !isNaN(parsedSubId) && parsedSubId > 0) {
+        try {
+          const { data: instances } = await supabase
+            .from('ppe_worker_instances')
+            .select(`
+              sequence_no,
+              ppe_images (
+                side,
+                files ( provider_file_id )
+              )
+            `)
+            .eq('submission_id', parsedSubId);
+
+          const inst = (instances || []).find((w: any) => w.sequence_no === workerSequenceNo) || instances?.[0];
+          if (inst) {
+            const img = ((inst as any).ppe_images || []).find((im: any) => im.side === badgeLabel);
+            const rawFile = Array.isArray(img?.files) ? img.files[0] : img?.files;
+            resolvedDriveId = rawFile?.provider_file_id || null;
+          }
+        } catch (err) {
+          console.warn('[ReviewHistory] Error resolving worker photo from DB:', err);
+        }
+      }
+
+      if (resolvedDriveId) {
+        // Check disk cache first
+        const cached = await getCachedImageUri(resolvedDriveId).catch(() => null);
+        if (cached && !isCancelled) {
+          setPhotoSource({ uri: cached });
+          setIsLoading(false);
+          return;
+        }
+
+        // Get authenticated Bearer token
+        const token = await getValidAccessToken().catch(() => null);
+        if (token && !isCancelled) {
+          setPhotoSource({
+            uri: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(resolvedDriveId)}?alt=media`,
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          // Cache in background to local disk
+          getImageUri(resolvedDriveId)
+            .then((localPath) => {
+              if (!isCancelled && localPath) {
+                setPhotoSource({ uri: localPath });
+              }
+            })
+            .catch(() => {});
+          return;
+        }
+
+        // Fallback thumbnail
+        if (!isCancelled) {
+          setPhotoSource({
+            uri: `https://drive.google.com/thumbnail?id=${resolvedDriveId}&sz=w800`,
+          });
+        }
+        return;
+      }
+
+      // Fallback for sample/mock reviews
+      if (!isCancelled) {
+        if (!isNaN(parsedSubId) && parsedSubId > 0) {
+          setPhotoSource(null);
+          setIsLoading(false);
+        } else {
+          setPhotoSource(fallbackAsset);
+          setIsLoading(false);
+        }
+      }
+    }
+
+    resolveSource();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [fileIdOrUri, directDriveId, submissionId, workerSequenceNo, badgeLabel, fallbackAsset]);
+
+  const handleError = async () => {
+    if (retryCountRef.current === 0) {
+      retryCountRef.current += 1;
+      const driveId = directDriveId || extractDriveId(fileIdOrUri);
+      if (driveId) {
+        const freshToken = await getValidAccessToken({ forceRefresh: true }).catch(() => null);
+        if (freshToken) {
+          setPhotoSource({
+            uri: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveId)}?alt=media`,
+            headers: { Authorization: `Bearer ${freshToken}` },
+          });
+          return;
+        }
+      }
+    }
+    setIsLoading(false);
+    setHasError(true);
+  };
+
+  return (
+    <Pressable
+      accessibilityLabel={`Inspect ${badgeLabel} photo`}
+      accessibilityRole="button"
+      disabled={!photoSource || hasError}
+      onPress={() => {
+        if (photoSource && !hasError && onPressZoom) {
+          onPressZoom(photoSource, `${workerTitle} • ${badgeLabel} VIEW`);
+        }
+      }}
+      style={detailsStyles.photoCard}>
+      <View style={detailsStyles.photoBadge}>
+        <Text style={detailsStyles.photoBadgeText}>{badgeLabel}</Text>
+      </View>
+
+      {photoSource ? (
+        <Image
+          contentFit="cover"
+          onError={handleError}
+          onLoadEnd={() => setIsLoading(false)}
+          onLoadStart={() => setIsLoading(true)}
+          source={photoSource}
+          style={detailsStyles.photoImg}
+        />
+      ) : hasError ? (
+        <View style={detailsStyles.photoPlaceholder}>
+          <Icon
+            color={reviewerColors.errorRed}
+            name={{ ios: 'exclamationmark.triangle', android: 'warning', web: 'warning' }}
+            size={22}
+          />
+          <Text style={detailsStyles.photoPlaceholderText}>Failed to load</Text>
+        </View>
+      ) : !isLoading ? (
+        <View style={detailsStyles.photoPlaceholder}>
+          <Icon
+            color={reviewerColors.outlineVariant}
+            name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+            size={22}
+          />
+          <Text style={detailsStyles.photoPlaceholderText}>No photo</Text>
+        </View>
+      ) : null}
+
+      {isLoading && (
+        <View style={detailsStyles.photoLoadingOverlay}>
+          <ActivityIndicator color={reviewerColors.primary} size="small" />
+        </View>
+      )}
+
+      {Boolean(photoSource && !hasError && !isLoading) && (
+        <View style={detailsStyles.photoZoomBadge}>
+          <Icon
+            color="#ffffff"
+            name={{ ios: 'arrow.up.left.and.arrow.down.right', android: 'zoom_in', web: 'zoom_in' }}
+            size={13}
+            weight="bold"
+          />
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
 export function ReviewHistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation('home');
-  const { safeReviews, unsafeReviews } = useReviews();
+  const { safeReviews, unsafeReviews, syncReviewsFromSupabase } = useReviews();
+
+  useFocusEffect(
+    useCallback(() => {
+      syncReviewsFromSupabase();
+    }, [syncReviewsFromSupabase])
+  );
 
   // 2 Tabs: "Safe reviewed" and "Unsafe reviewed"
   const [activeTab, setActiveTab] = useState<'safe' | 'unsafe'>('safe');
   const [selectedUnsafeItem, setSelectedUnsafeItem] = useState<ReviewItem | null>(null);
 
   const translateY = useRef(new Animated.Value(0)).current;
+
+  // Full-screen image zoom modal states & handlers
+  const [zoomModalVisible, setZoomModalVisible] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<{ source: any; title: string } | null>(null);
+  const [zoomScale, setZoomScale] = useState(1);
+
+  function openZoomModal(source: any, title: string) {
+    setZoomedImage({ source, title });
+    setZoomScale(1);
+    setZoomModalVisible(true);
+  }
+
+  function closeZoomModal() {
+    setZoomModalVisible(false);
+    setZoomedImage(null);
+    setZoomScale(1);
+  }
+
+  function handleZoomIn() {
+    setZoomScale((prev) => Math.min(Number((prev + 0.5).toFixed(1)), 4));
+  }
+
+  function handleZoomOut() {
+    setZoomScale((prev) => Math.max(Number((prev - 0.5).toFixed(1)), 1));
+  }
+
+  function handleResetZoom() {
+    setZoomScale(1);
+  }
 
   function closeModal() {
     Animated.timing(translateY, {
@@ -105,7 +395,10 @@ export function ReviewHistoryScreen() {
     setSelectedUnsafeItem(item);
   }
 
-  const displayedList = activeTab === 'safe' ? safeReviews : unsafeReviews;
+  const displayedList = useMemo(() => {
+    const list = activeTab === 'safe' ? safeReviews : unsafeReviews;
+    return sortReviewsChronologically(list);
+  }, [activeTab, safeReviews, unsafeReviews]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -176,7 +469,7 @@ export function ReviewHistoryScreen() {
           ) : (
             <View style={styles.feed}>
               {displayedList.map((item, index) => {
-                const isUnsafe = item.status === 'unsafe';
+                const isUnsafe = activeTab === 'unsafe';
                 return (
                   <Pressable
                     accessibilityRole={isUnsafe ? 'button' : 'none'}
@@ -232,11 +525,15 @@ export function ReviewHistoryScreen() {
                     <View style={styles.detailBlock}>
                       <Text style={styles.location}>
                         {item.location} ·{' '}
-                        {t('internal.reviewItems.workersPhotos', {
-                          photos: item.photos,
-                          workers: item.workers,
-                          defaultValue: `${item.workers} workers · ${item.photos} PPE photos`,
-                        })}
+                        {isUnsafe && item.workerReviews && item.workerReviews.some((w) => w.status === 'unsafe')
+                          ? `${item.workerReviews.filter((w) => w.status === 'unsafe').length} of ${item.workers} workers unsafe`
+                          : !isUnsafe && item.workerReviews && item.workerReviews.some((w) => w.status === 'safe')
+                          ? `${item.workerReviews.filter((w) => w.status === 'safe').length} of ${item.workers} workers safe`
+                          : t('internal.reviewItems.workersPhotos', {
+                              photos: item.photos,
+                              workers: item.workers,
+                              defaultValue: `${item.workers} workers · ${item.photos} PPE photos`,
+                            })}
                       </Text>
 
                       {/* Status Chip */}
@@ -263,14 +560,29 @@ export function ReviewHistoryScreen() {
                             styles.statusText,
                             isUnsafe ? styles.unsafeText : styles.reviewedText,
                           ]}>
-                          {isUnsafe ? 'Unsafe' : 'Reviewed'}
+                          {isUnsafe
+                            ? item.workerReviews && item.workerReviews.some((w) => w.status === 'unsafe')
+                              ? `${item.workerReviews.filter((w) => w.status === 'unsafe').length} Unsafe`
+                              : 'Unsafe'
+                            : item.workerReviews && item.workerReviews.some((w) => w.status === 'safe')
+                            ? `${item.workerReviews.filter((w) => w.status === 'safe').length} Safe`
+                            : 'Reviewed'}
                         </Text>
                       </View>
 
                       {/* Violation Badges for Unsafe Tab */}
-                      {isUnsafe && item.unsafeReasons && item.unsafeReasons.length > 0 && (
+                      {isUnsafe && (
                         <View style={styles.reasonsListRow}>
-                          {item.unsafeReasons.map((r) => (
+                          {(item.unsafeReasons && item.unsafeReasons.length > 0
+                            ? item.unsafeReasons
+                            : Array.from(
+                                new Set(
+                                  (item.workerReviews || [])
+                                    .filter((w) => w.status === 'unsafe')
+                                    .flatMap((w) => w.unsafeReasons || [])
+                                )
+                              )
+                          ).map((r) => (
                             <View key={r} style={styles.reasonTag}>
                               <Text style={styles.reasonTagText}>
                                 {unsafeReasonLabels[r] || r}
@@ -407,82 +719,254 @@ export function ReviewHistoryScreen() {
                   <View style={detailsStyles.alertTextContainer}>
                     <Text style={detailsStyles.alertTitle}>Marked as UNSAFE by Reviewer</Text>
                     <Text style={detailsStyles.alertLocation}>
-                      {selectedUnsafeItem?.location} • {selectedUnsafeItem ? formatReviewTime(selectedUnsafeItem) : ''}
+                      {selectedUnsafeItem?.location} • {selectedUnsafeItem ? formatReviewDateTime(selectedUnsafeItem) : ''}
                     </Text>
                   </View>
                 </View>
 
-                {/* Reasons Section */}
-                <View style={detailsStyles.section}>
-                  <Text style={detailsStyles.sectionTitle}>IDENTIFIED PPE VIOLATIONS</Text>
-                  <View style={detailsStyles.reasonsGrid}>
-                    {selectedUnsafeItem?.unsafeReasons &&
-                    selectedUnsafeItem.unsafeReasons.length > 0 ? (
-                      selectedUnsafeItem.unsafeReasons.map((r) => {
-                        const iconConfig = reasonIcons[r] || reasonIcons.other;
+                {/* Multiple Unsafe Workers Stacking with Scroll */}
+                {(() => {
+                  const unsafeWorkers =
+                    selectedUnsafeItem?.workerReviews && selectedUnsafeItem.workerReviews.length > 0
+                      ? selectedUnsafeItem.workerReviews.filter((w) => w.status === 'unsafe')
+                      : [
+                          {
+                            sequenceNo: 1,
+                            workerName: 'Worker 1',
+                            status: 'unsafe' as const,
+                            unsafeReasons: selectedUnsafeItem?.unsafeReasons || ['helmet'],
+                            otherReasonText: selectedUnsafeItem?.otherReasonText,
+                            frontUri: null,
+                            backUri: null,
+                          },
+                        ];
+
+                  return (
+                    <View style={{ gap: 16 }}>
+                      {unsafeWorkers.map((worker, wIdx) => {
+                        const workerTitle = `${selectedUnsafeItem?.vendor || 'Vendor'} • Worker #${worker.sequenceNo}`;
+
                         return (
-                          <View key={r} style={detailsStyles.reasonItem}>
-                            <View style={detailsStyles.reasonIconBox}>
-                              <Icon
-                                color={reviewerColors.errorRed}
-                                name={iconConfig as any}
-                                size={18}
-                              />
+                          <View
+                            key={worker.sequenceNo || wIdx}
+                            style={detailsStyles.workerCardContainer}>
+                            {/* Worker Header Card */}
+                            <View style={detailsStyles.workerHeaderRow}>
+                              <View style={detailsStyles.workerBadge}>
+                                <Text style={detailsStyles.workerBadgeText}>
+                                  WORKER #{worker.sequenceNo}
+                                </Text>
+                              </View>
+                              <View style={detailsStyles.workerVerdictChip}>
+                                <Icon
+                                  color={reviewerColors.errorRed}
+                                  name={{
+                                    ios: 'xmark.circle.fill',
+                                    android: 'cancel',
+                                    web: 'cancel',
+                                  }}
+                                  size={14}
+                                />
+                                <Text style={detailsStyles.workerVerdictText}>UNSAFE</Text>
+                              </View>
                             </View>
-                            <Text style={detailsStyles.reasonItemText}>
-                              {unsafeReasonLabels[r] || r}
-                            </Text>
+
+                            {/* Reasons Section */}
+                            <View style={detailsStyles.section}>
+                              <Text style={detailsStyles.sectionTitle}>
+                                IDENTIFIED PPE VIOLATIONS
+                              </Text>
+                              <View style={detailsStyles.reasonsGrid}>
+                                {worker.unsafeReasons && worker.unsafeReasons.length > 0 ? (
+                                  worker.unsafeReasons.map((r) => {
+                                    const iconConfig = reasonIcons[r] || reasonIcons.other;
+                                    return (
+                                      <View key={r} style={detailsStyles.reasonItem}>
+                                        <View style={detailsStyles.reasonIconBox}>
+                                          <Icon
+                                            color={reviewerColors.errorRed}
+                                            name={iconConfig as any}
+                                            size={18}
+                                          />
+                                        </View>
+                                        <Text style={detailsStyles.reasonItemText}>
+                                          {unsafeReasonLabels[r] || r}
+                                        </Text>
+                                      </View>
+                                    );
+                                  })
+                                ) : (
+                                  <Text style={detailsStyles.noReasonsText}>
+                                    PPE non-compliance identified during visual inspection.
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+
+                            {/* Other reason note if present */}
+                            {worker.otherReasonText ? (
+                              <View style={detailsStyles.section}>
+                                <Text style={detailsStyles.sectionTitle}>
+                                  REVIEWER NOTE / DESCRIPTION
+                                </Text>
+                                <View style={detailsStyles.notesBox}>
+                                  <Text style={detailsStyles.notesText}>
+                                    "{worker.otherReasonText}"
+                                  </Text>
+                                </View>
+                              </View>
+                            ) : null}
+
+                            {/* Inspection Photos Preview */}
+                            <View style={detailsStyles.section}>
+                              <Text style={detailsStyles.sectionTitle}>INSPECTION PHOTOS</Text>
+                              <View style={detailsStyles.photosRow}>
+                                <HistoryInspectionPhoto
+                                  badgeLabel="FRONT"
+                                  fileIdOrUri={worker.frontUri}
+                                  driveId={worker.frontDriveId}
+                                  submissionId={selectedUnsafeItem?.id}
+                                  workerSequenceNo={worker.sequenceNo}
+                                  fallbackAsset={sampleWorkerPhotos[worker.sequenceNo]?.front || assets.fieldUnsafeCheck}
+                                  workerTitle={workerTitle}
+                                  onPressZoom={openZoomModal}
+                                />
+                                <HistoryInspectionPhoto
+                                  badgeLabel="BACK"
+                                  fileIdOrUri={worker.backUri}
+                                  driveId={worker.backDriveId}
+                                  submissionId={selectedUnsafeItem?.id}
+                                  workerSequenceNo={worker.sequenceNo}
+                                  fallbackAsset={sampleWorkerPhotos[worker.sequenceNo]?.back || assets.captureRecentPhoto}
+                                  workerTitle={workerTitle}
+                                  onPressZoom={openZoomModal}
+                                />
+                              </View>
+                            </View>
                           </View>
                         );
-                      })
-                    ) : (
-                      <Text style={detailsStyles.noReasonsText}>
-                        PPE non-compliance identified during visual inspection.
-                      </Text>
-                    )}
-                  </View>
-                </View>
-
-                {/* Other reason note if present */}
-                {selectedUnsafeItem?.otherReasonText ? (
-                  <View style={detailsStyles.section}>
-                    <Text style={detailsStyles.sectionTitle}>REVIEWER NOTE / DESCRIPTION</Text>
-                    <View style={detailsStyles.notesBox}>
-                      <Text style={detailsStyles.notesText}>
-                        "{selectedUnsafeItem.otherReasonText}"
-                      </Text>
+                      })}
                     </View>
-                  </View>
-                ) : null}
-
-                {/* Inspection Photos Preview */}
-                <View style={detailsStyles.section}>
-                  <Text style={detailsStyles.sectionTitle}>INSPECTION PHOTOS</Text>
-                  <View style={detailsStyles.photosRow}>
-                    <View style={detailsStyles.photoCard}>
-                      <View style={detailsStyles.photoBadge}>
-                        <Text style={detailsStyles.photoBadgeText}>FRONT</Text>
-                      </View>
-                      <Image
-                        contentFit="cover"
-                        source={assets.fieldUnsafeCheck}
-                        style={detailsStyles.photoImg}
-                      />
-                    </View>
-                    <View style={detailsStyles.photoCard}>
-                      <View style={detailsStyles.photoBadge}>
-                        <Text style={detailsStyles.photoBadgeText}>BACK</Text>
-                      </View>
-                      <Image
-                        contentFit="cover"
-                        source={assets.captureRecentPhoto}
-                        style={detailsStyles.photoImg}
-                      />
-                    </View>
-                  </View>
-                </View>
+                  );
+                })()}
               </ScrollView>
             </Animated.View>
+          </View>
+        </Modal>
+
+        {/* Full-Screen Image Zoom Inspection Modal */}
+        <Modal
+          animationType="fade"
+          onRequestClose={closeZoomModal}
+          transparent={true}
+          visible={zoomModalVisible}>
+          <View style={zoomModalStyles.overlay}>
+            {/* Safe Header */}
+            <SafeAreaView edges={['top']} style={zoomModalStyles.safeHeader}>
+              <View style={zoomModalStyles.header}>
+                <View style={zoomModalStyles.headerTitleContainer}>
+                  <Text numberOfLines={1} style={zoomModalStyles.headerTitle}>
+                    {zoomedImage?.title || 'Inspect Image'}
+                  </Text>
+                  <Text style={zoomModalStyles.headerSubtitle}>
+                    Pinch or use buttons below to zoom
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityLabel="Close image view"
+                  accessibilityRole="button"
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  onPress={closeZoomModal}
+                  style={({ pressed }) => [
+                    zoomModalStyles.closeButton,
+                    pressed && styles.pressedOpacity,
+                  ]}>
+                  <Icon
+                    color="#ffffff"
+                    name={{ ios: 'xmark', android: 'close', web: 'close' }}
+                    size={20}
+                    weight="bold"
+                  />
+                </Pressable>
+              </View>
+            </SafeAreaView>
+
+            {/* Zoomable Image View */}
+            <ScrollView
+              bounces={false}
+              contentContainerStyle={zoomModalStyles.scrollContent}
+              maximumZoomScale={4}
+              minimumZoomScale={1}
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+              style={zoomModalStyles.scrollArea}>
+              {zoomedImage?.source && (
+                <Animated.View
+                  style={{
+                    transform: [{ scale: zoomScale }],
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                  <Image
+                    contentFit="contain"
+                    source={zoomedImage.source}
+                    style={zoomModalStyles.zoomedImage}
+                  />
+                </Animated.View>
+              )}
+            </ScrollView>
+
+            {/* Bottom Controls Bar */}
+            <SafeAreaView edges={['bottom']} style={zoomModalStyles.safeFooter}>
+              <View style={zoomModalStyles.zoomControlsBar}>
+                <Pressable
+                  accessibilityLabel="Zoom Out"
+                  accessibilityRole="button"
+                  disabled={zoomScale <= 1}
+                  onPress={handleZoomOut}
+                  style={({ pressed }) => [
+                    zoomModalStyles.controlBtn,
+                    zoomScale <= 1 && zoomModalStyles.controlBtnDisabled,
+                    pressed && styles.pressedOpacity,
+                  ]}>
+                  <Icon
+                    color="#ffffff"
+                    name={{ ios: 'minus.magnifyingglass', android: 'zoom_out', web: 'zoom_out' }}
+                    size={20}
+                  />
+                </Pressable>
+
+                <Pressable
+                  accessibilityLabel="Reset Zoom"
+                  accessibilityRole="button"
+                  onPress={handleResetZoom}
+                  style={({ pressed }) => [
+                    zoomModalStyles.resetBtn,
+                    pressed && styles.pressedOpacity,
+                  ]}>
+                  <Text style={zoomModalStyles.resetText}>
+                    {Math.round(zoomScale * 100)}%
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityLabel="Zoom In"
+                  accessibilityRole="button"
+                  disabled={zoomScale >= 4}
+                  onPress={handleZoomIn}
+                  style={({ pressed }) => [
+                    zoomModalStyles.controlBtn,
+                    zoomScale >= 4 && zoomModalStyles.controlBtnDisabled,
+                    pressed && styles.pressedOpacity,
+                  ]}>
+                  <Icon
+                    color="#ffffff"
+                    name={{ ios: 'plus.magnifyingglass', android: 'zoom_in', web: 'zoom_in' }}
+                    size={20}
+                  />
+                </Pressable>
+              </View>
+            </SafeAreaView>
           </View>
         </Modal>
       </View>
@@ -859,6 +1343,53 @@ const detailsStyles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  workerCardContainer: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  workerHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+    paddingBottom: 8,
+  },
+  workerBadge: {
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  workerBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+    letterSpacing: 0.5,
+  },
+  workerVerdictChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  workerVerdictText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#ba1a1a',
+  },
   section: {
     gap: 8,
   },
@@ -940,6 +1471,123 @@ const detailsStyles = StyleSheet.create({
   photoImg: {
     height: '100%',
     width: '100%',
+  },
+  photoPlaceholder: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  photoPlaceholderText: {
+    color: '#6b7280',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  photoLoadingOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    backgroundColor: 'rgba(243, 244, 246, 0.7)',
+    justifyContent: 'center',
+  },
+  photoZoomBadge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    borderRadius: 12,
+    bottom: 6,
+    height: 24,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 6,
+    width: 24,
+  },
+});
+
+const zoomModalStyles = StyleSheet.create({
+  overlay: {
+    backgroundColor: '#000000',
+    flex: 1,
+  },
+  safeHeader: {
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    zIndex: 20,
+  },
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  headerTitleContainer: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  headerTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  headerSubtitle: {
+    color: 'rgba(255, 255, 255, 0.65)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  closeButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 18,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  scrollArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  zoomedImage: {
+    height: SCREEN_HEIGHT * 0.72,
+    width: SCREEN_WIDTH,
+  },
+  safeFooter: {
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+  },
+  zoomControlsBar: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(30, 30, 30, 0.9)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 24,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  controlBtn: {
+    alignItems: 'center',
+    borderRadius: 16,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  controlBtnDisabled: {
+    opacity: 0.35,
+  },
+  resetBtn: {
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  resetText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
 

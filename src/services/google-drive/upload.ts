@@ -1,7 +1,7 @@
 import { config } from '../../constants/config';
 import { StorageError, StorageErrorCode } from '../storage/storage.errors';
 import type { DriveFile } from '../storage/storage.types';
-import { getValidAccessToken } from './auth';
+import { getValidAccessToken, invalidateCachedAccessToken } from './auth';
 import { ensureRootFolder } from './folders';
 
 export const DEFAULT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -171,7 +171,7 @@ export async function uploadFile(options: DriveUploadOptions): Promise<DriveFile
   }
 
   // 3. Acquire valid token
-  const token = await getValidAccessToken();
+  let token = await getValidAccessToken();
   if (!token) {
     throw new StorageError(
       StorageErrorCode.AUTHENTICATION_REQUIRED,
@@ -249,6 +249,31 @@ export async function uploadFile(options: DriveUploadOptions): Promise<DriveFile
       `Network error initiating Google Drive upload session: ${netErr?.message ?? netErr}`,
       { cause: netErr }
     );
+  }
+
+  // Auto-retry on 401 Unauthorized: token expired or changed in database
+  if (!initResponse.ok && initResponse.status === 401) {
+    console.warn('[Google Drive Upload] 401 Unauthorized encountered. Invalidating cache and refreshing token...');
+    await invalidateCachedAccessToken();
+    const freshToken = await getValidAccessToken({ forceRefresh: true });
+    if (freshToken && freshToken !== token) {
+      token = freshToken;
+      try {
+        initResponse = await fetchFn(
+          'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json; charset=UTF-8',
+            },
+            body: JSON.stringify(metadata),
+          }
+        );
+      } catch {
+        // If retry network fails, proceed to error evaluation below
+      }
+    }
   }
 
   if (!initResponse.ok) {
@@ -365,6 +390,23 @@ export async function uploadFile(options: DriveUploadOptions): Promise<DriveFile
   }
 
   const createdId = uploadBody.id.trim();
+
+  // Ensure file is accessible by reviewer across different phones/accounts
+  try {
+    await fetchFn(`https://www.googleapis.com/drive/v3/files/${createdId}/permissions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        role: 'reader',
+        type: 'anyone',
+      }),
+    });
+  } catch (permErr) {
+    console.warn('[Google Drive] Non-fatal: could not set anyone reader permission:', permErr);
+  }
 
   // 8. Return normalized DriveFile metadata
   return {
