@@ -9,7 +9,9 @@ export * from './submission-images';
 export * from './server-storage.client';
 export * from '../../utils/image';
 
-
-
-
+// Standalone Supabase Storage Service
+export * from './supabase-storage.types';
+export * from './path-generator';
+export * from './cleanup-queue';
+export * from './supabase-storage.client';
 

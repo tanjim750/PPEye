@@ -38,7 +38,8 @@ import {
   createPPESubmission,
   createPPESubmissionHeader,
 } from '@/services/supabase/ppeyeDb.service';
-import { uploadSubmissionPhotosToDrive } from '@/services/google-drive';
+import { supabase } from '@/services/supabase/client';
+import { submissionCoordinator } from '@/services/submission-coordination/submission-coordinator';
 import { cacheImage, uploadSubmissionImages, validateSubmissionImages } from '@/services/storage';
 import {
   resubmitUnsafeWorker,
@@ -485,46 +486,75 @@ export function SubmissionReviewScreen() {
             const currentSubId = subHeader.submissionId;
             const submittedBy = subHeader.submittedBy || 1;
 
-            // Step 2: Upload this worker's inspection photos to Google Drive with submission ID in file name!
-            console.log(`[PPEye] Uploading Worker ${worker.sequenceNo} photos to Google Drive (submission_${currentSubId})...`);
-            const driveResult = await uploadSubmissionPhotosToDrive({
-              submissionId: currentSubId,
-              siteName: finalSite,
-              workers: [
-                {
-                  sequenceNo: worker.sequenceNo,
-                  frontUri: worker.frontUri,
-                  backUri: worker.backUri,
-                },
-              ],
-              otherPhotos: i === 0 ? reviewOtherPhotos.map((p) => p.uri) : [],
-            });
+            // Step 2: Ensure worker instance exists in DB for this worker
+            const { data: existingInst } = await supabase
+              .from('ppe_worker_instances')
+              .select('id')
+              .eq('submission_id', currentSubId)
+              .eq('sequence_no', worker.sequenceNo)
+              .maybeSingle();
 
-            const uploadedWorker = driveResult.workers[0];
-            const hasDriveFiles =
-              Boolean(uploadedWorker?.frontDriveFileId) || Boolean(uploadedWorker?.backDriveFileId);
+            let workerInstanceId = existingInst?.id;
+            if (!workerInstanceId) {
+              const { data: newInst } = await supabase
+                .from('ppe_worker_instances')
+                .insert({
+                  submission_id: currentSubId,
+                  sequence_no: worker.sequenceNo,
+                })
+                .select('id')
+                .single();
+              workerInstanceId = newInst?.id;
+            }
 
-            if (!hasDriveFiles) {
-              console.warn(`[PPEye] Google Drive upload failed for worker ${worker.sequenceNo}`);
+            if (!workerInstanceId) {
+              console.warn(`[PPEye] Failed to acquire worker instance ID for worker ${worker.sequenceNo}`);
               continue;
             }
 
-            // Immediately register in local cache so reviewer can display instantly without downloading
-            if (uploadedWorker?.frontDriveFileId && worker.frontUri) {
-              cacheImage(uploadedWorker.frontDriveFileId, worker.frontUri, { isSensitive: true }).catch(() => {});
-            }
-            if (uploadedWorker?.backDriveFileId && worker.backUri) {
-              cacheImage(uploadedWorker.backDriveFileId, worker.backUri, { isSensitive: true }).catch(() => {});
+            // Step 3: Upload inspection photos to Supabase Storage 'evidence' bucket via Coordinator
+            console.log(`[PPEye] Uploading Worker ${worker.sequenceNo} photos to Supabase Storage (submission_${currentSubId})...`);
+            const coordResult = await submissionCoordinator.submitWorkerEvidence({
+              submissionId: currentSubId,
+              workerInstanceId,
+              workerSequenceNo: worker.sequenceNo,
+              frontLocalUri: worker.frontUri,
+              backLocalUri: worker.backUri,
+              userId: submittedBy,
+            });
+
+            if (coordResult.status !== 'COMPLETE_SUCCESS' || !coordResult.data) {
+              console.warn(`[PPEye] Supabase upload failed for worker ${worker.sequenceNo}:`, coordResult.error?.message);
+              continue;
             }
 
-            // Step 3: Link Drive file IDs with worker instances & files in Supabase
-            console.log(`[PPEye] Attaching Drive IDs to DB submission ${currentSubId}...`);
-            await attachPhotosToPPESubmission({
-              submissionId: currentSubId,
-              submittedBy,
-              workers: [uploadedWorker],
-              otherPhotos: i === 0 ? driveResult.otherPhotos : [],
-            });
+            // Immediately register in local cache under storagePath so reviewer can display instantly
+            if (coordResult.data.front?.storagePath && worker.frontUri) {
+              cacheImage(coordResult.data.front.storagePath, worker.frontUri, { isSensitive: true }).catch(() => {});
+            }
+            if (coordResult.data.back?.storagePath && worker.backUri) {
+              cacheImage(coordResult.data.back.storagePath, worker.backUri, { isSensitive: true }).catch(() => {});
+            }
+
+            // Step 4: Upload other/hazard evidence photos on the first worker iteration
+            if (i === 0 && reviewOtherPhotos && reviewOtherPhotos.length > 0) {
+              for (let oIdx = 0; oIdx < reviewOtherPhotos.length; oIdx++) {
+                const otherP = reviewOtherPhotos[oIdx];
+                try {
+                  const otherRes = await submissionCoordinator.submitOtherEvidence({
+                    submissionId: currentSubId,
+                    sequenceNo: oIdx + 1,
+                    localUri: otherP.uri,
+                    userId: submittedBy,
+                  });
+                  if (otherRes.status === 'COMPLETE_SUCCESS' && otherRes.data?.storagePath) {
+                    cacheImage(otherRes.data.storagePath, otherP.uri, { isSensitive: true }).catch(() => {});
+                  }
+                } catch (otherErr) {
+                  console.warn(`[PPEye] Error uploading other photo #${oIdx + 1}:`, otherErr);
+                }
+              }
+            }
 
             // Immediately broadcast new submission to Reviewer phones via Supabase realtime
             broadcastNewSubmission(currentSubId);

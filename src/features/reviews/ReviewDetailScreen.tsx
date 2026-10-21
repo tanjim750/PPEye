@@ -119,7 +119,9 @@ export function ReviewDetailScreen() {
     ? formatReviewDateTime(currentReview)
     : '10:42 AM';
 
-  const totalWorkers = currentReview?.workers || 1;
+  const [dbWorkerCount, setDbWorkerCount] = useState<number | null>(null);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const totalWorkers = dbWorkerCount || currentReview?.workers || 1;
   const [workerVerdicts, setWorkerVerdicts] = useState<Record<number, WorkerReviewVerdict>>(() => {
     if (currentReview?.workerReviews && currentReview.workerReviews.length > 0) {
       const map: Record<number, WorkerReviewVerdict> = {};
@@ -207,7 +209,8 @@ type AuthImageSource = {
 
 async function buildImageSourceCandidates(
   fileIdOrUri?: string | null,
-  forceRefreshAuth?: boolean
+  forceRefreshAuth?: boolean,
+  storageProvider?: string,
 ): Promise<AuthImageSource[]> {
   if (!fileIdOrUri || !fileIdOrUri.trim()) return [];
   const clean = fileIdOrUri.trim();
@@ -217,6 +220,36 @@ async function buildImageSourceCandidates(
     clean.startsWith('content://')
   ) {
     return [{ uri: clean }];
+  }
+
+  const isSupabase =
+    storageProvider === 'SUPABASE' ||
+    clean.startsWith('submissions/') ||
+    clean.startsWith('users/') ||
+    (clean.includes('/') && !clean.startsWith('http://') && !clean.startsWith('https://'));
+
+  if (isSupabase) {
+    const list: AuthImageSource[] = [];
+
+    // 1. Check local disk cache first
+    const localCached = await getCachedImageUri(clean).catch(() => null);
+    if (localCached) {
+      list.push({ uri: localCached });
+    }
+
+    // 2. Primary authorized endpoint via Supabase Storage signed URL
+    try {
+      const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+      const bucket = clean.startsWith('users/') ? 'avatars' : 'evidence';
+      const signedUrl = await supabaseStorageService.createSignedUrl(bucket, clean, 3600);
+      if (signedUrl) {
+        list.push({ uri: signedUrl });
+      }
+    } catch (err) {
+      console.warn('[ReviewDetail] Failed to create Supabase signed URL for:', clean, err);
+    }
+
+    return list;
   }
 
   let driveId = clean;
@@ -430,7 +463,8 @@ async function buildImageSourceCandidates(
               files (
                 id,
                 file_name,
-                provider_file_id
+                provider_file_id,
+                storage_provider
               )
             )
           `)
@@ -449,6 +483,10 @@ async function buildImageSourceCandidates(
           return;
         }
 
+        if (!isCancelled && instList.length > 0) {
+          setDbWorkerCount(instList.length);
+        }
+
         const worker =
           instList.find((w) => w.sequence_no === currentWorkerIndex) ||
           instList[currentWorkerIndex - 1] ||
@@ -456,15 +494,24 @@ async function buildImageSourceCandidates(
 
         if (worker && !isCancelled) {
           const images = (worker.ppe_images as any[]) || [];
-          const frontImg = images.find((img) => img.side === 'FRONT');
-          const backImg = images.find((img) => img.side === 'BACK');
+          // Pick the newest image for each side (highest ID or latest) to ensure resubmitted photos are shown
+          const frontImages = images
+            .filter((img) => img.side === 'FRONT')
+            .sort((a, b) => (b.id || 0) - (a.id || 0));
+          const frontImg = frontImages[0];
+
+          const backImages = images
+            .filter((img) => img.side === 'BACK')
+            .sort((a, b) => (b.id || 0) - (a.id || 0));
+          const backImg = backImages[0];
 
           const frontRawFile = Array.isArray(frontImg?.files) ? frontImg.files[0] : frontImg?.files;
-          let frontDriveId = frontRawFile?.provider_file_id || (frontRawFile as any)?.drive_id;
+          const frontProvider = frontRawFile?.storage_provider || (frontRawFile?.provider_file_id?.includes('/') ? 'SUPABASE' : 'GOOGLE_DRIVE');
+          let frontDriveId = frontRawFile?.provider_file_id;
           if (!frontDriveId && frontImg?.file_id) {
             const { data: fRow } = await supabase
               .from('files')
-              .select('provider_file_id')
+              .select('provider_file_id, storage_provider')
               .eq('id', frontImg.file_id)
               .maybeSingle();
             frontDriveId = (fRow as any)?.provider_file_id;
@@ -472,11 +519,12 @@ async function buildImageSourceCandidates(
           frontDriveIdRef.current = frontDriveId || null;
 
           const backRawFile = Array.isArray(backImg?.files) ? backImg.files[0] : backImg?.files;
-          let backDriveId = backRawFile?.provider_file_id || (backRawFile as any)?.drive_id;
+          const backProvider = backRawFile?.storage_provider || (backRawFile as any)?.provider_file_id?.includes('/') ? 'SUPABASE' : 'GOOGLE_DRIVE';
+          let backDriveId = backRawFile?.provider_file_id;
           if (!backDriveId && backImg?.file_id) {
             const { data: bRow } = await supabase
               .from('files')
-              .select('provider_file_id')
+              .select('provider_file_id, storage_provider')
               .eq('id', backImg.file_id)
               .maybeSingle();
             backDriveId = (bRow as any)?.provider_file_id;
@@ -485,7 +533,7 @@ async function buildImageSourceCandidates(
 
           if (frontDriveId && !isCancelled) {
             setHasFrontRecord(true);
-            buildImageSourceCandidates(frontDriveId).then((candidates) => {
+            buildImageSourceCandidates(frontDriveId, false, frontProvider).then((candidates) => {
               if (isCancelled) return;
               frontCandidatesRef.current = candidates;
               frontCandidateIndexRef.current = 0;
@@ -498,7 +546,7 @@ async function buildImageSourceCandidates(
             });
 
             // Asynchronously download into local disk cache in background
-            getImageUri(frontDriveId)
+            getImageUri(frontDriveId, { storageProvider: frontProvider as any })
               .then((downloaded) => {
                 if (!isCancelled && downloaded) {
                   setFrontSource({ uri: downloaded });
@@ -516,7 +564,7 @@ async function buildImageSourceCandidates(
 
           if (backDriveId && !isCancelled) {
             setHasBackRecord(true);
-            buildImageSourceCandidates(backDriveId).then((candidates) => {
+            buildImageSourceCandidates(backDriveId, false, backProvider).then((candidates) => {
               if (isCancelled) return;
               backCandidatesRef.current = candidates;
               backCandidateIndexRef.current = 0;
@@ -529,7 +577,7 @@ async function buildImageSourceCandidates(
             });
 
             // Asynchronously download into local disk cache in background
-            getImageUri(backDriveId)
+            getImageUri(backDriveId, { storageProvider: backProvider as any })
               .then((downloaded) => {
                 if (!isCancelled && downloaded) {
                   setBackSource({ uri: downloaded });
@@ -606,6 +654,14 @@ async function buildImageSourceCandidates(
     // Auto advance to next worker if not last worker
     if (currentWorkerIndex < totalWorkers) {
       setCurrentWorkerIndex((prev) => prev + 1);
+    } else {
+      // All workers have decisions; finalize review
+      const allDecided = Array.from({ length: totalWorkers }, (_, i) => i + 1).every(
+        (seq) => updatedVerdicts[seq]
+      );
+      if (allDecided) {
+        void handleFinalConfirmReview(updatedVerdicts);
+      }
     }
   }
 
@@ -696,10 +752,19 @@ async function buildImageSourceCandidates(
     // Auto advance to next worker if not last worker
     if (currentWorkerIndex < totalWorkers) {
       setCurrentWorkerIndex((prev) => prev + 1);
+    } else {
+      // All workers have decisions; finalize review
+      const allDecided = Array.from({ length: totalWorkers }, (_, i) => i + 1).every(
+        (seq) => updatedVerdicts[seq]
+      );
+      if (allDecided) {
+        void handleFinalConfirmReview(updatedVerdicts);
+      }
     }
   }
 
-  function handleFinalConfirmReview(customVerdictsMap?: Record<number, WorkerReviewVerdict>) {
+  async function handleFinalConfirmReview(customVerdictsMap?: Record<number, WorkerReviewVerdict>) {
+    if (isSubmittingReview) return;
     const targetMap = { ...(customVerdictsMap || verdictsRef.current) };
     if (!targetMap[currentWorkerIndex] && workerVerdicts[currentWorkerIndex]) {
       targetMap[currentWorkerIndex] = workerVerdicts[currentWorkerIndex];
@@ -717,14 +782,32 @@ async function buildImageSourceCandidates(
       }
     }
 
+    setIsSubmittingReview(true);
     isCompletedRef.current = true;
     const verdicts = Object.values(targetMap);
-    completeSubmissionReview(
-      submissionId || 'rev-01',
-      verdicts
-    );
-    // Direct navigation to Pending reviews page
-    router.replace('/(internal)/reviews');
+    try {
+      const res = await completeSubmissionReview(
+        submissionId || 'rev-01',
+        verdicts
+      );
+      if (!res.success && Number.isFinite(Number(submissionId))) {
+        Alert.alert('Review Submission Error', res.error || 'Failed to submit review.');
+        isCompletedRef.current = false;
+        setIsSubmittingReview(false);
+        return;
+      }
+    } catch (err: any) {
+      if (Number.isFinite(Number(submissionId))) {
+        Alert.alert('Review Submission Error', err?.message || 'Failed to submit review.');
+        isCompletedRef.current = false;
+        setIsSubmittingReview(false);
+        return;
+      }
+    }
+    setIsSubmittingReview(false);
+    const hasUnsafe = verdicts.some((v) => v.status === 'unsafe');
+    // Navigate directly to Reviews History tab so the reviewer immediately sees their newly finalized verdict
+    router.replace(`/(internal)/history?tab=${hasUnsafe ? 'unsafe' : 'safe'}` as any);
   }
 
   function handleRequestBack() {
@@ -1108,20 +1191,31 @@ async function buildImageSourceCandidates(
 
           <Pressable
             accessibilityRole="button"
+            disabled={isSubmittingReview}
             onPress={handleNext}
-            style={({ pressed }) => [styles.navButton, pressed && styles.pressedOpacity]}>
-            <Text style={[styles.navButtonText, styles.navButtonNextText]}>
-              {currentWorkerIndex === totalWorkers ? 'Confirm Review' : 'Next Worker'}
-            </Text>
-            <Icon
-              color={colors.primary}
-              name={
-                currentWorkerIndex === totalWorkers
-                  ? { ios: 'checkmark', android: 'check', web: 'check' }
-                  : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
-              }
-              size={18}
-            />
+            style={({ pressed }) => [
+              styles.navButton,
+              pressed && styles.pressedOpacity,
+              isSubmittingReview && { opacity: 0.6 },
+            ]}>
+            {isSubmittingReview ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <>
+                <Text style={[styles.navButtonText, styles.navButtonNextText]}>
+                  {currentWorkerIndex === totalWorkers ? 'Confirm Review' : 'Next Worker'}
+                </Text>
+                <Icon
+                  color={colors.primary}
+                  name={
+                    currentWorkerIndex === totalWorkers
+                      ? { ios: 'checkmark', android: 'check', web: 'check' }
+                      : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
+                  }
+                  size={18}
+                />
+              </>
+            )}
           </Pressable>
         </View>
 

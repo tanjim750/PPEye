@@ -13,6 +13,7 @@ export interface UploadSubmissionPhotosParams {
   otherPhotos?: string[];
   folderId?: string;
   submissionId?: number;
+  onProgress?: (fraction: number) => void;
 }
 
 export interface UploadedSubmissionPhotosResult {
@@ -27,8 +28,21 @@ export interface UploadedSubmissionPhotosResult {
 export async function uploadSubmissionPhotosToDrive(
   params: UploadSubmissionPhotosParams
 ): Promise<UploadedSubmissionPhotosResult> {
-  const { siteName, workers, otherPhotos = [], folderId, submissionId } = params;
+  const { siteName, workers, otherPhotos = [], folderId, submissionId, onProgress } = params;
   const sanitizedSite = siteName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const uploadKeys = [
+    ...workers.flatMap((worker) => [
+      ...(worker.frontUri ? [`worker-${worker.sequenceNo}-front`] : []),
+      ...(worker.backUri ? [`worker-${worker.sequenceNo}-back`] : []),
+    ]),
+    ...otherPhotos.map((_, index) => `other-${index + 1}`),
+  ];
+  const progressByKey = new Map(uploadKeys.map((key) => [key, 0]));
+  const reportProgress = (key: string, fraction: number) => {
+    progressByKey.set(key, Math.max(progressByKey.get(key) ?? 0, fraction));
+    const total = progressByKey.size;
+    onProgress?.(total ? [...progressByKey.values()].reduce((sum, value) => sum + value, 0) / total : 1);
+  };
 
   // 1. Upload worker photos (front & back)
   const uploadedWorkers: CreateWorkerPhotoPayload[] = await Promise.all(
@@ -51,8 +65,10 @@ export async function uploadSubmissionPhotosToDrive(
               localUri: worker.frontUri,
               fileName: frontFileName,
               folderId,
+              onUploadProgress: (fraction) => reportProgress(`worker-${worker.sequenceNo}-front`, fraction),
             });
             frontDriveFileId = frontRes.fileId;
+            reportProgress(`worker-${worker.sequenceNo}-front`, 1);
             break;
           } catch (err) {
             console.warn(`[Drive Upload] Error uploading worker ${worker.sequenceNo} front photo (attempt ${attempt}):`, err);
@@ -70,8 +86,10 @@ export async function uploadSubmissionPhotosToDrive(
               localUri: worker.backUri,
               fileName: backFileName,
               folderId,
+              onUploadProgress: (fraction) => reportProgress(`worker-${worker.sequenceNo}-back`, fraction),
             });
             backDriveFileId = backRes.fileId;
+            reportProgress(`worker-${worker.sequenceNo}-back`, 1);
             break;
           } catch (err) {
             console.warn(`[Drive Upload] Error uploading worker ${worker.sequenceNo} back photo (attempt ${attempt}):`, err);
@@ -104,7 +122,9 @@ export async function uploadSubmissionPhotosToDrive(
           localUri: uri,
           fileName: otherFileName,
           folderId,
+          onUploadProgress: (fraction) => reportProgress(`other-${index + 1}`, fraction),
         });
+        reportProgress(`other-${index + 1}`, 1);
         return otherRes.fileId;
       } catch (err) {
         console.warn(`[Drive Upload] Error uploading other photo ${index + 1}:`, err);

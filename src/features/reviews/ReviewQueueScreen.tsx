@@ -69,7 +69,7 @@ export function ReviewQueueScreen() {
               size={22}
             />
           </Pressable>
-          <Text style={styles.headerTitle}>Reviewes Pending</Text>
+          <Text style={styles.headerTitle}>Reviews Pending</Text>
           <View style={styles.headerPlaceholder} />
         </View>
 

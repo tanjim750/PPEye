@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { OtherCapturePhoto } from '@/features/capture/types';
 
@@ -19,6 +19,7 @@ export function useContinuousOthersCapture(initialPhotos: OtherCapturePhoto[] = 
   );
   const [selectedPhotoNumber, setSelectedPhotoNumber] = useState<number | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const isCapturingRef = useRef(false);
 
   const selectedPhoto = useMemo(
     () => photos.find((photo) => photo.sequenceNo === selectedPhotoNumber),
@@ -27,10 +28,11 @@ export function useContinuousOthersCapture(initialPhotos: OtherCapturePhoto[] = 
 
   const capturePhoto = useCallback(
     async (takePhoto: () => Promise<string | undefined>) => {
-      if (isCapturing) {
+      if (isCapturing || isCapturingRef.current) {
         return;
       }
 
+      isCapturingRef.current = true;
       setIsCapturing(true);
 
       try {
@@ -48,6 +50,7 @@ export function useContinuousOthersCapture(initialPhotos: OtherCapturePhoto[] = 
         setPhotos((currentPhotos) => [...currentPhotos, nextPhoto]);
         setCurrentPhotoNumber((currentNumber) => currentNumber + 1);
       } finally {
+        isCapturingRef.current = false;
         setIsCapturing(false);
       }
     },

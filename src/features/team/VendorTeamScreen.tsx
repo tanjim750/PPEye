@@ -55,14 +55,16 @@ export function VendorTeamScreen() {
   // Form states
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [designation, setDesignation] = useState('');
   const [externalType, setExternalType] = useState<'TEAM_LEADER' | 'WORKER'>('WORKER');
 
-  const vendorProfileId = user?.vendorProfileId || 1;
+  const vendorProfileId = user?.vendorProfileId;
 
   const loadMembers = useCallback(async () => {
     try {
       setLoading(true);
+      if (typeof vendorProfileId !== 'number') throw new Error('Your account is not linked to a vendor profile.');
       const data = await getVendorTeamMembers(vendorProfileId);
       setMembers(data);
     } catch (err) {
@@ -77,6 +79,10 @@ export function VendorTeamScreen() {
   }, [loadMembers]);
 
   async function handleAddMember() {
+    if (typeof vendorProfileId !== 'number') {
+      Alert.alert('Vendor profile unavailable', 'Your account is not linked to a vendor profile.');
+      return;
+    }
     if (!name.trim()) {
       Alert.alert('Required Field', 'Please enter the member name.');
       return;
@@ -85,12 +91,17 @@ export function VendorTeamScreen() {
       Alert.alert('Required Field', 'Please enter a valid phone number.');
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      Alert.alert('Required Field', 'Please enter a valid sign-in email address.');
+      return;
+    }
 
     try {
       setSubmitting(true);
       const res = await addVendorTeamMember(vendorProfileId, {
         name: name.trim(),
         phone: phone.trim(),
+        email: email.trim().toLowerCase(),
         designation: designation.trim() || undefined,
         externalType,
       });
@@ -100,10 +111,11 @@ export function VendorTeamScreen() {
         return;
       }
 
-      Alert.alert('Success', `Registered ${name} as ${externalType === 'TEAM_LEADER' ? 'Team Leader' : 'Worker'}.`);
+      Alert.alert('Profile linked', `The PPEye profile is linked to ${email.trim()}. Create the matching email/password account in Supabase Auth before this member can sign in.`);
       setIsAddModalOpen(false);
       setName('');
       setPhone('');
+      setEmail('');
       setDesignation('');
       setExternalType('WORKER');
       await loadMembers();
@@ -115,6 +127,10 @@ export function VendorTeamScreen() {
   }
 
   function handleConfirmRemove(member: VendorTeamMemberItem) {
+    if (typeof vendorProfileId !== 'number') {
+      Alert.alert('Vendor profile unavailable', 'Your account is not linked to a vendor profile.');
+      return;
+    }
     Alert.alert(
       'Remove Member',
       `Are you sure you want to remove ${member.name} from the vendor team?`,
@@ -311,6 +327,18 @@ export function VendorTeamScreen() {
                   placeholderTextColor={colors.textSubtle}
                   style={styles.input}
                   value={name}
+                />
+
+                <Text style={styles.inputLabel}>Sign-in Email *</Text>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  onChangeText={setEmail}
+                  placeholder="name@company.com"
+                  placeholderTextColor={colors.textSubtle}
+                  style={styles.input}
+                  value={email}
                 />
 
                 {/* Phone */}

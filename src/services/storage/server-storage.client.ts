@@ -1,3 +1,4 @@
+import { prepareImageForUpload } from '../../utils/image';
 import { StorageError, StorageErrorCode } from './storage.errors';
 import type {
   FileDownloadResult,
@@ -53,11 +54,11 @@ export class ServerStorageClient implements IStorageService {
   async upload(input: UploadFileInput): Promise<StoredFile> {
     const token = await this.getAuthToken();
     const url = `${this.baseUrl}?action=upload`;
+    let effectiveMime = input.mimeType || 'image/jpeg';
 
     const formData = new FormData();
     formData.append('fileName', input.fileName);
     formData.append('category', input.category);
-    if (input.mimeType) formData.append('mimeType', input.mimeType);
 
     if (input.metadata) {
       if (input.metadata.submissionId) formData.append('submissionId', String(input.metadata.submissionId));
@@ -66,11 +67,26 @@ export class ServerStorageClient implements IStorageService {
       if (input.metadata.sequenceNo) formData.append('sequenceNo', String(input.metadata.sequenceNo));
     }
 
+    // Compress & resize image once right before upload (1920px long edge @ 0.8 JPEG quality).
+    // Preserves original file for retries and skips re-compression if already prepared.
+    let uploadUri = input.localUri;
+    if (effectiveMime.toLowerCase().trim().startsWith('image/')) {
+      try {
+        const prepared = await prepareImageForUpload(input.localUri);
+        uploadUri = prepared.uri;
+        effectiveMime = prepared.mimeType ?? effectiveMime;
+      } catch {
+        uploadUri = input.localUri;
+      }
+    }
+
+    if (effectiveMime) formData.append('mimeType', effectiveMime);
+
     // In React Native / Expo, file attachment format
     const fileEntry: any = {
-      uri: input.localUri,
+      uri: uploadUri,
       name: input.fileName,
-      type: input.mimeType || 'image/jpeg',
+      type: effectiveMime,
     };
     formData.append('file', fileEntry);
 

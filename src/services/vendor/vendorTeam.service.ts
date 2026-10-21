@@ -29,7 +29,7 @@ export interface VendorTeamMemberItem {
 export interface AddTeamMemberInput {
   name: string;
   phone: string;
-  email?: string;
+  email: string;
   designation?: string;
   externalType: 'TEAM_LEADER' | 'WORKER';
 }
@@ -38,7 +38,7 @@ export interface AddTeamMemberInput {
  * Fetch all members of a specific vendor profile.
  */
 export async function getVendorTeamMembers(
-  vendorProfileId: number = 1
+  vendorProfileId: number
 ): Promise<VendorTeamMemberItem[]> {
   try {
     const { data, error } = await getDb()
@@ -102,6 +102,10 @@ export async function addVendorTeamMember(
     if (!memberData.phone || !memberData.phone.trim()) {
       throw new StorageError(StorageErrorCode.INVALID_INPUT, 'Phone number is required.');
     }
+    const cleanEmail = memberData.email?.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      throw new StorageError(StorageErrorCode.INVALID_INPUT, 'A valid sign-in email is required.');
+    }
     if (memberData.externalType !== 'TEAM_LEADER' && memberData.externalType !== 'WORKER') {
       throw new StorageError(
         StorageErrorCode.PERMISSION_DENIED,
@@ -114,7 +118,7 @@ export async function addVendorTeamMember(
     // 2. Check phone uniqueness & category safety
     const { data: existingUser } = await getDb()
       .from('users')
-      .select('id, category')
+      .select('id, category, email')
       .eq('phone', cleanPhone)
       .maybeSingle();
 
@@ -123,6 +127,9 @@ export async function addVendorTeamMember(
         StorageErrorCode.PERMISSION_DENIED,
         'Internal staff (EHS Reviewers / Admins) cannot be added to vendor teams.'
       );
+    }
+    if (existingUser && String(existingUser.email || '').trim().toLowerCase() !== cleanEmail) {
+      throw new StorageError(StorageErrorCode.INVALID_INPUT, 'The email must match the existing PPEye user account.');
     }
 
     let userId: number;
@@ -136,7 +143,7 @@ export async function addVendorTeamMember(
         .insert({
           name: memberData.name.trim(),
           phone: cleanPhone,
-          email: memberData.email?.trim() || null,
+          email: cleanEmail,
           category: 'EXTERNAL',
           designation: memberData.designation?.trim() || null,
           external_type: memberData.externalType,

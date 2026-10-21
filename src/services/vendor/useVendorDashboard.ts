@@ -30,7 +30,10 @@ export function useVendorDashboard() {
       setLoading(true);
       setError(null);
 
-      const vendorProfileId = user?.vendorProfileId || 1;
+      const vendorProfileId = user?.vendorProfileId;
+      if (typeof vendorProfileId !== 'number' || !Number.isFinite(vendorProfileId)) {
+        throw new Error('Your account is not linked to a vendor profile.');
+      }
       const userId = typeof user?.id === 'number' ? user.id : undefined;
 
       const result = await getVendorDashboardStats(

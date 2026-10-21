@@ -270,7 +270,7 @@ export async function getWorkerImages(
       fileInfo = {
         id: rawFile.id,
         storageProvider: rawFile.storage_provider as StorageProvider,
-        providerFileId: rawFile.drive_id || rawFile.provider_file_id || String(rawFile.id),
+        providerFileId: rawFile.provider_file_id || String(rawFile.id),
         fileName: rawFile.file_name,
         mimeType: rawFile.mime_type ?? null,
         sizeBytes: rawFile.size_bytes ?? null,
@@ -286,7 +286,7 @@ export async function getWorkerImages(
       fileInfo = {
         id: fileRec.id,
         storageProvider: fileRec.storage_provider as StorageProvider,
-        providerFileId: (fileRec as any).drive_id || fileRec.provider_file_id || String(fileRec.id),
+        providerFileId: fileRec.provider_file_id || String(fileRec.id),
         fileName: fileRec.file_name,
         mimeType: fileRec.mime_type ?? null,
         sizeBytes: fileRec.size_bytes ?? null,

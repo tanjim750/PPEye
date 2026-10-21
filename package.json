@@ -15,6 +15,7 @@
     "expo-font": "~57.0.3",
     "expo-glass-effect": "~57.0.1",
     "expo-image": "~57.0.4",
+    "expo-image-manipulator": "~57.0.21",
     "expo-image-picker": "~57.0.20",
     "expo-linking": "~57.0.9",
     "expo-localization": "~57.0.1",
@@ -49,6 +50,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "test": "npx tsx -e \"import { runImageTests } from './src/utils/__tests__/image.test'; import { runVendorTests } from './src/services/vendor/__tests__/vendor.test'; import { runReviewPersistenceTests } from './src/features/reviews/services/__tests__/review-persistence.test'; import { runServerStorageTests } from './src/services/storage/__tests__/server-storage.test'; import { runUploadQueueTests } from './src/services/storage/__tests__/upload-queue.test'; import { runStorageTests } from './src/services/storage/__tests__/storage.service.test'; import { runProfileImageTests } from './src/services/storage/__tests__/profile-image.test'; import { runSubmissionImagesTests } from './src/services/storage/__tests__/submission-images.test'; import { runIntegrationTests } from './src/services/storage/__tests__/integration.test'; import { runOtherImagesTests } from './src/services/storage/__tests__/other-images.test'; import { runPPEImagesTests } from './src/services/storage/__tests__/ppe-images.test'; import { runGoogleAuthTests } from './src/services/google-drive/__tests__/auth.test'; import { runFoldersTests } from './src/services/google-drive/__tests__/folders.test'; import { runFileOperationsTests } from './src/services/google-drive/__tests__/files.test'; import { runFilesRepositoryTests } from './src/services/supabase/__tests__/files.repository.test'; import { runMigrationValidationTests } from './src/services/database/__tests__/migrations-validation.test'; import { runDatabaseServiceTests } from './src/services/database/__tests__/database.service.test'; import { runSupabaseStorageTests } from './src/services/storage/__tests__/supabase-storage.test'; import { runSubmissionCoordinatorTests } from './src/services/submission-coordination/__tests__/submission-coordinator.test'; import { runPhase5IntegrationTests } from './src/services/submission-coordination/__tests__/phase5-workflow-integration.test'; (async () => { const fns = [runImageTests, runVendorTests, runReviewPersistenceTests, runServerStorageTests, runUploadQueueTests, runStorageTests, runProfileImageTests, runSubmissionImagesTests, runIntegrationTests, runOtherImagesTests, runPPEImagesTests, runGoogleAuthTests, runFoldersTests, runFileOperationsTests, runFilesRepositoryTests, runMigrationValidationTests, runDatabaseServiceTests, runSupabaseStorageTests, runSubmissionCoordinatorTests, runPhase5IntegrationTests]; let failed = 0; for (const fn of fns) { const r: any = await fn(); if (r?.failed) failed += r.failed; } if (failed > 0) process.exit(1); })()\"",
     "check:submissions": "npx tsx scripts/check-submissions.ts"
   },
   "private": true

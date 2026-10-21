@@ -63,7 +63,6 @@ export interface Database {
           id: number;
           storage_provider: StorageProvider;
           provider_file_id: string;
-          drive_id?: string | null;
           file_name: string;
           mime_type: string | null;
           size_bytes: number | null;
@@ -74,7 +73,6 @@ export interface Database {
           id?: number;
           storage_provider?: StorageProvider;
           provider_file_id: string;
-          drive_id?: string | null;
           file_name: string;
           mime_type?: string | null;
           size_bytes?: number | null;
@@ -85,7 +83,6 @@ export interface Database {
           id?: number;
           storage_provider?: StorageProvider;
           provider_file_id?: string;
-          drive_id?: string | null;
           file_name?: string;
           mime_type?: string | null;
           size_bytes?: number | null;
@@ -373,6 +370,84 @@ export interface Database {
           verdict?: SafetyVerdict;
           reason?: string | null;
           reviewed_at?: string;
+        };
+        Relationships: [];
+      };
+      storage_operations_log: {
+        Row: {
+          id: number;
+          operation: string;
+          bucket: string;
+          file_path: string;
+          file_size_bytes: number | null;
+          mime_type: string | null;
+          performed_by: number | null;
+          status: string;
+          error_message: string | null;
+          metadata: Record<string, any>;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          operation: string;
+          bucket: string;
+          file_path: string;
+          file_size_bytes?: number | null;
+          mime_type?: string | null;
+          performed_by?: number | null;
+          status?: string;
+          error_message?: string | null;
+          metadata?: Record<string, any>;
+          created_at?: string;
+        };
+        Update: {
+          id?: number;
+          operation?: string;
+          bucket?: string;
+          file_path?: string;
+          file_size_bytes?: number | null;
+          mime_type?: string | null;
+          performed_by?: number | null;
+          status?: string;
+          error_message?: string | null;
+          metadata?: Record<string, any>;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      database_service_logs: {
+        Row: {
+          id: number;
+          action: string;
+          entity_type: string;
+          entity_id: string | null;
+          performed_by: number | null;
+          status: string;
+          payload: Record<string, any>;
+          error_details: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          action: string;
+          entity_type: string;
+          entity_id?: string | null;
+          performed_by?: number | null;
+          status?: string;
+          payload?: Record<string, any>;
+          error_details?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: number;
+          action?: string;
+          entity_type?: string;
+          entity_id?: string | null;
+          performed_by?: number | null;
+          status?: string;
+          payload?: Record<string, any>;
+          error_details?: string | null;
+          created_at?: string;
         };
         Relationships: [];
       };

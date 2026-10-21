@@ -94,7 +94,7 @@
       "reviewed": "রিভিউ সম্পন্ন"
     },
     "reviewItems": {
-      "rahimLead": "রহিম মিয়া · {{count}} কর্মী",
+      "rahimLead": "টিম লিডার · {{count}} কর্মী",
       "karimLead": "করিম হাসান · টিম লিডার",
       "shakibLead": "সাকিব আহমেদ · টিম লিডার",
       "workersPhotos": "{{workers}} কর্মী · {{photos}} PPE ছবি",

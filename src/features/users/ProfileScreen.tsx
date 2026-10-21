@@ -10,7 +10,9 @@ import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
 import { useAuth } from '@/hooks/useAuth';
 import { authStore } from '@/stores/auth.store';
-import { getProfilePictureUri, uploadProfilePicture } from '@/services/storage';
+import { getProfilePictureUri } from '@/services/storage';
+import { submissionCoordinator } from '@/services/submission-coordination/submission-coordinator';
+import { cacheImage } from '@/utils/image';
 
 type EditableField = 'fullName' | 'phoneNumber' | 'email';
 
@@ -59,9 +61,17 @@ export function ProfileScreen() {
     if (!result.canceled && result.assets[0]?.uri) {
       const pickedUri = result.assets[0].uri;
       setProfileImage(pickedUri);
-      uploadProfilePicture({ localUri: pickedUri, userId: activeUserId }).catch((err) => {
-        console.warn('[ProfileScreen] Profile image upload error:', err);
-      });
+      submissionCoordinator
+        .uploadAvatar({ userId: activeUserId, localUri: pickedUri, cleanOldAvatar: true })
+        .then((res) => {
+          if (res.status === 'COMPLETE_SUCCESS' && res.data?.storagePath) {
+            cacheImage(res.data.storagePath, pickedUri, { isSensitive: true }).catch(() => {});
+            cacheImage(`user_avatar_${activeUserId}`, pickedUri, { isSensitive: true }).catch(() => {});
+          }
+        })
+        .catch((err) => {
+          console.warn('[ProfileScreen] Profile image upload error:', err);
+        });
     }
   }
 

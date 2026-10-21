@@ -65,7 +65,48 @@ export class LocationService {
       throw new LocationServicesDisabledError();
     }
 
-    return Location.getCurrentPositionAsync(options);
+    // 1. Fast check: try last known position first (instant, prevents timeout indoors)
+    try {
+      const lastKnown = await Location.getLastKnownPositionAsync({
+        maxAge: 10 * 60 * 1000, // 10 minutes
+      });
+      if (
+        lastKnown &&
+        lastKnown.coords &&
+        typeof lastKnown.coords.latitude === 'number' &&
+        !isNaN(lastKnown.coords.latitude)
+      ) {
+        return lastKnown;
+      }
+    } catch {
+      // Continue to fresh GPS position
+    }
+
+    // 2. Fetch fresh position with Balanced / specified accuracy
+    try {
+      return await Location.getCurrentPositionAsync(options);
+    } catch (primaryErr) {
+      // 3. Fallback: try with Lowest accuracy (cell/WiFi network, robust indoors)
+      try {
+        return await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Lowest,
+        });
+      } catch {
+        // 4. Last resort: any cached position of any age
+        try {
+          const anyLastKnown = await Location.getLastKnownPositionAsync();
+          if (
+            anyLastKnown &&
+            anyLastKnown.coords &&
+            typeof anyLastKnown.coords.latitude === 'number'
+          ) {
+            return anyLastKnown;
+          }
+        } catch {}
+
+        throw primaryErr;
+      }
+    }
   }
 
   async askPermissionAndGetCurrentLocation(

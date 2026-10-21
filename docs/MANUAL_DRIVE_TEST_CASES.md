@@ -139,16 +139,16 @@ This document contains step-by-step manual test cases designed to verify that th
 
 ## ⚡ Instant Terminal Verification Script
 
-An automated manual test script is provided in the repository at [`scripts/test-drive-manual.ts`](file:///home/abir/Desktop/vs-code/Tanjim%20Bhai/PPEye/scripts/test-drive-manual.ts).
+An automated manual test script is provided in the repository at [`scripts/legacy-drive/test-drive-manual.ts`](file:///home/abir/Desktop/vs-code/Tanjim%20Bhai/PPEye/scripts/legacy-drive/test-drive-manual.ts).
 
 You can run it from your terminal at any time to verify live Google Drive operations in under 10 seconds:
 
 ```bash
 # Option 1: Passing token as environment variable
-GOOGLE_ACCESS_TOKEN="ya29.your_token_here" npx tsx scripts/test-drive-manual.ts
+GOOGLE_ACCESS_TOKEN="ya29.your_token_here" npx tsx scripts/legacy-drive/test-drive-manual.ts
 
 # Option 2: Passing token as CLI parameter
-npx tsx scripts/test-drive-manual.ts "ya29.your_token_here"
+npx tsx scripts/legacy-drive/test-drive-manual.ts "ya29.your_token_here"
 ```
 
 ### What this script verifies automatically:

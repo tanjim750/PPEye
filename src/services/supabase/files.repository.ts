@@ -9,7 +9,6 @@ export type FileUpdate = Database['public']['Tables']['files']['Update'];
 export interface CreateFileInput {
   storage_provider?: StorageProvider;
   provider_file_id: string;
-  drive_id?: string | null;
   file_name: string;
   mime_type?: string | null;
   size_bytes?: number | null;
@@ -97,10 +96,9 @@ export async function createFileRecord(
   const sizeBytes = input.size_bytes ?? null;
   const createdBy = input.created_by ?? null;
 
-  const insertPayload: FileInsert = {
+  const insertPayload = {
     storage_provider: storageProvider,
     provider_file_id: providerFileId,
-    drive_id: input.drive_id ?? providerFileId,
     file_name: fileName,
     mime_type: mimeType,
     size_bytes: sizeBytes,

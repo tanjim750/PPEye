@@ -368,6 +368,8 @@ export async function getProfilePictureUri(
       isSensitive: true,
       forceRefresh: options?.forceRefresh,
       ttlMs: options?.ttlMs,
+      storageProvider: fileRec.storage_provider as any,
+      bucket: 'avatars',
     });
 
     // Also register under user avatar cache key

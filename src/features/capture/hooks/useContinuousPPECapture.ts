@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { PPECaptureSide, PPEWorkerCapture } from '@/features/capture/types';
 
@@ -151,6 +151,7 @@ export function useContinuousPPECapture(
   const [currentSide, setCurrentSide] = useState<PPECaptureSide>(initialTarget.side);
   const [selectedPreviewSide, setSelectedPreviewSide] = useState<PPECaptureSide>('FRONT');
   const [isCapturing, setIsCapturing] = useState(false);
+  const isCapturingRef = useRef(false);
   const [isBackPhotoRequired, setIsBackPhotoRequired] = useState(false);
   const [completedCaptureState, setCompletedCaptureState] = useState<PPEWorkerCapture[] | null>(
     null,
@@ -186,10 +187,11 @@ export function useContinuousPPECapture(
 
   const capturePhoto = useCallback(
     async (takePhoto: () => Promise<string | undefined>) => {
-      if (isCapturing) {
+      if (isCapturing || isCapturingRef.current) {
         return;
       }
 
+      isCapturingRef.current = true;
       setIsCapturing(true);
       setCompletedCaptureState(null);
       setIsBackPhotoRequired(false);
@@ -227,6 +229,7 @@ export function useContinuousPPECapture(
         setCurrentSide(getNextSideForWorker(nextWorkerCapture));
         setSelectedPreviewSide('FRONT');
       } finally {
+        isCapturingRef.current = false;
         setIsCapturing(false);
       }
     },

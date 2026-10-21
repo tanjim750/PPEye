@@ -17,7 +17,11 @@
 import {
   cacheImage,
   clearImageCache,
+  clearPreparedUploadCache,
   cleanupExpiredCache,
+  computeTargetDimensions,
+  DEFAULT_UPLOAD_JPEG_QUALITY,
+  DEFAULT_UPLOAD_MAX_LONG_EDGE,
   generateOtherFileName,
   generatePPEFileName,
   generateProfileFileName,
@@ -28,9 +32,12 @@ import {
   getImageExtension,
   getImageUri,
   invalidateImageCache,
+  prepareImageForUpload,
   sanitizeFileName,
+  selectOptimalCameraPictureSize,
   setCacheFileSystemMock,
   setCustomImageDownloader,
+  setCustomImageManipulator,
 } from '../image';
 import { isStorageError, StorageErrorCode } from '../../services/storage/storage.errors';
 
@@ -560,6 +567,125 @@ export async function runImageTests(): Promise<{ passed: number; failed: number;
     assert((await getCachedImageUri('img1')) === null, 'img1 null');
     assert((await getCachedImageUri('img2')) === null, 'img2 null');
   });
+
+  // =========================================================================
+  // 5. Pre-Upload Compression, Retry Idempotency & Deduplication
+  // =========================================================================
+  console.log('\n• Suite: Pre-Upload Compression & Retry Idempotency');
+
+  await test('computeTargetDimensions scales 12MP photos down to 1920px long edge while preserving aspect ratio', () => {
+    const portrait = computeTargetDimensions(3024, 4032, DEFAULT_UPLOAD_MAX_LONG_EDGE);
+    assert(portrait.needsResize === true, '12MP portrait should need resize');
+    assert(portrait.height === 1920, `Expected height 1920, got ${portrait.height}`);
+    assert(portrait.width === 1440, `Expected width 1440, got ${portrait.width}`);
+
+    const small = computeTargetDimensions(1200, 1600, DEFAULT_UPLOAD_MAX_LONG_EDGE);
+    assert(small.needsResize === false, '1600px long edge should not be upscaled');
+    assert(small.width === 1200 && small.height === 1600, 'Dimensions stay intact');
+  });
+
+  await test('selectOptimalCameraPictureSize picks 1920x1440 within 1600–2048px window', () => {
+    const available = ['4032x3024', '3840x2160', '2560x1920', '1920x1440', '1920x1080', '1280x960'];
+    const best = selectOptimalCameraPictureSize(available, DEFAULT_UPLOAD_MAX_LONG_EDGE);
+    assert(best === '1920x1440', `Expected 1920x1440, got ${best}`);
+  });
+
+  await test('prepareImageForUpload compresses once, keeps original file intact, and skips re-compression on retry', async () => {
+    mockFS.reset();
+    setCacheFileSystemMock(mockFS);
+    clearPreparedUploadCache();
+
+    const rawCaptureUri = 'file:///camera/DCIM_12mp_worker_front.jpg';
+    const rawSize = 2_450_000; // ~2.45 MB raw capture
+    const compressedSize = 263_000; // ~263 KB compressed
+    mockFS.setFile(rawCaptureUri, rawSize);
+
+    let manipulatorCallCount = 0;
+    let capturedQuality = 0;
+    setCustomImageManipulator(async (_uri, _actions, saveOptions) => {
+      manipulatorCallCount++;
+      capturedQuality = saveOptions.compress;
+      const outUri = `${mockFS.cacheDirectory}ppeye_upload_staging/worker_front_ppeye_opt_1920.jpg`;
+      mockFS.setFile(outUri, compressedSize);
+      return {
+        uri: outUri,
+        width: 1440,
+        height: 1920,
+        sizeBytes: compressedSize,
+      };
+    });
+
+    // First preparation before upload
+    const first = await prepareImageForUpload(rawCaptureUri);
+    assert(manipulatorCallCount === 1, 'Manipulator called exactly once on initial upload');
+    assert(
+      Math.abs(capturedQuality - DEFAULT_UPLOAD_JPEG_QUALITY) < 0.001,
+      `Expected quality ${DEFAULT_UPLOAD_JPEG_QUALITY}, got ${capturedQuality}`
+    );
+    assert(first.wasCompressed === true, 'First pass marks wasCompressed = true');
+    assert(first.reusedPrepared === false, 'First pass marks reusedPrepared = false');
+    assert(first.originalUri === rawCaptureUri, 'Preserves originalUri reference');
+    assert(first.originalSizeBytes === rawSize, 'Reports originalSizeBytes');
+    assert(first.preparedSizeBytes === compressedSize, 'Reports compressed preparedSizeBytes');
+
+    // Original local file MUST remain untouched on disk for retry safety
+    const origInfo = await mockFS.getInfoAsync(rawCaptureUri);
+    assert(origInfo.exists && origInfo.size === rawSize, 'Original local file remains intact on disk');
+
+    const cachedPrepared = await cacheImage('drive_prepared_worker', rawCaptureUri, { isSensitive: true });
+    const lastCopy = mockFS.copyCalls[mockFS.copyCalls.length - 1];
+    assert(lastCopy?.from === first.uri, 'Reviewer cache copies the resized upload image, not the full source');
+    assert(cachedPrepared.length > 0, 'Prepared reviewer cache URI is returned');
+
+    // Simulate upload retry with the SAME original URI -> must NOT re-compress
+    const retryFromOriginal = await prepareImageForUpload(rawCaptureUri);
+    assert(manipulatorCallCount === 1, 'Retry with original URI must NOT call manipulator again');
+    assert(retryFromOriginal.uri === first.uri, 'Retry returns identical prepared URI');
+    assert(retryFromOriginal.reusedPrepared === true, 'Retry marks reusedPrepared = true');
+    assert(retryFromOriginal.wasCompressed === false, 'Retry marks wasCompressed = false');
+
+    // Simulate a new JS process: the deterministic staged file survives even after maps clear.
+    clearPreparedUploadCache();
+    const retryAfterRestart = await prepareImageForUpload(rawCaptureUri);
+    assert(manipulatorCallCount === 1, 'Retry after in-memory state is cleared reuses disk output');
+    assert(retryAfterRestart.uri === first.uri, 'Retry after restart returns the deterministic prepared file');
+    assert(retryAfterRestart.reusedPrepared, 'Disk-staged image is marked as reused');
+
+    // Simulate nested call passing the ALREADY-COMPRESSED URI -> must NOT double-compress
+    const retryFromPrepared = await prepareImageForUpload(first.uri);
+    assert(manipulatorCallCount === 1, 'Passing already-prepared URI must NOT double-compress');
+    assert(retryFromPrepared.uri === first.uri, 'Returns same prepared URI');
+    assert(retryFromPrepared.reusedPrepared === true, 'Marks reusedPrepared = true');
+  });
+
+  await test('getImageUri deduplicates concurrent in-flight downloads for the same fileId', async () => {
+    mockFS.reset();
+    setCacheFileSystemMock(mockFS);
+    await clearImageCache();
+
+    let downloadCount = 0;
+    setCustomImageDownloader(async (_fileId, dest) => {
+      downloadCount++;
+      await new Promise((r) => setTimeout(r, 20));
+      mockFS.setFile(dest!, 4096);
+      return { uri: dest!, sizeBytes: 4096 };
+    });
+
+    const [uriA, uriB, uriC] = await Promise.all([
+      getImageUri('concurrent_provider_file_id_77'),
+      getImageUri('concurrent_provider_file_id_77'),
+      getImageUri('concurrent_provider_file_id_77'),
+    ]);
+
+    assert(uriA === uriB && uriB === uriC, 'All concurrent callers receive identical local URI');
+    assert(downloadCount === 1, `Expected 1 network download for 3 concurrent requests, got ${downloadCount}`);
+  });
+
+  // Clean up test mocks so subsequent test suites in the same process are unaffected
+  setCacheFileSystemMock(null);
+  setCustomImageDownloader(null);
+  setCustomImageManipulator(null);
+  clearPreparedUploadCache();
 
   const total = passed + failed;
   console.log(`\n========================================`);

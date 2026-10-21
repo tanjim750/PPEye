@@ -24,6 +24,8 @@ import {
   resubmitUnsafeWorker,
   setVendorSubmissionsSupabaseOverride,
   setVendorSubmissionsReplaceImageMock,
+  latestCurrentReview,
+  mapCurrentWorkerReviewStatus,
 } from '../vendorSubmissions.service';
 import {
   getVendorTeamMembers,
@@ -32,6 +34,8 @@ import {
   setVendorTeamSupabaseOverride,
 } from '../vendorTeam.service';
 import { StorageErrorCode } from '../../storage/storage.errors';
+import { createRefCountedSubscription } from '../../realtime/refCountedSubscription';
+import { computeReviewsSignature } from '../../../features/reviews/services/reviewSignature';
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -117,7 +121,7 @@ interface MockPpeReview {
   id: number;
   worker_instance_id: number;
   verdict: 'SAFE' | 'UNSAFE';
-  created_at: string;
+  reviewed_at: string;
 }
 
 interface MockPpeReviewReason {
@@ -161,6 +165,33 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     }
   }
 
+  await test('A resubmitted image invalidates older worker verdicts and current metadata/relation verdicts map to UI states', () => {
+    const oldReviewWorker = { ppe_reviews: [{ verdict: 'UNSAFE', reviewed_at: '2026-10-01T00:00:00.000Z' }], ppe_images: [{ created_at: '2026-10-02T00:00:00.000Z' }] };
+    assert(latestCurrentReview(oldReviewWorker) === null, 'A photo newer than review is pending re-review');
+    assert(mapCurrentWorkerReviewStatus(oldReviewWorker) === 'review', 'Stale verdict maps to review');
+    const currentWorker = { ppe_reviews: [{ verdict: 'SAFE', reviewed_at: '2026-10-02T00:00:00.000Z' }], ppe_images: [{ created_at: '2026-10-01T00:00:00.000Z' }] };
+    assert(mapCurrentWorkerReviewStatus(currentWorker) === 'safe', 'Current relational SAFE verdict maps to safe');
+    assert(mapCurrentWorkerReviewStatus({ ppe_reviews: [], ppe_images: currentWorker.ppe_images }, { status: 'unsafe', reviewedAt: Date.parse('2026-10-03T00:00:00.000Z'), unsafeReasons: ['helmet'] }) === 'unsafe', 'Current metadata fallback verdict maps to unsafe');
+    assert(mapCurrentWorkerReviewStatus({ ppe_reviews: [{ verdict: 'UNSAFE', reviewed_at: '2026-10-03T00:00:00.000Z' }], ppe_images: [{ created_at: '2026-10-02T00:00:00.000Z' }] }) === 'unsafe', 'Current relational UNSAFE verdict maps to unsafe');
+  });
+
+  await test('Review sync signature changes with verdict/photo state and shared Realtime subscribers deduplicate', () => {
+    const base = [{ id: '12', status: 'waiting', timestamp: 1, workers: 1, photos: 2, workerReviews: [{ sequenceNo: 1, status: 'safe', frontDriveId: 'front-a' }] }];
+    assert(computeReviewsSignature(base) === computeReviewsSignature(base), 'Identical review state has identical signature');
+    assert(computeReviewsSignature(base) !== computeReviewsSignature([{ ...base[0], workerReviews: [{ sequenceNo: 1, status: 'unsafe', frontDriveId: 'front-a' }] }]), 'Verdict change changes signature');
+    assert(computeReviewsSignature(base) !== computeReviewsSignature([{ ...base[0], workerReviews: [{ sequenceNo: 1, status: 'safe', frontDriveId: 'front-b' }] }]), 'Photo reference change changes signature');
+    let starts = 0;
+    let stops = 0;
+    const shared = createRefCountedSubscription(() => { starts += 1; return () => { stops += 1; }; });
+    const releaseFirst = shared.acquire();
+    const releaseSecond = shared.acquire();
+    assert(starts === 1 && shared.count === 2, 'Concurrent consumers share one realtime start');
+    releaseFirst();
+    assert(stops === 0 && shared.count === 1, 'Channel remains while one consumer exists');
+    releaseSecond();
+    assert(stops === 1 && shared.count === 0, 'Channel cleans up when the last consumer leaves');
+  });
+
   // State containers
   let submissions: MockSubmission[] = [];
   let workerInstances: MockWorkerInstance[] = [];
@@ -180,6 +211,7 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
   let nextFileId = 500;
   let nextUserId = 600;
   let nextMemberId = 700;
+  let failSubmissionStatusUpdate = false;
 
   function resetState() {
     submissions = [
@@ -273,8 +305,8 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     ];
 
     ppeReviews = [
-      { id: 51, worker_instance_id: 11, verdict: 'SAFE', created_at: '2026-10-15T09:28:00.000Z' },
-      { id: 52, worker_instance_id: 12, verdict: 'UNSAFE', created_at: '2026-10-16T11:28:00.000Z' },
+      { id: 51, worker_instance_id: 11, verdict: 'SAFE', reviewed_at: '2026-10-15T09:28:00.000Z' },
+      { id: 52, worker_instance_id: 12, verdict: 'UNSAFE', reviewed_at: '2026-10-16T11:28:00.000Z' },
     ];
 
     ppeReviewReasons = [
@@ -337,6 +369,7 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     nextFileId = 500;
     nextUserId = 600;
     nextMemberId = 700;
+    failSubmissionStatusUpdate = false;
   }
 
   function createMockSupabase(): any {
@@ -444,6 +477,10 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
                 return updateChain;
               },
               then: (resolve: (val: any) => void) => {
+                if (table === 'ppe_submissions' && fields.status === 'SUBMITTED' && failSubmissionStatusUpdate) {
+                  resolve({ error: { message: 'forced status update failure' } });
+                  return;
+                }
                 let list = getTableData(table);
                 for (const item of list) {
                   if (updateFilters.every((f) => f(item))) {
@@ -709,6 +746,7 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     // 1. Create new draft
     const createRes = await saveDraftSubmission({
       vendorProfileId: 1,
+      submittedBy: 10,
       siteName: 'New Substation 4',
       metadata: { workerCount: 2 },
     });
@@ -719,6 +757,7 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     const updateRes = await saveDraftSubmission(
       {
         vendorProfileId: 1,
+        submittedBy: 10,
         siteName: 'Updated Substation 4 Name',
       },
       createRes.submissionId
@@ -737,6 +776,7 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     const res = await saveDraftSubmission(
       {
         vendorProfileId: 1,
+        submittedBy: 10,
         siteName: 'Illegal Modification',
       },
       1
@@ -836,6 +876,25 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     setVendorSubmissionsReplaceImageMock(null);
   });
 
+  await test('resubmitUnsafeWorker reports a failed submission status transition', async () => {
+    resetState();
+    setVendorSubmissionsSupabaseOverride(createMockSupabase());
+    setVendorSubmissionsReplaceImageMock(async (params: any) => ({
+      id: 109,
+      workerInstanceId: params.workerInstanceId,
+      fileId: 1009,
+      side: params.side,
+      createdAt: new Date().toISOString(),
+    }) as any);
+    failSubmissionStatusUpdate = true;
+
+    const result = await resubmitUnsafeWorker(2, 12, 'FRONT', 'file:///cache/replacement.jpg');
+    assert(result.success === false, 'A photo replacement alone is not reported as a successful resubmission');
+    assert(Boolean(result.error?.includes('forced status update failure')), 'Status update failure is returned to the caller');
+    setVendorSubmissionsReplaceImageMock(null);
+    failSubmissionStatusUpdate = false;
+  });
+
   // =========================================================================
   // 7. Vendor Team Management & Security Constraints
   // =========================================================================
@@ -859,6 +918,7 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     const noName = await addVendorTeamMember(1, {
       name: '',
       phone: '+8801711111111',
+      email: 'salim@example.com',
       externalType: 'WORKER',
     });
     assert(noName.success === false, 'Empty name rejected');
@@ -867,10 +927,13 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     const noPhone = await addVendorTeamMember(1, {
       name: 'Salim',
       phone: '',
+      email: 'salim@example.com',
       externalType: 'WORKER',
     });
     assert(noPhone.success === false, 'Empty phone rejected');
     assert(noPhone.error?.includes('Phone number is required') === true, 'Error message indicates phone required');
+    const noEmail = await addVendorTeamMember(1, { name: 'Salim', phone: '+8801711111111', email: '', externalType: 'WORKER' });
+    assert(noEmail.success === false && noEmail.error?.includes('valid sign-in email') === true, 'A sign-in email is required');
   });
 
   await test('addVendorTeamMember blocks unauthorized creation of internal accounts', async () => {
@@ -880,6 +943,7 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     const res = await addVendorTeamMember(1, {
       name: 'Hacker',
       phone: '+8801799999999',
+      email: 'hacker@example.com',
       externalType: 'INTERNAL_ADMIN' as any,
     });
     assert(res.success === false, 'Creation of internal account strictly blocked');
@@ -897,6 +961,7 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     const addRes = await addVendorTeamMember(1, {
       name: 'Rahim Rigger',
       phone: '+8801755555555',
+      email: 'rahim.rigger@example.com',
       externalType: 'WORKER',
       designation: 'Certified Tower Climber',
     });
@@ -911,6 +976,7 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     const dupRes = await addVendorTeamMember(1, {
       name: 'Rahim Rigger',
       phone: '+8801755555555',
+      email: 'rahim.rigger@example.com',
       externalType: 'WORKER',
     });
     assert(dupRes.success === false, 'Duplicate addition rejected');
@@ -938,6 +1004,7 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     const res = await addVendorTeamMember(1, {
       name: 'Mahmud Reviewer',
       phone: '+8801700000099',
+      email: 'mahmud@internal.com',
       externalType: 'WORKER',
     });
 

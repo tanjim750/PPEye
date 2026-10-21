@@ -119,7 +119,7 @@ async function runTest() {
   delete process.env.GOOGLE_REFRESH_TOKEN;
 
   // Import app's auth engine
-  const { fetchTokenFromDatabase } = await import('../src/services/google-drive/auth');
+  const { fetchTokenFromDatabase } = await import('../../src/services/google-drive/auth');
 
   const fetchedToken = await fetchTokenFromDatabase();
   if (!fetchedToken) {
@@ -139,7 +139,7 @@ async function runTest() {
   // Step 4: Perform real Google Drive upload using only the Database token
   // ---------------------------------------------------------------------------
   console.log('[Step 4] Uploading photo to Google Drive using the Database Token...');
-  const { uploadFileToDrive } = await import('../src/services/google-drive/upload');
+  const { uploadFileToDrive } = await import('../../src/services/google-drive/upload');
 
   const tempFilePath = path.resolve(process.cwd(), 'temp_db_plan_test.png');
   // 1x1 transparent PNG buffer
@@ -174,7 +174,7 @@ async function runTest() {
   // Step 5: Clean up the test file from Google Drive
   // ---------------------------------------------------------------------------
   console.log('[Step 5] Cleaning up test file from Google Drive...');
-  const { deleteFile } = await import('../src/services/google-drive/files');
+  const { deleteFile } = await import('../../src/services/google-drive/files');
   const deleteOk = await deleteFile(uploadResult.fileId);
   console.log(`  ✔ Test file deleted from Drive: ${deleteOk}\n`);
 

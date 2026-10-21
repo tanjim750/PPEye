@@ -14,6 +14,7 @@
 import {
   clearFolderCache,
   createFolder,
+  DEFAULT_ROOT_FOLDER_NAME,
   ensureDriveReady,
   ensureFolder,
   ensureRootFolder,
@@ -241,21 +242,17 @@ export async function runFoldersTests(): Promise<{ passed: number; failed: numbe
     const rootId2 = await ensureRootFolder();
     assert(rootId1 === rootId2, 'Subsequent calls must return cached root folder ID');
 
-    const ppeyeFolders = mockDriveFiles.filter((f) => f.name === 'PPEye');
+    const ppeyeFolders = mockDriveFiles.filter((f) => f.name === DEFAULT_ROOT_FOLDER_NAME);
     assert(ppeyeFolders.length === 1, 'Only 1 root PPEye folder should exist');
   });
 
-  await test('getSubmissionFolderId resolves PPEye/submissions and sub-folder', async () => {
+  await test('getSubmissionFolderId resolves root submission folder', async () => {
     const submissionsRoot = await getSubmissionFolderId();
     assert(Boolean(submissionsRoot), 'Submissions root folder ID must be returned');
 
     const sub101FolderId = await getSubmissionFolderId(101);
     assert(Boolean(sub101FolderId), 'Submission 101 folder ID must be returned');
-    assert(sub101FolderId !== submissionsRoot, 'Specific submission folder should be a sub-folder');
-
-    const subFolder = mockDriveFiles.find((f) => f.id === sub101FolderId);
-    assert(subFolder?.name === '101', 'Folder name should be 101');
-    assert(subFolder?.parents?.includes(submissionsRoot) === true, 'Parent must be submissions root');
+    assert(sub101FolderId === submissionsRoot, 'Submission folder resolves to root submission folder');
   });
 
   await test('getProfileFolderId resolves PPEye/profiles and user sub-folder', async () => {

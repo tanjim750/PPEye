@@ -1,10 +1,17 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '@/services/supabase/client';
+import { supabase } from "@/services/supabase/client";
+import { useCallback, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { AppState } from "react-native";
+import { authStore } from "@/stores/auth.store";
+import { createRefCountedSubscription } from "@/services/realtime/refCountedSubscription";
+import { computeReviewsSignature } from "./reviewSignature";
+import { persistCompletedSubmissionReview, persistReviewerDraft } from "./reviewPersistence";
+import { isDemoMode } from "@/constants/devMode";
 
 export type WorkerReviewVerdict = {
   sequenceNo: number;
   workerName?: string;
-  status: 'safe' | 'unsafe';
+  status: "safe" | "unsafe";
   unsafeReasons?: string[];
   otherReasonText?: string;
   frontUri?: string | null;
@@ -21,7 +28,7 @@ export type ReviewItem = {
   location: string;
   otherReasonText?: string;
   photos: number;
-  status: 'waiting' | 'reviewed' | 'unsafe';
+  status: "waiting" | "reviewed" | "unsafe";
   teamLead: string;
   teamLeadKey?: string;
   timeDisplay: string;
@@ -32,24 +39,41 @@ export type ReviewItem = {
   workers: number;
   workerReviews?: WorkerReviewVerdict[];
   isDraft?: boolean;
+  draftReviewerId?: number;
+  isDemo?: boolean;
 };
 
 export const unsafeReasonLabels: Record<string, string> = {
-  anchorage: 'Anchorage / connection',
-  harness: 'Full-body harness',
-  helmet: 'Helmet',
-  lanyard: 'Lanyard',
-  other: 'Other violation',
-  shoes: 'Safety shoes',
+  anchorage: "Anchorage / connection",
+  harness: "Full-body harness",
+  helmet: "Helmet",
+  lanyard: "Lanyard",
+  other: "Other violation",
+  shoes: "Safety shoes",
 };
 
-export const reasonIcons: Record<string, { ios: string; android: string; web: string }> = {
-  anchorage: { ios: 'anchor', android: 'anchor', web: 'anchor' },
-  harness: { ios: 'figure.stand', android: 'accessibility_new', web: 'accessibility_new' },
-  helmet: { ios: 'wrench.and.screwdriver', android: 'construction', web: 'construction' },
-  lanyard: { ios: 'link', android: 'link', web: 'link' },
-  other: { ios: 'ellipsis', android: 'more_horiz', web: 'more_horiz' },
-  shoes: { ios: 'shoeprints.fill', android: 'directions_walk', web: 'directions_walk' },
+export const reasonIcons: Record<
+  string,
+  { ios: string; android: string; web: string }
+> = {
+  anchorage: { ios: "anchor", android: "anchor", web: "anchor" },
+  harness: {
+    ios: "figure.stand",
+    android: "accessibility_new",
+    web: "accessibility_new",
+  },
+  helmet: {
+    ios: "wrench.and.screwdriver",
+    android: "construction",
+    web: "construction",
+  },
+  lanyard: { ios: "link", android: "link", web: "link" },
+  other: { ios: "ellipsis", android: "more_horiz", web: "more_horiz" },
+  shoes: {
+    ios: "shoeprints.fill",
+    android: "directions_walk",
+    web: "directions_walk",
+  },
 };
 
 const now = Date.now();
@@ -58,9 +82,10 @@ const hour = 60 * minute;
 const day = 24 * hour;
 
 // Initial state: Pending reviews (status === 'waiting'), Safe (status === 'reviewed'), and Unsafe (status === 'unsafe')
-let reviews: ReviewItem[] = [
+const demoReviews = [
   // 1. Pending for review (waiting)
   {
+    isDemo: true,
     avatar: 'RM',
     id: 'rev-01',
     location: 'Gazipur-ER-102',
@@ -75,6 +100,7 @@ let reviews: ReviewItem[] = [
     workers: 4,
   },
   {
+    isDemo: true,
     id: 'rev-02',
     initials: 'T',
     location: 'Mirpur-DH-044',
@@ -87,6 +113,7 @@ let reviews: ReviewItem[] = [
     workers: 3,
   },
   {
+    isDemo: true,
     id: 'rev-03',
     initials: 'K',
     location: 'Uttara-DH-109',
@@ -99,6 +126,7 @@ let reviews: ReviewItem[] = [
     workers: 5,
   },
   {
+    isDemo: true,
     avatar: 'TA',
     id: 'rev-04',
     location: 'Mohakhali-ER-312',
@@ -111,6 +139,7 @@ let reviews: ReviewItem[] = [
     workers: 3,
   },
   {
+    isDemo: true,
     id: 'rev-05',
     initials: 'F',
     location: 'Banani-DH-088',
@@ -123,6 +152,7 @@ let reviews: ReviewItem[] = [
     workers: 4,
   },
   {
+    isDemo: true,
     id: 'rev-06',
     initials: 'J',
     location: 'Tongi-GZ-204',
@@ -135,6 +165,7 @@ let reviews: ReviewItem[] = [
     workers: 2,
   },
   {
+    isDemo: true,
     id: 'rev-07',
     initials: 'N',
     location: 'Dhanmondi-DH-015',
@@ -150,6 +181,7 @@ let reviews: ReviewItem[] = [
 
   // 2. Safe / Completed reviews (reviewed)
   {
+    isDemo: true,
     id: 'rev-08',
     initials: 'K',
     location: 'Dhaka-ER-231',
@@ -164,6 +196,7 @@ let reviews: ReviewItem[] = [
     workers: 3,
   },
   {
+    isDemo: true,
     id: 'rev-09',
     initials: 'S',
     location: 'Narayanganj-ER-087',
@@ -178,6 +211,7 @@ let reviews: ReviewItem[] = [
     workers: 5,
   },
   {
+    isDemo: true,
     avatar: 'MK',
     id: 'rev-10',
     location: 'Savar-DH-501',
@@ -193,6 +227,7 @@ let reviews: ReviewItem[] = [
 
   // 3. Unsafe reviews (marked unsafe by reviewer with reasons)
   {
+    isDemo: true,
     avatar: 'TA',
     id: 'rev-unsafe-01',
     location: 'Banani-DH-088',
@@ -228,6 +263,7 @@ let reviews: ReviewItem[] = [
     ],
   },
   {
+    isDemo: true,
     id: 'rev-unsafe-02',
     initials: 'J',
     location: 'Mirpur-DH-044',
@@ -269,9 +305,32 @@ let reviews: ReviewItem[] = [
       },
     ],
   },
-];
+] satisfies ReviewItem[];
+
+
+let reviews: ReviewItem[] = isDemoMode ? [...demoReviews] : [];
 
 const listeners = new Set<() => void>();
+let appStateSubscription: { remove: () => void } | null = null;
+let reviewsSyncInterval: ReturnType<typeof setInterval> | null = null;
+
+function stopReviewsPolling() {
+  if (reviewsSyncInterval) clearInterval(reviewsSyncInterval);
+  reviewsSyncInterval = null;
+}
+
+function canSyncReviewsWhileFocused() {
+  return listeners.size > 0 && AppState.currentState === "active";
+}
+
+function syncReviewsWhileFocused() {
+  if (canSyncReviewsWhileFocused()) void syncReviewsFromSupabase();
+}
+
+function startReviewsPolling() {
+  if (listeners.size === 0 || AppState.currentState !== "active" || reviewsSyncInterval) return;
+  reviewsSyncInterval = setInterval(syncReviewsWhileFocused, 15000);
+}
 
 function notify() {
   listeners.forEach((listener) => listener());
@@ -279,25 +338,36 @@ function notify() {
 
 export function subscribeReviews(listener: () => void) {
   listeners.add(listener);
+  const releaseRealtime = reviewsRealtimeRefs.acquire();
   return () => {
     listeners.delete(listener);
+    releaseRealtime();
   };
 }
 
 export function sortReviewsWithRealFirst(items: ReviewItem[]): ReviewItem[] {
   return [...items].sort((a, b) => {
-    // 1. In-progress drafts should be at the very top of pending
-    if (a.isDraft && !b.isDraft) return -1;
-    if (!a.isDraft && b.isDraft) return 1;
-
-    // 2. Real database submissions ALWAYS come before mock items
+    // 1. Real database submissions ALWAYS come before mock items!
+    // Mock items must NEVER appear above any real submission or draft.
     const aIsReal = !isNaN(Number(a.id));
     const bIsReal = !isNaN(Number(b.id));
     if (aIsReal && !bIsReal) return -1;
     if (!aIsReal && bIsReal) return 1;
 
-    // 3. Newest timestamp first
-    return (b.timestamp || 0) - (a.timestamp || 0);
+    // 2. Most recent event timestamp ALWAYS comes first!
+    // - When a vendor submits: its timestamp is Date.now() -> goes straight to #1 (top of Recent)!
+    // - When a reviewer leaves mid-review: its draft timestamp is Date.now() -> goes straight to #1 (top of Pending & Recent)!
+    const timeA = a.timestamp || 0;
+    const timeB = b.timestamp || 0;
+    if (timeA !== timeB) {
+      return timeB - timeA;
+    }
+
+    // 3. Tie-breaker: If timestamps are identical, in-progress draft takes priority
+    if (a.isDraft && !b.isDraft) return -1;
+    if (!a.isDraft && b.isDraft) return 1;
+
+    return 0;
   });
 }
 
@@ -309,7 +379,9 @@ export function getAllReviews(): ReviewItem[] {
  * Returns pending reviews ONLY (waiting for review), sorted with drafts and real DB submissions first.
  */
 export function getPendingReviews(): ReviewItem[] {
-  return sortReviewsWithRealFirst(reviews.filter((item) => item.status === 'waiting'));
+  return sortReviewsWithRealFirst(
+    reviews.filter((item) => item.status === "waiting"),
+  );
 }
 
 /**
@@ -324,7 +396,10 @@ export function getRecentPendingReviews(limit = 5): ReviewItem[] {
  * Returns in-progress draft reviews currently being reviewed.
  */
 export function getInProgressReviews(): ReviewItem[] {
-  return reviews.filter((item) => item.isDraft === true && item.status === 'waiting');
+  const reviewerId = Number(authStore.user?.id);
+  return reviews.filter(
+    (item) => item.isDraft === true && item.status === "waiting" && (!Number.isFinite(reviewerId) || item.draftReviewerId === reviewerId),
+  );
 }
 
 /**
@@ -340,8 +415,10 @@ export function getInProgressCount(): number {
  */
 export function sortReviewsChronologically(items: ReviewItem[]): ReviewItem[] {
   return [...items].sort((a, b) => {
-    const timeA = typeof a.timestamp === 'number' && !isNaN(a.timestamp) ? a.timestamp : 0;
-    const timeB = typeof b.timestamp === 'number' && !isNaN(b.timestamp) ? b.timestamp : 0;
+    const timeA =
+      typeof a.timestamp === "number" && !isNaN(a.timestamp) ? a.timestamp : 0;
+    const timeB =
+      typeof b.timestamp === "number" && !isNaN(b.timestamp) ? b.timestamp : 0;
     if (timeB !== timeA) {
       return timeB - timeA;
     }
@@ -357,16 +434,16 @@ export function getSafeReviews(): ReviewItem[] {
   return sortReviewsChronologically(
     reviews.filter((item) => {
       // Must not be draft or in-progress
-      if (item.isDraft || item.status === 'waiting') return false;
+      if (item.isDraft || item.status === "waiting") return false;
 
       // If item has workerReviews, check if at least one worker is safe
       if (item.workerReviews && item.workerReviews.length > 0) {
-        return item.workerReviews.some((w) => w.status === 'safe');
+        return item.workerReviews.some((w) => w.status === "safe");
       }
 
       // Fallback for legacy items without workerReviews array
-      return item.status === 'reviewed';
-    })
+      return item.status === "reviewed";
+    }),
   );
 }
 
@@ -378,27 +455,43 @@ export function getUnsafeReviews(): ReviewItem[] {
   return sortReviewsChronologically(
     reviews.filter((item) => {
       // Must not be draft or in-progress
-      if (item.isDraft || item.status === 'waiting') return false;
+      if (item.isDraft || item.status === "waiting") return false;
 
       // If item has workerReviews, check if at least one worker is unsafe
       if (item.workerReviews && item.workerReviews.length > 0) {
-        return item.workerReviews.some((w) => w.status === 'unsafe');
+        return item.workerReviews.some((w) => w.status === "unsafe");
       }
 
       // Fallback for legacy items without workerReviews array
-      return item.status === 'unsafe';
-    })
+      return item.status === "unsafe";
+    }),
   );
 }
 
 // Local draft tracking map so drafts are INSTANT and NEVER wiped out by Supabase syncing
-const localDraftSubmissions = new Map<string, { workerReviews: WorkerReviewVerdict[]; timestamp: number }>();
+const localDraftSubmissions = new Map<
+  string,
+  { workerReviews: WorkerReviewVerdict[]; timestamp: number; reviewerId?: number }
+>();
+const draftSaveQueues = new Map<string, Promise<{ success: boolean; error?: string }>>();
+
+// Local completed tracking map so completed reviews appear INSTANTLY in Safe/Unsafe and are NEVER wiped out by premature Supabase syncing
+export type LocalCompletedData = {
+  status: "reviewed" | "unsafe";
+  workerReviews: WorkerReviewVerdict[];
+  unsafeReasons?: string[];
+  otherReasonText?: string;
+  timestamp: number;
+};
+const localCompletedSubmissions = new Map<string, LocalCompletedData>();
 
 let isSyncing = false;
 let hasPendingSync = false;
 let realtimeSubscribed = false;
+let lastReviewsSignature = "";
 
 export async function syncReviewsFromSupabase() {
+  if (authStore.user && authStore.user.category !== "INTERNAL" && authStore.user.role !== "reviewer") return;
   if (isSyncing) {
     hasPendingSync = true;
     return;
@@ -406,8 +499,9 @@ export async function syncReviewsFromSupabase() {
   isSyncing = true;
   try {
     const { data, error } = await supabase
-      .from('ppe_submissions')
-      .select(`
+      .from("ppe_submissions")
+      .select(
+        `
         id,
         vendor_profile_id,
         site_name,
@@ -415,90 +509,155 @@ export async function syncReviewsFromSupabase() {
         metadata,
         submitted_at,
         created_at,
+        updated_at,
         vendor_profiles (
           vendor_name,
           project_name
         ),
         ppe_worker_instances (
           id,
-          sequence_no
+          sequence_no,
+          ppe_reviews (
+            id, verdict, reviewed_at,
+            ppe_review_reasons ( note, unsafe_reasons ( code, label ) )
+          ),
+          ppe_images ( side, created_at )
         )
-      `)
-      .order('created_at', { ascending: false })
+      `,
+      )
+      .order("created_at", { ascending: false })
       .limit(50);
 
     if (error || !data) {
+      if (error) {
+        console.warn("[reviews.service] syncReviewsFromSupabase query error:", error.message);
+      }
       return;
     }
 
     const mappedItems: ReviewItem[] = data.map((sub: any) => {
-      const ts = new Date(sub.submitted_at || sub.created_at).getTime();
-      const workerCount = Array.isArray(sub.ppe_worker_instances)
-        ? Math.max(1, sub.ppe_worker_instances.length)
-        : 1;
-      const photoCount = workerCount * 2;
-      const vendorName =
-        sub.vendor_profiles?.vendor_name || 'ABC Telecom';
-
-      let mappedStatus: 'waiting' | 'reviewed' | 'unsafe' = 'waiting';
-      let isDraft = false;
+      const createdTs = new Date(sub.submitted_at || sub.created_at).getTime();
+      const updatedTs = sub.updated_at
+        ? new Date(sub.updated_at).getTime()
+        : createdTs;
       const meta = (sub.metadata || {}) as any;
+      const workerCount = Array.isArray(sub.ppe_worker_instances)
+        ? sub.ppe_worker_instances.length
+        : Number(meta.totalWorkers) || 0;
+      const photoCount = workerCount * 2;
+      const vendorName = sub.vendor_profiles?.vendor_name || "Vendor";
+
+      let mappedStatus: "waiting" | "reviewed" | "unsafe" = "waiting";
+      let isDraft = false;
+      const liveWorkerReviews: WorkerReviewVerdict[] = (sub.ppe_worker_instances || []).map((worker: any) => {
+        const newestPhoto = Math.max(0, ...(worker.ppe_images || []).map((image: any) => new Date(image.created_at || 0).getTime()));
+        const latestReview = [...(worker.ppe_reviews || [])].sort((a: any, b: any) => new Date(b.reviewed_at).getTime() - new Date(a.reviewed_at).getTime())[0];
+        const isCurrent = latestReview && new Date(latestReview.reviewed_at).getTime() >= newestPhoto;
+        const reasons = isCurrent ? (latestReview.ppe_review_reasons || []).map((reason: any) => reason.unsafe_reasons?.code?.toLowerCase()).filter(Boolean) : [];
+        const notes = isCurrent ? (latestReview.ppe_review_reasons || []).map((reason: any) => reason.note).filter(Boolean).join("; ") : undefined;
+        return { sequenceNo: Number(worker.sequence_no), workerName: `Worker ${worker.sequence_no}`, status: isCurrent && latestReview.verdict === "UNSAFE" ? "unsafe" : "safe", unsafeReasons: reasons, otherReasonText: notes, reviewedAt: isCurrent ? new Date(latestReview.reviewed_at).getTime() : undefined };
+      }).filter((worker: any) => worker.reviewedAt !== undefined);
+      const currentUnsafe = liveWorkerReviews.some((worker) => worker.status === "unsafe");
+      const completeLiveReviews = liveWorkerReviews.length === workerCount;
+      const currentMetadataReviews: WorkerReviewVerdict[] = (Array.isArray(meta.workerReviews) ? meta.workerReviews : []).filter((workerReview: any) => {
+        const worker = (sub.ppe_worker_instances || []).find((item: any) => Number(item.sequence_no) === Number(workerReview.sequenceNo));
+        const newestPhoto = Math.max(0, ...((worker?.ppe_images || []).map((image: any) => new Date(image.created_at || 0).getTime())));
+        return Number(workerReview.reviewedAt || 0) >= newestPhoto && Number(workerReview.reviewedAt || 0) > 0;
+      });
+      const hasSupersededReview = (sub.ppe_worker_instances || []).some((worker: any) => {
+        const latest = [...(worker.ppe_reviews || [])].sort((a: any, b: any) => new Date(b.reviewed_at || 0).getTime() - new Date(a.reviewed_at || 0).getTime())[0];
+        const newestPhoto = Math.max(0, ...(worker.ppe_images || []).map((image: any) => new Date(image.created_at || 0).getTime()));
+        const metaReview = (Array.isArray(meta.workerReviews) ? meta.workerReviews : []).find((item: any) => Number(item.sequenceNo) === Number(worker.sequence_no));
+        return (latest && new Date(latest.reviewed_at || 0).getTime() < newestPhoto) || (metaReview && Number(metaReview.reviewedAt || 0) < newestPhoto);
+      });
+      const localCompleted = localCompletedSubmissions.get(String(sub.id));
       const localDraft = localDraftSubmissions.get(String(sub.id));
       const isLocallyDraft = Boolean(localDraft);
 
-      if (sub.status === 'COMPLETED' || sub.status === 'APPROVED' || sub.status === 'SAFE') {
-        if (meta.reviewResult === 'unsafe' || meta.hasUnsafe) {
-          mappedStatus = 'unsafe';
-        } else {
-          mappedStatus = 'reviewed';
+      if (localCompleted) {
+        // Optimistic completed state is protected against premature sync
+        mappedStatus = localCompleted.status;
+        isDraft = false;
+        // Clean up from local completed map once Supabase DB officially matches COMPLETED status
+        if (
+          sub.status === "COMPLETED" ||
+          sub.status === "APPROVED" ||
+          sub.status === "SAFE"
+        ) {
+          localCompletedSubmissions.delete(String(sub.id));
         }
-      } else if (sub.status === 'UNSAFE' || sub.status === 'ACTION_REQUIRED') {
-        mappedStatus = 'unsafe';
-      } else if (sub.status === 'UNDER_REVIEW' || isLocallyDraft) {
-        mappedStatus = 'waiting';
+      } else if (hasSupersededReview) {
+        mappedStatus = "waiting";
+        isDraft = false;
+      } else if (completeLiveReviews) {
+        mappedStatus = currentUnsafe ? "unsafe" : "reviewed";
+      } else if (
+        sub.status === "COMPLETED" ||
+        sub.status === "APPROVED" ||
+        sub.status === "SAFE"
+      ) {
+        if ((liveWorkerReviews.length > 0 && currentUnsafe) || meta.reviewResult === "unsafe" || meta.hasUnsafe) {
+          mappedStatus = "unsafe";
+        } else {
+          mappedStatus = "reviewed";
+        }
+      } else if (sub.status === "UNSAFE" || sub.status === "ACTION_REQUIRED") {
+        mappedStatus = "unsafe";
+      } else if (sub.status === "UNDER_REVIEW" || isLocallyDraft) {
+        mappedStatus = "waiting";
         isDraft = true;
       } else {
-        mappedStatus = 'waiting';
+        mappedStatus = "waiting";
         isDraft = false;
       }
 
-      const finalTimestamp = localDraft?.timestamp || (isDraft ? (localDraft?.timestamp || ts) : ts);
+      // If draft, use the latest interaction timestamp (either localDraft timestamp or updated_at)
+      const draftTs = localDraft?.timestamp || updatedTs;
+      const finalTimestamp =
+        localCompleted?.timestamp || (isDraft ? draftTs : createdTs);
 
       return {
         id: String(sub.id),
         avatar: vendorName.slice(0, 2).toUpperCase(),
-        location: sub.site_name || 'Site-01',
+        location: sub.site_name || "Site unavailable",
         photos: photoCount,
         status: mappedStatus,
         isDraft,
-        teamLead: meta.teamLead || 'Rahim Mia · Team Leader',
+        teamLead: meta.teamLead || "Vendor team",
         timeDisplay: formatReviewTime({ timestamp: finalTimestamp }),
         timestamp: finalTimestamp,
         vendor: vendorName,
         workers: workerCount,
-        workerReviews: localDraft?.workerReviews || meta.workerReviews || undefined,
-        unsafeReasons: meta.unsafeReasons || undefined,
-        otherReasonText: meta.otherReasonText || undefined,
+        workerReviews: localCompleted?.workerReviews || localDraft?.workerReviews || (liveWorkerReviews.length ? liveWorkerReviews : currentMetadataReviews.length ? currentMetadataReviews : (isDraft ? meta.reviewDraft?.workerReviews : undefined)),
+        draftReviewerId: Number(meta.reviewDraft?.reviewerId) || undefined,
+        unsafeReasons:
+          localCompleted?.unsafeReasons ||
+          meta.unsafeReasons ||
+          meta.allUnsafeReasons ||
+          undefined,
+        otherReasonText:
+          localCompleted?.otherReasonText ||
+          meta.otherReasonText ||
+          meta.combinedNotes ||
+          undefined,
       };
     });
 
     // Merge Supabase submissions:
     // Any existing reviews with a numeric ID are replaced by the fresh database items.
-    // Non-numeric items (e.g. mock baseline items) are preserved underneath, strictly excluding ghost IDs.
-    const initialMockIds = new Set([
-      'rev-01',
-      'rev-02',
-      'rev-03',
-      'rev-04',
-      'rev-05',
-      'rev-unsafe-01',
-      'rev-unsafe-02',
-    ]);
-    const nonDbReviews = reviews.filter((r) => initialMockIds.has(r.id));
-    reviews = sortReviewsWithRealFirst([...mappedItems, ...nonDbReviews]);
-    notify();
+    const demoItems = isDemoMode ? reviews.filter((item) => item.isDemo) : [];
+    const nextReviews = sortReviewsWithRealFirst([...mappedItems, ...demoItems]);
+    const nextSignature = computeReviewsSignature(nextReviews);
+    if (nextSignature !== lastReviewsSignature) {
+      lastReviewsSignature = nextSignature;
+      reviews = nextReviews;
+      notify();
+    }
   } catch (err) {
-    console.warn('[reviews.service] Failed to sync reviews from Supabase:', err);
+    console.warn(
+      "[reviews.service] Failed to sync reviews from Supabase:",
+      err,
+    );
   } finally {
     isSyncing = false;
     if (hasPendingSync) {
@@ -510,73 +669,119 @@ export async function syncReviewsFromSupabase() {
   }
 }
 
-const LIVE_SYNC_CHANNEL_NAME = 'ppe_live_sync';
+const LIVE_SYNC_CHANNEL_NAME = "ppe_live_sync";
 let liveSyncChannel: ReturnType<typeof supabase.channel> | null = null;
 
 export function getLiveSyncChannel() {
   if (!liveSyncChannel) {
     liveSyncChannel = supabase.channel(LIVE_SYNC_CHANNEL_NAME, {
       config: {
-        broadcast: { ack: false, self: true },
+        broadcast: { ack: true, self: true },
       },
     });
+
+    // Attach listeners BEFORE subscribing so incoming broadcasts and DB events are never missed
+    liveSyncChannel
+      .on("broadcast", { event: "new_submission" }, (payload) => {
+        console.log(
+          "[reviews.service] Received live broadcast new_submission:",
+          payload,
+        );
+        syncReviewsWhileFocused();
+      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ppe_submissions" },
+        (payload) => {
+          console.log(
+            "[reviews.service] Postgres change on ppe_submissions:",
+            payload,
+          );
+          syncReviewsWhileFocused();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ppe_images" },
+        () => {
+          syncReviewsWhileFocused();
+        },
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_reviews" }, () => { void syncReviewsWhileFocused(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_review_reasons" }, () => { void syncReviewsWhileFocused(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "submission_reviews" }, () => { void syncReviewsWhileFocused(); })
+      .subscribe((status) => {
+        console.log("[reviews.service] Live sync channel status:", status);
+        if (status === "SUBSCRIBED") void syncReviewsWhileFocused();
+      });
+
+    realtimeSubscribed = true;
   }
   return liveSyncChannel;
 }
 
-export function broadcastNewSubmission(submissionId?: number | string) {
+export async function broadcastNewSubmission(submissionId?: number | string) {
   try {
     const channel = getLiveSyncChannel();
-    channel.send({
-      type: 'broadcast',
-      event: 'new_submission',
-      payload: { submissionId, timestamp: Date.now() },
-    });
-    // Also trigger immediate local sync
+
+    // 1. Send broadcast via WebSocket channel
+    try {
+      await channel.send({
+        type: "broadcast",
+        event: "new_submission",
+        payload: { submissionId, timestamp: Date.now() },
+      });
+    } catch (wsErr) {
+      console.warn(
+        "[reviews.service] WebSocket send error, using REST fallback:",
+        wsErr,
+      );
+    }
+
+    // 2. Also send via HTTP REST broadcast for 100% guaranteed delivery across mobile devices
+    if (typeof (channel as any).httpSend === "function") {
+      try {
+        await (channel as any).httpSend("new_submission", {
+          submissionId,
+          timestamp: Date.now(),
+        });
+      } catch (httpErr) {
+        console.warn("[reviews.service] httpSend error:", httpErr);
+      }
+    }
+
+    // 3. Immediate local sync on sending device
     syncReviewsFromSupabase();
   } catch (err) {
-    console.warn('[reviews.service] Error broadcasting new submission:', err);
+    console.warn("[reviews.service] Error broadcasting new submission:", err);
   }
 }
 
 export function setupReviewsRealtimeSubscription() {
-  if (realtimeSubscribed) return;
-  try {
-    const channel = getLiveSyncChannel();
-    channel
-      .on('broadcast', { event: 'new_submission' }, (payload) => {
-        console.log('[reviews.service] Received live broadcast new_submission:', payload);
-        syncReviewsFromSupabase();
-      })
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'ppe_submissions' },
-        () => {
-          syncReviewsFromSupabase();
-        }
-      )
-      .subscribe((status) => {
-        console.log('[reviews.service] Live sync channel status:', status);
-      });
-    realtimeSubscribed = true;
-  } catch (err) {
-    console.warn('[reviews.service] Realtime subscription error:', err);
-  }
+  // getLiveSyncChannel() initializes and subscribes with both broadcast and postgres_changes
+  getLiveSyncChannel();
 }
 
-// Trigger initial sync on file load and keep syncing periodically for cross-phone live updates
-if (typeof setTimeout !== 'undefined') {
-  setTimeout(() => {
-    syncReviewsFromSupabase();
-    setupReviewsRealtimeSubscription();
-  }, 50);
-}
-
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    syncReviewsFromSupabase();
-  }, 3000);
-}
+const reviewsRealtimeRefs = createRefCountedSubscription(() => {
+  setupReviewsRealtimeSubscription();
+  appStateSubscription = AppState.addEventListener("change", (state) => {
+    if (state === "active") {
+      startReviewsPolling();
+      syncReviewsWhileFocused();
+    } else {
+      stopReviewsPolling();
+    }
+  });
+  startReviewsPolling();
+  return () => {
+    appStateSubscription?.remove();
+    appStateSubscription = null;
+    stopReviewsPolling();
+    if (liveSyncChannel) void supabase.removeChannel(liveSyncChannel);
+    liveSyncChannel = null;
+    realtimeSubscribed = false;
+  };
+});
 
 /**
  * Mark a review as reviewed/safe.
@@ -584,11 +789,17 @@ if (typeof setInterval !== 'undefined') {
 export function markReviewReviewed(id: string) {
   localDraftSubmissions.delete(String(id));
   const nowTs = Date.now();
+  localCompletedSubmissions.set(String(id), {
+    status: "reviewed",
+    workerReviews: [],
+    timestamp: nowTs,
+  });
+
   reviews = reviews.map((item) => {
     if (String(item.id) === String(id)) {
       return {
         ...item,
-        status: 'reviewed',
+        status: "reviewed",
         isDraft: false,
         timestamp: nowTs,
         timeDisplay: formatReviewTime({ timestamp: nowTs }),
@@ -600,36 +811,56 @@ export function markReviewReviewed(id: string) {
 
   const numId = Number(id);
   if (!isNaN(numId) && numId > 0) {
-    supabase
-      .from('ppe_submissions')
-      .update({
-        status: 'COMPLETED',
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', numId)
-      .then(({ error }) => {
+    (async () => {
+      try {
+        const { error } = await supabase
+          .from("ppe_submissions")
+          .update({
+            status: "COMPLETED",
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", numId);
+
         if (error) {
-          console.warn('[reviews.service] Error updating submission to COMPLETED:', error.message);
+          console.warn(
+            "[reviews.service] Error updating submission to COMPLETED:",
+            error.message,
+          );
         } else {
           broadcastNewSubmission(numId);
         }
-      });
+      } catch (err) {
+        console.warn("[reviews.service] Exception in markReviewReviewed:", err);
+      }
+    })();
   }
 }
 
 /**
  * Mark a review as unsafe with specified reasons and notes.
  */
-export function markReviewUnsafe(id: string, reasons: string[], customReason?: string) {
+export function markReviewUnsafe(
+  id: string,
+  reasons: string[],
+  customReason?: string,
+) {
   localDraftSubmissions.delete(String(id));
   const nowTs = Date.now();
+  localCompletedSubmissions.set(String(id), {
+    status: "unsafe",
+    workerReviews: [],
+    unsafeReasons: reasons,
+    otherReasonText: customReason,
+    timestamp: nowTs,
+  });
+
   reviews = reviews.map((item) => {
     if (String(item.id) === String(id)) {
       return {
         ...item,
         otherReasonText: customReason,
-        status: 'unsafe',
+        status: "unsafe",
         isDraft: false,
         timestamp: nowTs,
         timeDisplay: formatReviewTime({ timestamp: nowTs }),
@@ -642,20 +873,28 @@ export function markReviewUnsafe(id: string, reasons: string[], customReason?: s
 
   const numId = Number(id);
   if (!isNaN(numId) && numId > 0) {
-    supabase
-      .from('ppe_submissions')
-      .update({
-        status: 'UNDER_REVIEW',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', numId)
-      .then(({ error }) => {
+    (async () => {
+      try {
+        const { error } = await supabase
+          .from("ppe_submissions")
+          .update({
+            status: "UNDER_REVIEW",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", numId);
+
         if (error) {
-          console.warn('[reviews.service] Error updating submission to UNDER_REVIEW:', error.message);
+          console.warn(
+            "[reviews.service] Error updating submission to UNDER_REVIEW:",
+            error.message,
+          );
         } else {
           broadcastNewSubmission(numId);
         }
-      });
+      } catch (err) {
+        console.warn("[reviews.service] Exception in markReviewUnsafe:", err);
+      }
+    })();
   }
 }
 
@@ -664,139 +903,218 @@ export function markReviewUnsafe(id: string, reasons: string[], customReason?: s
  * Keeps status as 'waiting' so it stays in Pending and Recent,
  * marks isDraft: true, and updates timestamp to Date.now() so it moves to the VERY TOP of the queue!
  */
-export function saveDraftSubmissionReview(
+export async function saveDraftSubmissionReview(
   id: string,
-  workerVerdicts: WorkerReviewVerdict[]
-) {
-  const nowTs = Date.now();
-  localDraftSubmissions.set(String(id), {
-    workerReviews: workerVerdicts,
-    timestamp: nowTs,
-  });
-
-  reviews = reviews.map((item) => {
-    if (String(item.id) === String(id)) {
-      return {
-        ...item,
-        status: 'waiting',
-        isDraft: true,
-        workerReviews: workerVerdicts,
-        timestamp: nowTs,
-        timeDisplay: formatReviewTime({ timestamp: nowTs }),
-      };
+  workerVerdicts: WorkerReviewVerdict[],
+): Promise<{ success: boolean; error?: string }> {
+  const knownDraftOwner = reviews.find((item) => item.id === String(id))?.draftReviewerId;
+  const knownDraft = reviews.find((item) => item.id === String(id))?.isDraft === true;
+  let reviewerId = Number(authStore.user?.id);
+  if (knownDraftOwner && knownDraftOwner !== reviewerId) {
+    return { success: false, error: "This review draft belongs to another reviewer." };
+  }
+  if (!Number.isFinite(reviewerId) || reviewerId <= 0 || authStore.user?.category !== "INTERNAL") {
+    const { data: internalUser } = await supabase
+      .from("users")
+      .select("id")
+      .eq("category", "INTERNAL")
+      .order("id", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (internalUser?.id) {
+      reviewerId = internalUser.id;
     }
-    return item;
-  });
-  // Re-sort with real and in-progress items at the top
-  reviews = sortReviewsWithRealFirst(reviews);
-  notify();
+  }
+  if (!Number.isFinite(reviewerId) || reviewerId <= 0) {
+    reviewerId = 1;
+  }
+  if (!knownDraft && getInProgressCount() >= 3) {
+    return { success: false, error: "You already have three in-progress reviews. Complete or leave one before starting another." };
+  }
+  const nowTs = Date.now();
+  const updateLocalDraft = () => {
+    localDraftSubmissions.set(String(id), {
+      workerReviews: workerVerdicts,
+      timestamp: nowTs,
+      reviewerId: reviewerId || undefined,
+    });
+    reviews = sortReviewsWithRealFirst(reviews.map((item) => item.id === String(id)
+      ? {
+          ...item,
+          status: "waiting",
+          isDraft: true,
+          draftReviewerId: reviewerId || undefined,
+          workerReviews: workerVerdicts,
+          timestamp: nowTs,
+          timeDisplay: formatReviewTime({ timestamp: nowTs }),
+        }
+      : item));
+    notify();
+  };
+
+  if (String(id).startsWith("rev-")) {
+    updateLocalDraft();
+    return { success: true };
+  }
 
   const numId = Number(id);
-  if (!isNaN(numId) && numId > 0) {
-    supabase
-      .from('ppe_submissions')
-      .update({
-        status: 'UNDER_REVIEW',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', numId)
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[reviews.service] Error updating submission to UNDER_REVIEW draft:', error.message);
-        } else {
-          broadcastNewSubmission(numId);
-        }
-      });
+  if (!Number.isFinite(numId) || numId <= 0) {
+    if (!String(id).startsWith("rev-")) {
+      return { success: false, error: "This review draft does not have a valid submission ID." };
+    }
+    updateLocalDraft();
+    return { success: true };
   }
+
+  const key = String(numId);
+  const previousWrite = draftSaveQueues.get(key) || Promise.resolve({ success: true });
+  const nextWrite = previousWrite.catch(() => ({ success: false, error: "Previous draft save failed." })).then(async () => {
+    const result = await persistReviewerDraft(supabase, numId, reviewerId, workerVerdicts);
+    if (!result.success) return result;
+    try {
+      updateLocalDraft();
+      await broadcastNewSubmission(numId);
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save reviewer draft.";
+      console.warn("[reviews.service] Error persisting reviewer draft:", error);
+      return { success: false, error: message };
+    }
+  });
+  draftSaveQueues.set(key, nextWrite);
+  void nextWrite.then(() => {
+    if (draftSaveQueues.get(key) === nextWrite) draftSaveQueues.delete(key);
+  });
+  return nextWrite;
 }
 
 /**
  * Finalize an entire submission review after reviewing all workers.
  * Records each worker's verdict, calculates combined status, and updates Supabase if real.
  */
-export function completeSubmissionReview(
+export async function completeSubmissionReview(
   id: string,
-  workerVerdicts: WorkerReviewVerdict[]
-) {
-  localDraftSubmissions.delete(String(id));
-  const hasUnsafe = workerVerdicts.some((w) => w.status === 'unsafe');
+  workerVerdicts: WorkerReviewVerdict[],
+): Promise<{ success: boolean; error?: string }> {
+  if (!workerVerdicts.length) return { success: false, error: "Review at least one worker before completing." };
+  const invalidUnsafe = workerVerdicts.find((w) => w.status === "unsafe" && (!(w.unsafeReasons?.length) || (w.unsafeReasons.includes("other") && !w.otherReasonText?.trim())));
+  if (invalidUnsafe) return { success: false, error: `Add an unsafe reason${invalidUnsafe.unsafeReasons?.includes("other") ? " and describe Other" : ""} for Worker ${invalidUnsafe.sequenceNo}.` };
+
+  const hasUnsafe = workerVerdicts.some((w) => w.status === "unsafe");
   const allUnsafeReasons = Array.from(
-    new Set(workerVerdicts.flatMap((w) => w.unsafeReasons || []))
+    new Set(workerVerdicts.flatMap((w) => w.unsafeReasons || [])),
   );
   const combinedNotes = workerVerdicts
-    .filter((w) => w.otherReasonText && w.status === 'unsafe')
+    .filter((w) => w.otherReasonText && w.status === "unsafe")
     .map((w) => `Worker ${w.sequenceNo}: ${w.otherReasonText}`)
-    .join('; ');
+    .join("; ");
 
   const completionTs = Date.now();
-  reviews = reviews.map((item) => {
-    if (String(item.id) === String(id)) {
-      return {
-        ...item,
-        isDraft: false,
-        status: hasUnsafe ? 'unsafe' : 'reviewed',
-        unsafeReasons: allUnsafeReasons.length > 0 ? allUnsafeReasons : item.unsafeReasons,
-        otherReasonText: combinedNotes || item.otherReasonText,
-        workerReviews: workerVerdicts,
-        timestamp: completionTs,
-        timeDisplay: formatReviewTime({ timestamp: completionTs }),
-      };
-    }
-    return item;
-  });
-  notify();
+  const verdictStatus: "reviewed" | "unsafe" = hasUnsafe
+    ? "unsafe"
+    : "reviewed";
 
   const numId = Number(id);
-  if (!isNaN(numId) && numId > 0) {
-    supabase
-      .from('ppe_submissions')
-      .update({
-        status: 'COMPLETED',
-        completed_at: new Date().toISOString(),
-        metadata: {
-          reviewResult: hasUnsafe ? 'unsafe' : 'safe',
-          hasUnsafe,
+  if (Number.isFinite(numId) && numId > 0) {
+    let reviewerId = Number(authStore.user?.id);
+    if (!Number.isFinite(reviewerId) || reviewerId <= 0 || authStore.user?.category !== "INTERNAL") {
+      const { data: internalUser } = await supabase
+        .from("users")
+        .select("id")
+        .eq("category", "INTERNAL")
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (internalUser?.id) {
+        reviewerId = internalUser.id;
+      } else {
+        const { data: anyUser } = await supabase
+          .from("users")
+          .select("id")
+          .order("id", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (anyUser?.id) reviewerId = anyUser.id;
+      }
+    }
+    if (!Number.isFinite(reviewerId) || reviewerId <= 0) {
+      return { success: false, error: "Your reviewer profile is missing. Sign in again before submitting this review." };
+    }
+    const existingDraft = reviews.find((item) => item.id === String(id))?.isDraft === true;
+    if (!existingDraft && getInProgressCount() >= 3) {
+      return { success: false, error: "You already have three in-progress reviews. Complete or leave one before starting another." };
+    }
+    const persistence = await persistCompletedSubmissionReview(supabase, numId, reviewerId, workerVerdicts);
+    if (!persistence.success) return persistence;
+    localDraftSubmissions.delete(String(id));
+    localCompletedSubmissions.set(String(id), {
+      status: verdictStatus,
+      workerReviews: workerVerdicts,
+      unsafeReasons: allUnsafeReasons,
+      otherReasonText: combinedNotes,
+      timestamp: completionTs,
+    });
+    reviews = reviews.map((item) => item.id === String(id)
+      ? {
+          ...item,
+          status: verdictStatus,
+          isDraft: false,
           workerReviews: workerVerdicts,
-          allUnsafeReasons,
-          combinedNotes,
-        },
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', numId)
-      .then(({ error }) => {
-        if (error) {
-          console.warn('[reviews.service] Error updating submission:', error.message);
-        } else {
-          broadcastNewSubmission(numId);
+          unsafeReasons: allUnsafeReasons,
+          otherReasonText: combinedNotes,
+          timestamp: completionTs,
+          timeDisplay: formatReviewTime({ timestamp: completionTs }),
         }
-      });
+      : item);
+    notify();
+    await broadcastNewSubmission(numId);
+    return { success: true };
+  } else if (String(id).startsWith("rev-")) {
+    localDraftSubmissions.delete(String(id));
+    localCompletedSubmissions.set(String(id), {
+      status: verdictStatus,
+      workerReviews: workerVerdicts,
+      unsafeReasons: allUnsafeReasons,
+      otherReasonText: combinedNotes,
+      timestamp: completionTs,
+    });
+    reviews = reviews.map((item) =>
+      item.id === String(id)
+        ? {
+            ...item,
+            status: verdictStatus,
+            isDraft: false,
+            workerReviews: workerVerdicts,
+            unsafeReasons: allUnsafeReasons,
+            otherReasonText: combinedNotes,
+            timestamp: completionTs,
+            timeDisplay: formatReviewTime({ timestamp: completionTs }),
+          }
+        : item
+    );
+    notify();
+    return { success: true };
   }
+  return { success: false, error: "This submission is unavailable." };
 }
 
 /**
  * React hook providing reactive access to reviewer reviews
  */
-export function useReviews() {
+export function useReviews(enabled = true) {
   const [, setTick] = useState(0);
 
-  useEffect(() => {
-    syncReviewsFromSupabase();
-    setupReviewsRealtimeSubscription();
-
+  useFocusEffect(
+    useCallback(() => {
+      if (!enabled) return;
+      // Refetch on focus; the shared subscription and fallback timer only exist while focused.
+      void syncReviewsFromSupabase();
     const unsubscribe = subscribeReviews(() => {
       setTick((t) => t + 1);
     });
-
-    // Refresh display ticks every 30 seconds so relative timestamps update in real time
-    const tickInterval = setInterval(() => {
-      setTick((t) => t + 1);
-    }, 30000);
-
-    return () => {
-      unsubscribe();
-      clearInterval(tickInterval);
-    };
-  }, []);
+      return unsubscribe;
+    }, [enabled]),
+  );
 
   const pending = getPendingReviews();
   const safe = getSafeReviews();
@@ -805,22 +1123,36 @@ export function useReviews() {
   const inProgress = getInProgressReviews();
 
   return {
-    allReviews: getAllReviews(),
+    allReviews: enabled ? getAllReviews() : [],
     completeSubmissionReview,
     saveDraftSubmissionReview,
     markReviewReviewed,
     markReviewUnsafe,
-    pendingReviews: pending,
-    recentPendingReviews: recentPending,
-    safeReviews: safe,
-    unsafeReviews: unsafe,
-    inProgressReviews: inProgress,
-    inProgressCount: inProgress.length,
+    pendingReviews: enabled ? pending : [],
+    realPendingCount: enabled ? pending.length : 0,
+    recentPendingReviews: enabled ? recentPending : [],
+    safeReviews: enabled ? safe : [],
+    unsafeReviews: enabled ? unsafe : [],
+    inProgressReviews: enabled ? inProgress : [],
+    inProgressCount: enabled ? inProgress.length : 0,
     syncReviewsFromSupabase,
   };
 }
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 function isSameCalendarDay(d1: Date, d2: Date): boolean {
   return (
@@ -838,8 +1170,8 @@ function isYesterdayDate(d: Date, now: Date): boolean {
 
 function formatClockTime(date: Date): string {
   let hours = date.getHours();
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
   hours = hours % 12;
   hours = hours ? hours : 12;
   const formattedHours = hours < 10 ? `0${hours}` : `${hours}`;
@@ -852,8 +1184,15 @@ function formatClockTime(date: Date): string {
  * - If yesterday: "Yesterday, hh:mm A"
  * - If earlier: "DD MMM, hh:mm A" (e.g. "18 Oct, 04:20 PM")
  */
-export function formatReviewTime(item: { timestamp?: number; timeDisplay?: string }): string {
-  if (item.timestamp && typeof item.timestamp === 'number' && !isNaN(item.timestamp)) {
+export function formatReviewTime(item: {
+  timestamp?: number;
+  timeDisplay?: string;
+}): string {
+  if (
+    item.timestamp &&
+    typeof item.timestamp === "number" &&
+    !isNaN(item.timestamp)
+  ) {
     const date = new Date(item.timestamp);
     const now = new Date();
     if (isSameCalendarDay(date, now)) {
@@ -866,7 +1205,7 @@ export function formatReviewTime(item: { timestamp?: number; timeDisplay?: strin
     const month = MONTH_NAMES[date.getMonth()];
     return `${day} ${month}, ${formatClockTime(date)}`;
   }
-  return item.timeDisplay || '10:42 AM';
+  return item.timeDisplay || "10:42 AM";
 }
 
 /**
@@ -875,8 +1214,15 @@ export function formatReviewTime(item: { timestamp?: number; timeDisplay?: strin
  * - If yesterday: "Yesterday, hh:mm A"
  * - If earlier: "DD MMM, hh:mm A" (e.g. "18 Oct, 04:20 PM")
  */
-export function formatReviewDateTime(item: { timestamp?: number; timeDisplay?: string }): string {
-  if (item.timestamp && typeof item.timestamp === 'number' && !isNaN(item.timestamp)) {
+export function formatReviewDateTime(item: {
+  timestamp?: number;
+  timeDisplay?: string;
+}): string {
+  if (
+    item.timestamp &&
+    typeof item.timestamp === "number" &&
+    !isNaN(item.timestamp)
+  ) {
     const date = new Date(item.timestamp);
     const now = new Date();
     if (isSameCalendarDay(date, now)) {
@@ -890,31 +1236,7 @@ export function formatReviewDateTime(item: { timestamp?: number; timeDisplay?: s
     return `${day} ${month}, ${formatClockTime(date)}`;
   }
   if (item.timeDisplay) {
-    return item.timeDisplay.replace(/^Today,?\s*/i, '');
+    return item.timeDisplay.replace(/^Today,?\s*/i, "");
   }
-  return '10:42 AM';
-}
-
-export function createOrUpdatePendingReview(data: {
-  location: string;
-  photos: number;
-  workers: number;
-  teamLead?: string;
-  timestamp?: number;
-}) {
-  const currentNow = data.timestamp || Date.now();
-  const newReview: ReviewItem = {
-    avatar: 'RM',
-    id: `rev-${currentNow}-${Math.random().toString(36).slice(2, 6)}`,
-    location: data.location,
-    photos: data.photos || 2,
-    status: 'waiting',
-    teamLead: data.teamLead || 'Rahim Mia · Team Leader',
-    timeDisplay: formatReviewTime({ timestamp: currentNow }),
-    timestamp: currentNow,
-    vendor: 'ABC Telecom',
-    workers: data.workers || 1,
-  };
-  reviews = [newReview, ...reviews].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  notify();
+  return "10:42 AM";
 }

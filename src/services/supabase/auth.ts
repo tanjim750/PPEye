@@ -8,3 +8,15 @@ export function signInWithPassword({ email, password }: LoginCredentials) {
 export function signOut() {
   return supabase.auth.signOut();
 }
+
+export function getCurrentSession() {
+  return supabase.auth.getSession();
+}
+
+export function updatePassword(password: string) {
+  return supabase.auth.updateUser({ password });
+}
+
+export function requestPasswordReset(email: string) {
+  return supabase.auth.resetPasswordForEmail(email);
+}

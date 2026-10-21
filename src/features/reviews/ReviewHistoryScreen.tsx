@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import {
   ActivityIndicator,
@@ -142,6 +142,7 @@ function HistoryInspectionPhoto({
 
       // If no drive ID from URL and submissionId is a database numeric ID, fetch from Supabase
       const parsedSubId = Number(submissionId);
+      let resolvedFileProvider: string | null = null;
       if (!resolvedDriveId && !isNaN(parsedSubId) && parsedSubId > 0) {
         try {
           const { data: instances } = await supabase
@@ -150,7 +151,7 @@ function HistoryInspectionPhoto({
               sequence_no,
               ppe_images (
                 side,
-                files ( provider_file_id )
+                files ( provider_file_id, storage_provider )
               )
             `)
             .eq('submission_id', parsedSubId);
@@ -160,6 +161,7 @@ function HistoryInspectionPhoto({
             const img = ((inst as any).ppe_images || []).find((im: any) => im.side === badgeLabel);
             const rawFile = Array.isArray(img?.files) ? img.files[0] : img?.files;
             resolvedDriveId = rawFile?.provider_file_id || null;
+            resolvedFileProvider = rawFile?.storage_provider || null;
           }
         } catch (err) {
           console.warn('[ReviewHistory] Error resolving worker photo from DB:', err);
@@ -167,12 +169,40 @@ function HistoryInspectionPhoto({
       }
 
       if (resolvedDriveId) {
+        const isSupabase =
+          resolvedFileProvider === 'SUPABASE' ||
+          resolvedDriveId.startsWith('submissions/') ||
+          resolvedDriveId.startsWith('users/') ||
+          (resolvedDriveId.includes('/') && !resolvedDriveId.startsWith('http://') && !resolvedDriveId.startsWith('https://'));
+
         // Check disk cache first
         const cached = await getCachedImageUri(resolvedDriveId).catch(() => null);
         if (cached && !isCancelled) {
           setPhotoSource({ uri: cached });
           setIsLoading(false);
           return;
+        }
+
+        if (isSupabase) {
+          try {
+            const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+            const bucket = resolvedDriveId.startsWith('users/') ? 'avatars' : 'evidence';
+            const signedUrl = await supabaseStorageService.createSignedUrl(bucket, resolvedDriveId, 3600);
+            if (signedUrl && !isCancelled) {
+              setPhotoSource({ uri: signedUrl });
+              setIsLoading(false);
+              getImageUri(resolvedDriveId, { storageProvider: 'SUPABASE' })
+                .then((localPath) => {
+                  if (!isCancelled && localPath) {
+                    setPhotoSource({ uri: localPath });
+                  }
+                })
+                .catch(() => {});
+              return;
+            }
+          } catch (supErr) {
+            console.warn('[ReviewHistory] Error creating signed URL for:', resolvedDriveId, supErr);
+          }
         }
 
         // Get authenticated Bearer token
@@ -317,7 +347,16 @@ export function ReviewHistoryScreen() {
   );
 
   // 2 Tabs: "Safe reviewed" and "Unsafe reviewed"
-  const [activeTab, setActiveTab] = useState<'safe' | 'unsafe'>('safe');
+  const params = useLocalSearchParams<{ tab?: 'safe' | 'unsafe' }>();
+  const [activeTab, setActiveTab] = useState<'safe' | 'unsafe'>(
+    params.tab === 'unsafe' ? 'unsafe' : 'safe'
+  );
+
+  useEffect(() => {
+    if (params.tab === 'unsafe' || params.tab === 'safe') {
+      setActiveTab(params.tab);
+    }
+  }, [params.tab]);
   const [selectedUnsafeItem, setSelectedUnsafeItem] = useState<ReviewItem | null>(null);
 
   const translateY = useRef(new Animated.Value(0)).current;
@@ -416,7 +455,7 @@ export function ReviewHistoryScreen() {
               size={22}
             />
           </Pressable>
-          <Text style={styles.headerTitle}>Reviewes History</Text>
+          <Text style={styles.headerTitle}>Reviews History</Text>
           <View style={styles.headerPlaceholder} />
         </View>
 
@@ -472,17 +511,15 @@ export function ReviewHistoryScreen() {
                 const isUnsafe = activeTab === 'unsafe';
                 return (
                   <Pressable
-                    accessibilityRole={isUnsafe ? 'button' : 'none'}
+                    accessibilityRole="button"
                     key={item.id}
                     onPress={() => {
-                      if (isUnsafe) {
-                        openUnsafeModal(item);
-                      }
+                      openUnsafeModal(item);
                     }}
                     style={({ pressed }) => [
                       styles.feedRow,
                       index < displayedList.length - 1 && styles.feedDivider,
-                      isUnsafe && pressed && styles.feedRowPressed,
+                      pressed && styles.feedRowPressed,
                     ]}>
                     <View style={styles.rowHeader}>
                       <View style={styles.identityRow}>
@@ -688,7 +725,9 @@ export function ReviewHistoryScreen() {
                 {...panResponder.panHandlers}
                 style={detailsStyles.modalHeader}>
                 <View>
-                  <Text style={detailsStyles.modalTitle}>Unsafe Review Details</Text>
+                  <Text style={detailsStyles.modalTitle}>
+                    {selectedUnsafeItem?.status === 'unsafe' ? 'Unsafe Review Details' : 'Safe Review Details'}
+                  </Text>
                   <Text style={detailsStyles.modalSubtitle}>
                     {selectedUnsafeItem?.vendor} • {selectedUnsafeItem?.teamLead}
                   </Text>
@@ -710,40 +749,61 @@ export function ReviewHistoryScreen() {
                 contentContainerStyle={detailsStyles.scrollContent}
                 showsVerticalScrollIndicator={false}>
                 {/* Alert Badge */}
-                <View style={detailsStyles.alertBanner}>
-                  <Icon
-                    color={reviewerColors.errorRed}
-                    name={{ ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' }}
-                    size={20}
-                  />
-                  <View style={detailsStyles.alertTextContainer}>
-                    <Text style={detailsStyles.alertTitle}>Marked as UNSAFE by Reviewer</Text>
-                    <Text style={detailsStyles.alertLocation}>
-                      {selectedUnsafeItem?.location} • {selectedUnsafeItem ? formatReviewDateTime(selectedUnsafeItem) : ''}
-                    </Text>
+                {selectedUnsafeItem?.status === 'unsafe' ? (
+                  <View style={detailsStyles.alertBanner}>
+                    <Icon
+                      color={reviewerColors.errorRed}
+                      name={{ ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' }}
+                      size={20}
+                    />
+                    <View style={detailsStyles.alertTextContainer}>
+                      <Text style={detailsStyles.alertTitle}>Marked as UNSAFE by Reviewer</Text>
+                      <Text style={detailsStyles.alertLocation}>
+                        {selectedUnsafeItem?.location} • {selectedUnsafeItem ? formatReviewDateTime(selectedUnsafeItem) : ''}
+                      </Text>
+                    </View>
                   </View>
-                </View>
+                ) : (
+                  <View style={[detailsStyles.alertBanner, { backgroundColor: 'rgba(35, 134, 54, 0.1)', borderColor: 'rgba(35, 134, 54, 0.25)' }]}>
+                    <Icon
+                      color="#238636"
+                      name={{ ios: 'checkmark.seal.fill', android: 'check_circle', web: 'check_circle' }}
+                      size={20}
+                    />
+                    <View style={detailsStyles.alertTextContainer}>
+                      <Text style={[detailsStyles.alertTitle, { color: '#238636' }]}>Marked as SAFE by Reviewer</Text>
+                      <Text style={detailsStyles.alertLocation}>
+                        {selectedUnsafeItem?.location} • {selectedUnsafeItem ? formatReviewDateTime(selectedUnsafeItem) : ''}
+                      </Text>
+                    </View>
+                  </View>
+                )}
 
-                {/* Multiple Unsafe Workers Stacking with Scroll */}
+                {/* Multiple Workers Stacking with Scroll */}
                 {(() => {
-                  const unsafeWorkers =
+                  const workersToDisplay =
                     selectedUnsafeItem?.workerReviews && selectedUnsafeItem.workerReviews.length > 0
-                      ? selectedUnsafeItem.workerReviews.filter((w) => w.status === 'unsafe')
+                      ? (selectedUnsafeItem.status === 'unsafe'
+                          ? selectedUnsafeItem.workerReviews.filter((w) => w.status === 'unsafe')
+                          : selectedUnsafeItem.workerReviews)
                       : [
                           {
                             sequenceNo: 1,
                             workerName: 'Worker 1',
-                            status: 'unsafe' as const,
-                            unsafeReasons: selectedUnsafeItem?.unsafeReasons || ['helmet'],
+                            status: (selectedUnsafeItem?.status === 'unsafe' ? 'unsafe' : 'safe') as any,
+                            unsafeReasons: selectedUnsafeItem?.unsafeReasons || (selectedUnsafeItem?.status === 'unsafe' ? ['helmet'] : []),
                             otherReasonText: selectedUnsafeItem?.otherReasonText,
                             frontUri: null,
                             backUri: null,
+                            frontDriveId: null,
+                            backDriveId: null,
                           },
                         ];
 
                   return (
                     <View style={{ gap: 16 }}>
-                      {unsafeWorkers.map((worker, wIdx) => {
+                      {workersToDisplay.map((worker, wIdx) => {
+                        const isWorkerUnsafe = worker.status === 'unsafe';
                         const workerTitle = `${selectedUnsafeItem?.vendor || 'Vendor'} • Worker #${worker.sequenceNo}`;
 
                         return (
@@ -757,54 +817,64 @@ export function ReviewHistoryScreen() {
                                   WORKER #{worker.sequenceNo}
                                 </Text>
                               </View>
-                              <View style={detailsStyles.workerVerdictChip}>
+                              <View style={[
+                                detailsStyles.workerVerdictChip,
+                                !isWorkerUnsafe && { backgroundColor: 'rgba(35, 134, 54, 0.1)' }
+                              ]}>
                                 <Icon
-                                  color={reviewerColors.errorRed}
-                                  name={{
-                                    ios: 'xmark.circle.fill',
-                                    android: 'cancel',
-                                    web: 'cancel',
-                                  }}
+                                  color={isWorkerUnsafe ? reviewerColors.errorRed : '#238636'}
+                                  name={
+                                    isWorkerUnsafe
+                                      ? { ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }
+                                      : { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }
+                                  }
                                   size={14}
                                 />
-                                <Text style={detailsStyles.workerVerdictText}>UNSAFE</Text>
+                                <Text style={[
+                                  detailsStyles.workerVerdictText,
+                                  !isWorkerUnsafe && { color: '#238636' }
+                                ]}>
+                                  {isWorkerUnsafe ? 'UNSAFE' : 'SAFE'}
+                                </Text>
                               </View>
                             </View>
 
-                            {/* Reasons Section */}
-                            <View style={detailsStyles.section}>
-                              <Text style={detailsStyles.sectionTitle}>
-                                IDENTIFIED PPE VIOLATIONS
-                              </Text>
-                              <View style={detailsStyles.reasonsGrid}>
-                                {worker.unsafeReasons && worker.unsafeReasons.length > 0 ? (
-                                  worker.unsafeReasons.map((r) => {
-                                    const iconConfig = reasonIcons[r] || reasonIcons.other;
-                                    return (
-                                      <View key={r} style={detailsStyles.reasonItem}>
-                                        <View style={detailsStyles.reasonIconBox}>
-                                          <Icon
-                                            color={reviewerColors.errorRed}
-                                            name={iconConfig as any}
-                                            size={18}
-                                          />
+                            {/* Reasons Section if unsafe */}
+                            {isWorkerUnsafe && (
+                              <View style={detailsStyles.section}>
+                                <Text style={detailsStyles.sectionTitle}>
+                                  IDENTIFIED PPE VIOLATIONS
+                                </Text>
+                                <View style={detailsStyles.reasonsGrid}>
+                                  {worker.unsafeReasons && worker.unsafeReasons.length > 0 ? (
+                                    worker.unsafeReasons.map((r) => {
+                                      const iconConfig = reasonIcons[r] || reasonIcons.other;
+                                      return (
+                                        <View key={r} style={detailsStyles.reasonItem}>
+                                          <View style={detailsStyles.reasonIconBox}>
+                                            <Icon
+                                              color={reviewerColors.errorRed}
+                                              name={iconConfig as any}
+                                              size={18}
+                                            />
+                                          </View>
+                                          <Text style={detailsStyles.reasonItemText}>
+                                            {unsafeReasonLabels[r] || r}
+                                          </Text>
                                         </View>
-                                        <Text style={detailsStyles.reasonItemText}>
-                                          {unsafeReasonLabels[r] || r}
-                                        </Text>
-                                      </View>
-                                    );
-                                  })
-                                ) : (
-                                  <Text style={detailsStyles.noReasonsText}>
-                                    PPE non-compliance identified during visual inspection.
-                                  </Text>
-                                )}
+                                      );
+                                    })
+                                  ) : (
+                                    <Text style={detailsStyles.noReasonsText}>
+                                      PPE non-compliance identified during visual inspection.
+                                    </Text>
+                                  )}
+                                </View>
                               </View>
-                            </View>
+                            )}
 
                             {/* Other reason note if present */}
-                            {worker.otherReasonText ? (
+                            {isWorkerUnsafe && worker.otherReasonText ? (
                               <View style={detailsStyles.section}>
                                 <Text style={detailsStyles.sectionTitle}>
                                   REVIEWER NOTE / DESCRIPTION
@@ -827,7 +897,7 @@ export function ReviewHistoryScreen() {
                                   driveId={worker.frontDriveId}
                                   submissionId={selectedUnsafeItem?.id}
                                   workerSequenceNo={worker.sequenceNo}
-                                  fallbackAsset={sampleWorkerPhotos[worker.sequenceNo]?.front || assets.fieldUnsafeCheck}
+                                  fallbackAsset={sampleWorkerPhotos[worker.sequenceNo]?.front || (isWorkerUnsafe ? assets.fieldUnsafeCheck : assets.fieldSafeCheck)}
                                   workerTitle={workerTitle}
                                   onPressZoom={openZoomModal}
                                 />

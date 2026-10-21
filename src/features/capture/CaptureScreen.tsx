@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   BackHandler,
+  Linking,
   StatusBar as NativeStatusBar,
   Platform,
   Pressable,
@@ -15,6 +16,13 @@ import {
   Text,
   View,
 } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Icon } from "@/components/ui/Icon";
@@ -26,6 +34,12 @@ import {
   setPendingSubmissionReviewCaptures,
   setPendingSubmissionReviewTarget,
 } from "@/features/submissions/services/pendingSubmissionReview.service";
+import { hapticLight, hapticMedium, hapticSelection } from "@/utils/haptics";
+import {
+  DEFAULT_UPLOAD_MAX_LONG_EDGE,
+  getRecommendedCaptureQuality,
+  selectOptimalCameraPictureSize,
+} from "@/utils/image";
 
 export function CaptureScreen() {
   const cameraRef = useRef<CameraView>(null);
@@ -40,7 +54,14 @@ export function CaptureScreen() {
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [flashMode, setFlashMode] = useState<FlashMode>("off");
+  const [optimalPictureSize, setOptimalPictureSize] = useState<string | undefined>(undefined);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const shutterFlashOpacity = useSharedValue(0);
+
+  const shutterFlashStyle = useAnimatedStyle(() => ({
+    opacity: shutterFlashOpacity.value,
+  }));
   const [initialCaptures] = useState(
     () => getPendingSubmissionReviewCaptures() ?? [],
   );
@@ -181,6 +202,13 @@ export function CaptureScreen() {
   }, []);
 
   async function handleCapture() {
+    hapticMedium();
+    if (!reducedMotion) {
+      shutterFlashOpacity.value = withSequence(
+        withTiming(0.68, { duration: 55 }),
+        withTiming(0, { duration: 150 })
+      );
+    }
     await capture.capturePhoto(async () => {
       if (!cameraRef.current || !isCameraReady) {
         return capture.currentSide === "FRONT"
@@ -190,7 +218,8 @@ export function CaptureScreen() {
 
       const photo = await cameraRef.current.takePictureAsync({
         imageType: "jpg",
-        quality: 0.9,
+        quality: getRecommendedCaptureQuality(),
+        skipProcessing: false,
       });
 
       return photo.uri;
@@ -199,15 +228,18 @@ export function CaptureScreen() {
   }
 
   function toggleFlash() {
+    hapticSelection();
     setFlashMode((currentMode) => (currentMode === "off" ? "on" : "off"));
   }
 
   function handleRetake() {
+    hapticLight();
     capture.retakeSelectedWorker();
     setIsPreviewOpen(false);
   }
 
   function handleSelectWorker(sequenceNo: number) {
+    hapticSelection();
     capture.selectWorker(sequenceNo);
     setIsPreviewOpen(false);
   }
@@ -273,13 +305,15 @@ export function CaptureScreen() {
             <CameraStateMessage message={t("captureScreen.cameraLoading")} />
           ) : !permission.granted ? (
             <CameraStateMessage
-              actionLabel={
-                permission.canAskAgain
-                  ? t("captureScreen.grantPermission")
-                  : undefined
-              }
+              actionLabel={t("captureScreen.grantPermission")}
               message={t("captureScreen.permissionDenied")}
-              onAction={permission.canAskAgain ? requestPermission : undefined}
+              onAction={
+                permission.canAskAgain
+                  ? requestPermission
+                  : () => {
+                      void Linking.openSettings();
+                    }
+              }
             />
           ) : isCameraAvailable === false ? (
             <CameraStateMessage
@@ -293,9 +327,24 @@ export function CaptureScreen() {
               facing="back"
               flash={flashMode}
               mode="picture"
-              onCameraReady={() => {
+              pictureSize={optimalPictureSize}
+              onCameraReady={async () => {
                 setCameraError(null);
                 setIsCameraReady(true);
+                try {
+                  if (cameraRef.current?.getAvailablePictureSizesAsync) {
+                    const sizes = await cameraRef.current.getAvailablePictureSizesAsync();
+                    const bestSize = selectOptimalCameraPictureSize(
+                      sizes,
+                      DEFAULT_UPLOAD_MAX_LONG_EDGE
+                    );
+                    if (bestSize) {
+                      setOptimalPictureSize(bestSize);
+                    }
+                  }
+                } catch {
+                  // Ignore if platform does not report picture sizes
+                }
               }}
               onMountError={(event) => {
                 setIsCameraReady(false);
@@ -307,6 +356,14 @@ export function CaptureScreen() {
           )}
 
           <View pointerEvents="none" style={styles.cameraScrim} />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: "#FFFFFF" },
+              shutterFlashStyle,
+            ]}
+          />
           <View pointerEvents="none" style={styles.overlayCopy}>
             <Text style={styles.instruction}>
               {capture.currentSide === "FRONT"

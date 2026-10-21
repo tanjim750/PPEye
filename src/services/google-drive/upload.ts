@@ -1,4 +1,5 @@
 import { config } from '../../constants/config';
+import { prepareImageForUpload } from '../../utils/image';
 import { StorageError, StorageErrorCode } from '../storage/storage.errors';
 import type { DriveFile } from '../storage/storage.types';
 import { getValidAccessToken, invalidateCachedAccessToken } from './auth';
@@ -50,6 +51,7 @@ export interface DriveUploadOptions {
   folderId?: string;
   maxSizeBytes?: number;
   skipReconciliation?: boolean;
+  onUploadProgress?: (fraction: number) => void;
 }
 
 export interface DriveUploadResult {
@@ -148,6 +150,7 @@ export async function uploadFile(options: DriveUploadOptions): Promise<DriveFile
     folderId,
     maxSizeBytes = DEFAULT_MAX_FILE_SIZE_BYTES,
     skipReconciliation = false,
+    onUploadProgress,
   } = options;
 
   if (!fileName || !fileName.trim()) {
@@ -158,7 +161,28 @@ export async function uploadFile(options: DriveUploadOptions): Promise<DriveFile
   }
 
   // 1. Validate local file attributes
-  const { size: localFileSize } = await validateLocalFile(localUri, mimeType, maxSizeBytes);
+  const { size: rawLocalFileSize } = await validateLocalFile(localUri, mimeType, maxSizeBytes);
+
+  // 1b. Compress and resize image once right before upload (1920px long edge @ 0.8 JPEG quality).
+  // Preserves the original local file for retries and skips re-compression if already prepared.
+  let uploadUri = localUri;
+  let localFileSize = rawLocalFileSize;
+  let uploadMimeType = mimeType;
+  if (mimeType.toLowerCase().trim().startsWith('image/')) {
+    try {
+      const prepared = await prepareImageForUpload(localUri, {
+        fileSystem: getFileSystem(),
+      });
+      uploadUri = prepared.uri;
+      uploadMimeType = prepared.mimeType ?? mimeType;
+      if (prepared.preparedSizeBytes && prepared.preparedSizeBytes > 0) {
+        localFileSize = prepared.preparedSizeBytes;
+      }
+    } catch {
+      // Fall back to validated original URI if staging fails
+      uploadUri = localUri;
+    }
+  }
 
   // 2. Resolve target parent folder
   let targetFolder = folderId;
@@ -197,6 +221,7 @@ export async function uploadFile(options: DriveUploadOptions): Promise<DriveFile
         const checkData = await checkRes.json();
         const existing = checkData.files?.[0];
         if (existing?.id) {
+          onUploadProgress?.(1);
           const remoteSize = existing.size ? parseInt(existing.size, 10) : undefined;
           // If already uploaded and size matches or is valid, reconcile by returning existing file
           if (!remoteSize || remoteSize === localFileSize || Math.abs((remoteSize ?? 0) - localFileSize) < 100) {
@@ -223,7 +248,7 @@ export async function uploadFile(options: DriveUploadOptions): Promise<DriveFile
   // 5. Initiate Resumable Upload Session
   const metadata: Record<string, any> = {
     name: fileName,
-    mimeType,
+    mimeType: uploadMimeType,
   };
 
   if (targetFolder) {
@@ -309,26 +334,42 @@ export async function uploadFile(options: DriveUploadOptions): Promise<DriveFile
   let uploadBody: any = null;
 
   try {
-    if (FS && typeof FS.uploadAsync === 'function') {
-      const uploadResult = await FS.uploadAsync(sessionUri, localUri, {
-        httpMethod: 'PUT',
-        uploadType: (FS as any).FileSystemUploadType?.BINARY_CONTENT ?? 0,
+    const uploadOptions = {
+        httpMethod: 'PUT' as const,
+        uploadType: (FS as any)?.FileSystemUploadType?.BINARY_CONTENT ?? 0,
         headers: {
-          'Content-Type': mimeType,
+          'Content-Type': uploadMimeType,
         },
+      };
+    if (FS && typeof FS.createUploadTask === 'function') {
+      const task = FS.createUploadTask(sessionUri, uploadUri, uploadOptions, (progress: any) => {
+        const expected = Number(progress.totalBytesExpectedToSend);
+        const sent = Number(progress.totalBytesSent);
+        if (expected > 0) onUploadProgress?.(Math.max(0, Math.min(1, sent / expected)));
       });
+      const uploadResult = await task.uploadAsync();
+      if (!uploadResult) throw new Error('Google Drive upload was cancelled before completion.');
 
       if (uploadResult.status < 200 || uploadResult.status >= 300) {
         throw new Error(`Google Drive binary upload returned HTTP ${uploadResult.status}: ${uploadResult.body}`);
       }
 
       uploadBody = JSON.parse(uploadResult.body);
+    } else if (FS && typeof FS.uploadAsync === 'function') {
+      const uploadResult = await FS.uploadAsync(sessionUri, uploadUri, uploadOptions);
+
+      if (uploadResult.status < 200 || uploadResult.status >= 300) {
+        throw new Error(`Google Drive binary upload returned HTTP ${uploadResult.status}: ${uploadResult.body}`);
+      }
+
+      uploadBody = JSON.parse(uploadResult.body);
+      onUploadProgress?.(1);
     } else {
       // Mock / fallback fetch for non-native test environments
       const putRes = await fetchFn(sessionUri, {
         method: 'PUT',
         headers: {
-          'Content-Type': mimeType,
+          'Content-Type': uploadMimeType,
         },
         body: `[mock-binary-data-for-${fileName}]`,
       });
@@ -337,6 +378,7 @@ export async function uploadFile(options: DriveUploadOptions): Promise<DriveFile
         throw new Error(`Google Drive upload failed with status ${putRes.status}`);
       }
       uploadBody = await putRes.json();
+      onUploadProgress?.(1);
     }
   } catch (err: any) {
     // Post-failure reconciliation: check if Drive actually committed the file
@@ -412,7 +454,7 @@ export async function uploadFile(options: DriveUploadOptions): Promise<DriveFile
   return {
     id: createdId,
     name: uploadBody.name ?? fileName,
-    mimeType: uploadBody.mimeType ?? mimeType,
+    mimeType: uploadBody.mimeType ?? uploadMimeType,
     sizeBytes: uploadBody.size ? parseInt(uploadBody.size, 10) : localFileSize,
     webViewLink: uploadBody.webViewLink,
     thumbnailLink:
