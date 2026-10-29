@@ -29,6 +29,10 @@ import {
 } from '../path-generator';
 import { StorageError, StorageErrorCode } from '../storage.errors';
 import {
+  clearSignedUrlCache,
+  getCachedSignedUrl,
+  invalidateSubmissionPreloadCache,
+  ONE_DAY_SECONDS,
   setSupabaseStorageClientOverride,
   SupabaseStorageService,
 } from '../supabase-storage.client';
@@ -585,6 +589,96 @@ export async function runSupabaseStorageTests(): Promise<{ passed: number; faile
     assert(signed.signedUrl.includes('https://mock-supabase.storage.co/evidence/'));
     assert(signed.signedUrl.includes('token=signed_'));
     assert(signed.expiresAt > Date.now());
+  });
+
+  await test('createSignedUrl defaults to 1 day (86400s) and caches/reuses signed URL', async () => {
+    clearSignedUrlCache();
+    mockStorageStore.set('evidence:submissions/25/workers/1_front.jpg', {
+      bucket: 'evidence',
+      path: 'submissions/25/workers/1_front.jpg',
+      data: 'bytes',
+      contentType: 'image/jpeg',
+    });
+
+    const first = await service.createSignedUrl('evidence', 'submissions/25/workers/1_front.jpg');
+    assert(first.expiresAt >= Date.now() + (ONE_DAY_SECONDS - 5) * 1000);
+    assert(first.signedUrl.includes('expires=86400'));
+
+    // Reusing without calling Supabase again
+    const second = await service.createSignedUrl('evidence', 'submissions/25/workers/1_front.jpg');
+    assert.strictEqual(second.signedUrl, first.signedUrl);
+    assert.strictEqual(second.expiresAt, first.expiresAt);
+
+    // Synchronous cache lookup works
+    const cachedUrl = getCachedSignedUrl('evidence', 'submissions/25/workers/1_front.jpg');
+    assert.strictEqual(cachedUrl, first.signedUrl);
+  });
+
+  await test('createSignedUrl deduplicates concurrent in-flight requests into exactly one network call', async () => {
+    clearSignedUrlCache();
+    let underlyingCallCount = 0;
+    const dedupClient = {
+      storage: {
+        from: (bucket: string) => ({
+          createSignedUrl: async (path: string, expires: number) => {
+            underlyingCallCount++;
+            await new Promise((r) => setTimeout(r, 20));
+            return {
+              data: { signedUrl: `https://mock.storage/${bucket}/${path}?signed=true` },
+              error: null,
+            };
+          },
+        }),
+      },
+    };
+
+    const dedupService = new SupabaseStorageService(dedupClient);
+    // Fire 4 concurrent requests at the exact same instant
+    const [res1, res2, res3, res4] = await Promise.all([
+      dedupService.createSignedUrl('evidence', 'submissions/concurrent/worker.jpg'),
+      dedupService.createSignedUrl('evidence', 'submissions/concurrent/worker.jpg'),
+      dedupService.createSignedUrl('evidence', 'submissions/concurrent/worker.jpg'),
+      dedupService.createSignedUrl('evidence', 'submissions/concurrent/worker.jpg'),
+    ]);
+
+    assert.strictEqual(underlyingCallCount, 1, 'Concurrent requests must share exactly 1 network call');
+    assert.strictEqual(res1.signedUrl, res2.signedUrl);
+    assert.strictEqual(res2.signedUrl, res3.signedUrl);
+    assert.strictEqual(res3.signedUrl, res4.signedUrl);
+  });
+
+  await test('createSignedUrl rejects malicious path traversal and invalid buckets (security hardening)', async () => {
+    await assert.rejects(
+      () => service.createSignedUrl('evidence', '../secret.env'),
+      (err: any) => err instanceof StorageError && err.code === StorageErrorCode.INVALID_INPUT
+    );
+    await assert.rejects(
+      () => service.createSignedUrl('evidence', '/etc/passwd'),
+      (err: any) => err instanceof StorageError && err.code === StorageErrorCode.INVALID_INPUT
+    );
+    await assert.rejects(
+      () => service.createSignedUrl('evidence', 'submissions/10/workers/\0bad.jpg'),
+      (err: any) => err instanceof StorageError && err.code === StorageErrorCode.INVALID_INPUT
+    );
+    await assert.rejects(
+      () => service.createSignedUrl('system_private' as any, 'submissions/10/workers/1.jpg'),
+      (err: any) => err instanceof StorageError && err.code === StorageErrorCode.INVALID_INPUT
+    );
+  });
+
+  await test('createSignedUrl cache is invalidated when object is deleted', async () => {
+    mockStorageStore.set('evidence:submissions/30/workers/1_front.jpg', {
+      bucket: 'evidence',
+      path: 'submissions/30/workers/1_front.jpg',
+      data: 'bytes',
+      contentType: 'image/jpeg',
+    });
+
+    const signed = await service.createSignedUrl('evidence', 'submissions/30/workers/1_front.jpg');
+    assert(getCachedSignedUrl('evidence', 'submissions/30/workers/1_front.jpg'));
+
+    await service.deleteFile('evidence', 'submissions/30/workers/1_front.jpg');
+    assert.strictEqual(getCachedSignedUrl('evidence', 'submissions/30/workers/1_front.jpg'), null);
   });
 
   await test('createSignedUrl throws FILE_NOT_FOUND on missing object', async () => {

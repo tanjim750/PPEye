@@ -2,10 +2,14 @@ import '@/i18n';
 
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { LogBox, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { LanguageProvider, useLanguage } from '@/hooks/useLanguage';
+
+LogBox.ignoreLogs([
+  "Response.blob() is using React Native's Blob",
+]);
 
 export const unstable_settings = {
   initialRouteName: 'index',

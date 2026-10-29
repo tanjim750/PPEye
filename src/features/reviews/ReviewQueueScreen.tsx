@@ -10,15 +10,22 @@ import { InProgressLimitModal } from '@/features/reviews/components/InProgressLi
 
 const reviewerColors = {
   background: '#f9f9ff',
-  chipOrange: 'rgba(152, 67, 0, 0.1)',
+  chipGreen: 'rgba(22, 163, 74, 0.12)',
+  chipOrange: 'rgba(234, 88, 12, 0.15)',
+  chipYellow: 'rgba(234, 179, 8, 0.15)',
+  chipRed: 'rgba(186, 26, 26, 0.12)',
   outlineVariant: '#c0c7d5',
-  primary: '#005cad',
+  primary: '#0082F0',
+  secondary: '#005DB6',
+  tertiary: '#D36001',
+  neutral: '#74777F',
   primaryFixed: '#d5e3ff',
   surface: '#ffffff',
   surfaceContainerHigh: '#e5e8f1',
   text: '#181c22',
   textMuted: '#404753',
-  warningOrange: '#984300',
+  warningOrange: '#EA580C',
+  pendingYellow: '#CA8A04',
   white: '#ffffff',
 };
 
@@ -82,7 +89,7 @@ export function ReviewQueueScreen() {
             <RefreshControl
               refreshing={isRefreshing}
               onRefresh={handleRefresh}
-              tintColor="#005cad"
+              tintColor="#0082F0"
             />
           }>
           {/* Floating Pill Counter Badge */}
@@ -143,7 +150,7 @@ export function ReviewQueueScreen() {
                           {item.isDraft && (
                             <View style={styles.draftBadge}>
                               <Icon
-                                color="#005cad"
+                                color={reviewerColors.warningOrange}
                                 name={{ ios: 'pencil', android: 'edit', web: 'edit' }}
                                 size={10}
                               />
@@ -178,7 +185,7 @@ export function ReviewQueueScreen() {
                     {item.isDraft ? (
                       <View style={[styles.statusChip, styles.inProgressChip]}>
                         <Icon
-                          color="#005cad"
+                          color={reviewerColors.warningOrange}
                           name={{ ios: 'clock.arrow.circlepath', android: 'pending', web: 'pending' }}
                           size={14}
                         />
@@ -191,8 +198,8 @@ export function ReviewQueueScreen() {
                     ) : (
                       <View style={[styles.statusChip, styles.waitingChip]}>
                         <Icon
-                          color={reviewerColors.warningOrange}
-                          name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+                          color={reviewerColors.pendingYellow}
+                          name={{ ios: 'clock.fill', android: 'schedule', web: 'schedule' }}
                           size={14}
                         />
                         <Text style={[styles.statusText, styles.waitingText]}>
@@ -320,7 +327,7 @@ const styles = StyleSheet.create({
   floatingBadge: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderColor: 'rgba(152, 67, 0, 0.2)',
+    borderColor: 'rgba(234, 179, 8, 0.3)',
     borderRadius: 999,
     borderWidth: 1,
     elevation: 3,
@@ -334,7 +341,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
   floatingBadgeText: {
-    color: reviewerColors.warningOrange,
+    color: reviewerColors.pendingYellow,
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.2,
@@ -441,11 +448,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   waitingChip: {
-    backgroundColor: reviewerColors.chipOrange,
+    backgroundColor: reviewerColors.chipYellow,
+    borderColor: 'rgba(234, 179, 8, 0.3)',
+    borderWidth: 1,
   },
   inProgressChip: {
-    backgroundColor: '#eff6ff',
-    borderColor: 'rgba(0, 92, 173, 0.25)',
+    backgroundColor: reviewerColors.chipOrange,
+    borderColor: 'rgba(234, 88, 12, 0.3)',
     borderWidth: 1,
   },
   statusText: {
@@ -454,25 +463,26 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   waitingText: {
-    color: reviewerColors.warningOrange,
+    color: reviewerColors.pendingYellow,
+    fontWeight: '600',
   },
   inProgressText: {
-    color: '#005cad',
+    color: reviewerColors.warningOrange,
     fontWeight: '600',
   },
   draftBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#eff6ff',
-    borderColor: 'rgba(0, 92, 173, 0.25)',
+    backgroundColor: reviewerColors.chipOrange,
+    borderColor: 'rgba(234, 88, 12, 0.3)',
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
   draftBadgeText: {
-    color: '#005cad',
+    color: reviewerColors.warningOrange,
     fontSize: 10,
     fontWeight: '700',
   },

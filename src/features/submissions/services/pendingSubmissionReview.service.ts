@@ -8,8 +8,12 @@ type PendingSubmissionReviewTarget = {
 export type PendingResubmissionContext = {
   submissionId?: number;
   workerInstanceId?: number;
-  sequenceNo: number;
+  sequenceNo?: number;
   workerCheckId?: string;
+  unsafeWorkers?: Array<{
+    workerInstanceId: number;
+    sequenceNo: number;
+  }>;
 };
 
 let pendingCaptureReview: PPEWorkerCapture[] | null = null;

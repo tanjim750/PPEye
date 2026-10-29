@@ -1,17 +1,48 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui/Icon';
+import { useNotifications } from '@/services/notifications/notification.service';
 
 export function NotificationsScreen() {
   const router = useRouter();
   const { t } = useTranslation('settings');
-  const [newSubmissions, setNewSubmissions] = useState(true);
-  const [reviewUpdates, setReviewUpdates] = useState(true);
-  const [accountUpdates, setAccountUpdates] = useState(true);
+  const { preferences, updatePreferences, requestPermission } = useNotifications();
+
+  // Local state for instant zero-latency UI toggle feedback
+  const [localPrefs, setLocalPrefs] = useState({
+    newSubmissions: preferences.newSubmissions,
+    reviewUpdates: preferences.reviewUpdates,
+    accountUpdates: preferences.accountUpdates,
+  });
+
+  useEffect(() => {
+    setLocalPrefs({
+      newSubmissions: preferences.newSubmissions,
+      reviewUpdates: preferences.reviewUpdates,
+      accountUpdates: preferences.accountUpdates,
+    });
+  }, [preferences.newSubmissions, preferences.reviewUpdates, preferences.accountUpdates]);
+
+  const handleToggle = (key: 'newSubmissions' | 'reviewUpdates' | 'accountUpdates', value: boolean) => {
+    // 1. Instant optimistic state update
+    setLocalPrefs((prev) => ({ ...prev, [key]: value }));
+
+    // 2. Persist & sync in background without blocking UI render
+    void (async () => {
+      try {
+        if (value) {
+          void requestPermission();
+        }
+        await updatePreferences({ [key]: value });
+      } catch (err) {
+        console.warn('[NotificationsScreen] Toggle update error:', err);
+      }
+    })();
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -53,10 +84,12 @@ export function NotificationsScreen() {
                   </Text>
                 </View>
                 <Switch
-                  onValueChange={setNewSubmissions}
-                  thumbColor={colors.white}
-                  trackColor={{ false: colors.switchOff, true: colors.primary }}
-                  value={newSubmissions}
+                  // @ts-ignore
+                  activeThumbColor="#ffffff"
+                  onValueChange={(val) => handleToggle('newSubmissions', val)}
+                  thumbColor="#ffffff"
+                  trackColor={{ false: '#e0e2ec', true: '#0082F0' }}
+                  value={localPrefs.newSubmissions}
                 />
               </View>
 
@@ -69,10 +102,12 @@ export function NotificationsScreen() {
                   </Text>
                 </View>
                 <Switch
-                  onValueChange={setReviewUpdates}
-                  thumbColor={colors.white}
-                  trackColor={{ false: colors.switchOff, true: colors.primary }}
-                  value={reviewUpdates}
+                  // @ts-ignore
+                  activeThumbColor="#ffffff"
+                  onValueChange={(val) => handleToggle('reviewUpdates', val)}
+                  thumbColor="#ffffff"
+                  trackColor={{ false: '#e0e2ec', true: '#0082F0' }}
+                  value={localPrefs.reviewUpdates}
                 />
               </View>
             </View>
@@ -91,10 +126,12 @@ export function NotificationsScreen() {
                   </Text>
                 </View>
                 <Switch
-                  onValueChange={setAccountUpdates}
-                  thumbColor={colors.white}
-                  trackColor={{ false: colors.switchOff, true: colors.primary }}
-                  value={accountUpdates}
+                  // @ts-ignore
+                  activeThumbColor="#ffffff"
+                  onValueChange={(val) => handleToggle('accountUpdates', val)}
+                  thumbColor="#ffffff"
+                  trackColor={{ false: '#e0e2ec', true: '#0082F0' }}
+                  value={localPrefs.accountUpdates}
                 />
               </View>
             </View>

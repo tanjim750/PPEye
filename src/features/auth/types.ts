@@ -14,6 +14,7 @@ export type AuthUser = {
   projectName?: string;
   designation?: string;
   phone?: string;
+  profilePictureUrl?: string;
 };
 
 export type LoginCredentials = {

@@ -33,6 +33,7 @@ import { resubmitWorkerCheck } from '@/features/submissions/services/workerCheck
 import {
   broadcastNewSubmission,
 } from '@/features/reviews/services/reviews.service';
+import { broadcastNewSubmissionAlert } from '@/services/notifications/notification.service';
 import {
   attachPhotosToPPESubmission,
   createPPESubmission,
@@ -90,23 +91,6 @@ type SubmissionReviewMetadata = {
   weather: SubmissionWeatherMetadata | null;
 };
 
-const sampleWorkerPhotos: WorkerReviewPhoto[] = [
-  {
-    sequenceNo: 1,
-    front: { uri: 'https://lh3.googleusercontent.com/aida/AEtjO1U7K_FAZ2HeXCCuL2GQebrq1USmx1KtyBTKUh84qCcposq_rfrMO_mGEt5NKO_tE0vD_1YOU7KmDn5OKbRgdPKBlaDDg_N_qlBu6Q7nyji0utCKG1CwE_luLM5-0Dj5Ymhp8yHlplc6Hwc_85tfJxvub3rfYZypubfAXG06ivU3WmhMIqCx-fgeN0WTm-oHDpqIITmW0HF-yRkRSG5MFJlfIiKHtfRhlADTEVgkHnPj7fst2ftVOLRAkC0' },
-    frontUri: 'https://lh3.googleusercontent.com/aida/AEtjO1U7K_FAZ2HeXCCuL2GQebrq1USmx1KtyBTKUh84qCcposq_rfrMO_mGEt5NKO_tE0vD_1YOU7KmDn5OKbRgdPKBlaDDg_N_qlBu6Q7nyji0utCKG1CwE_luLM5-0Dj5Ymhp8yHlplc6Hwc_85tfJxvub3rfYZypubfAXG06ivU3WmhMIqCx-fgeN0WTm-oHDpqIITmW0HF-yRkRSG5MFJlfIiKHtfRhlADTEVgkHnPj7fst2ftVOLRAkC0',
-    back: { uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDCACqY_pWKKerdF_sB7Hn1kXmpmze_vsM9Q87ByZ-aJv5Ha2Z8QuMUb576RhSLwX7QvXn-YSAcbFDbABHSu8qOec2YFZd_GCjCigDQbej6SFNFFDIryMUYL-MYdfm0Y230WrZ3wggUC3108k7xbp3bJZGgDQa0Rvzy-WEpHRk4zzqFsWYytmrt5Sw_SRZ8sceBzy8HuLNjeuQVk1kJ4qaxQa28BcIR8WAfC8uvlL0bazXbfTuf9vHI' },
-    backUri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDCACqY_pWKKerdF_sB7Hn1kXmpmze_vsM9Q87ByZ-aJv5Ha2Z8QuMUb576RhSLwX7QvXn-YSAcbFDbABHSu8qOec2YFZd_GCjCigDQbej6SFNFFDIryMUYL-MYdfm0Y230WrZ3wggUC3108k7xbp3bJZGgDQa0Rvzy-WEpHRk4zzqFsWYytmrt5Sw_SRZ8sceBzy8HuLNjeuQVk1kJ4qaxQa28BcIR8WAfC8uvlL0bazXbfTuf9vHI',
-  },
-  {
-    sequenceNo: 2,
-    front: { uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCuZxy0Q311kBgLiTS7t5-_L7uaLXsi9HlYUAmSZQECsMALWF-aLrkfYbyn8kf4UqSt_uHq1IhY8uCvjb2N6NKBXCHkv98ED-ffl-lpbEV6W-L7WM-Hn-2dQ5-7tNlgN_hkH0oMEIeKREYM68xHcjdLHd-ikZQWrKvONiJk3x11DK7eJwD75uhgkoHLY6ckPThpYZCuk2t4FRVyenFpUB89i-0dsc5xiJv4TOclt_-JhmesV6uugg9W' },
-    frontUri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCuZxy0Q311kBgLiTS7t5-_L7uaLXsi9HlYUAmSZQECsMALWF-aLrkfYbyn8kf4UqSt_uHq1IhY8uCvjb2N6NKBXCHkv98ED-ffl-lpbEV6W-L7WM-Hn-2dQ5-7tNlgN_hkH0oMEIeKREYM68xHcjdLHd-ikZQWrKvONiJk3x11DK7eJwD75uhgkoHLY6ckPThpYZCuk2t4FRVyenFpUB89i-0dsc5xiJv4TOclt_-JhmesV6uugg9W',
-    back: { uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCUqFlp6mW8hgXcWvLNWmYC53C2Er97cazwOTfMvEVNUPj6DbE4oykqDPIG8kxu5qmgT4jU46fu4-sbK6yhZ4aqJJGehkIqDsjLECr4q10RMx_XWtnU1v1SiRnghGvBFu_XkZeP9Pb5vXuMNyVRNM4Q0vtx2WzUIZIhl9oCSkdsGHyRcQsFAysgEyq5Hifp7mFEpEUhT2rl5_E2rsxArAgkPyJF7xj0A8DOrTPfxUEvUfcAr4sdSOWz' },
-    backUri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCUqFlp6mW8hgXcWvLNWmYC53C2Er97cazwOTfMvEVNUPj6DbE4oykqDPIG8kxu5qmgT4jU46fu4-sbK6yhZ4aqJJGehkIqDsjLECr4q10RMx_XWtnU1v1SiRnghGvBFu_XkZeP9Pb5vXuMNyVRNM4Q0vtx2WzUIZIhl9oCSkdsGHyRcQsFAysgEyq5Hifp7mFEpEUhT2rl5_E2rsxArAgkPyJF7xj0A8DOrTPfxUEvUfcAr4sdSOWz',
-  },
-];
-
 export function SubmissionReviewScreen() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -135,7 +119,7 @@ export function SubmissionReviewScreen() {
   const [workerPhotos, setWorkerPhotos] = useState<WorkerReviewPhoto[]>(() => {
     const pendingCaptures = getPendingSubmissionReviewCaptures();
 
-    return pendingCaptures ? getWorkerPhotosFromCaptures(pendingCaptures) : sampleWorkerPhotos;
+    return pendingCaptures ? getWorkerPhotosFromCaptures(pendingCaptures) : [];
   });
   const [reviewOtherPhotos] = useState<OtherReviewPhoto[]>(() => {
     const pendingOtherPhotos = getPendingSubmissionReviewOtherPhotos();
@@ -429,64 +413,84 @@ export function SubmissionReviewScreen() {
     // Background async pipeline: Supabase submission creation -> Storage upload & relationship persistence
     (async () => {
       try {
-        if (resubmissionCtx?.submissionId && resubmissionCtx?.workerInstanceId) {
-          // Legitimate Resubmission flow for an Unsafe worker
-          const targetWorker =
-            workerPhotos.find((w) => w.sequenceNo === resubmissionCtx.sequenceNo) ||
-            workerPhotos[0];
+        if (resubmissionCtx?.submissionId) {
+          // Batch Resubmission flow for Unsafe worker(s)
+          console.log(`[PPEye] Resubmitting ${workerPhotos.length} corrected worker(s) for submission ${resubmissionCtx.submissionId}...`);
+          for (const worker of workerPhotos) {
+            let workerInstId =
+              resubmissionCtx.unsafeWorkers?.find((u) => u.sequenceNo === worker.sequenceNo)?.workerInstanceId ||
+              (resubmissionCtx.sequenceNo === worker.sequenceNo ? resubmissionCtx.workerInstanceId : undefined);
 
-          if (targetWorker?.frontUri) {
-            await resubmitUnsafeWorker(
-              resubmissionCtx.submissionId,
-              resubmissionCtx.workerInstanceId,
-              'FRONT',
-              targetWorker.frontUri
-            );
-          }
-          if (targetWorker?.backUri) {
-            await resubmitUnsafeWorker(
-              resubmissionCtx.submissionId,
-              resubmissionCtx.workerInstanceId,
-              'BACK',
-              targetWorker.backUri
-            );
+            if (!workerInstId) {
+              const { data: inst } = await supabase
+                .from('ppe_worker_instances')
+                .select('id')
+                .eq('submission_id', resubmissionCtx.submissionId)
+                .eq('sequence_no', worker.sequenceNo)
+                .maybeSingle();
+              workerInstId = inst?.id;
+            }
+
+            if (workerInstId) {
+              if (worker.frontUri) {
+                await resubmitUnsafeWorker(
+                  resubmissionCtx.submissionId,
+                  workerInstId,
+                  'FRONT',
+                  worker.frontUri
+                );
+              }
+              if (worker.backUri) {
+                await resubmitUnsafeWorker(
+                  resubmissionCtx.submissionId,
+                  workerInstId,
+                  'BACK',
+                  worker.backUri
+                );
+              }
+            }
           }
           clearPendingSubmissionReviewCaptures();
+          broadcastNewSubmission(resubmissionCtx.submissionId);
+          void broadcastNewSubmissionAlert({
+            submissionId: resubmissionCtx.submissionId,
+            siteName: finalSite,
+            workerCount: resubmissionCtx.unsafeWorkers?.length || 1,
+            vendorName: user?.vendorName || 'ABC Telecom Ltd',
+          });
           return;
         }
 
         // Standard New Submission creation:
-        // Process each worker as an individual submission in Google Drive and Database so each worker is counted separately!
+        // Create ONE single DB submission header for the entire inspection batch so all workers belong to the same submission
+        console.log(`[PPEye] Creating DB submission record for ${workerPhotos.length} workers...`);
+        const subHeader = await createPPESubmissionHeader({
+          vendorProfileId: user?.vendorProfileId || 1,
+          submittedBy: typeof user?.id === 'number' ? user.id : undefined,
+          siteName: finalSite,
+          metadata: {
+            latitude: submissionMetadata?.location?.latitude ?? null,
+            longitude: submissionMetadata?.location?.longitude ?? null,
+            weather: submissionMetadata?.weather ?? null,
+            workerCount: workerPhotos.length,
+            capturedAt: Date.now(),
+          },
+        });
+
+        if (!subHeader.success || !subHeader.submissionId) {
+          console.warn('[PPEye] Failed to create submission header');
+          return;
+        }
+
+        const currentSubId = subHeader.submissionId;
+        const submittedBy = subHeader.submittedBy || 1;
+
+        // Process all workers under this single submission
         for (let i = 0; i < workerPhotos.length; i++) {
           const worker = workerPhotos[i];
-          const workerTimestamp =
-            worker.capturedAt || Date.now() - (workerPhotos.length - i) * 1000;
 
           try {
-            // Step 1: Create distinct DB submission header to get official submission ID
-            console.log(`[PPEye] Creating DB submission record for Worker ${worker.sequenceNo}...`);
-            const subHeader = await createPPESubmissionHeader({
-              vendorProfileId: user?.vendorProfileId || 1,
-              submittedBy: typeof user?.id === 'number' ? user.id : undefined,
-              siteName: finalSite,
-              metadata: {
-                latitude: submissionMetadata?.location?.latitude ?? null,
-                longitude: submissionMetadata?.location?.longitude ?? null,
-                weather: submissionMetadata?.weather ?? null,
-                workerSequenceNo: worker.sequenceNo,
-                capturedAt: workerTimestamp,
-              },
-            });
-
-            if (!subHeader.success || !subHeader.submissionId) {
-              console.warn(`[PPEye] Failed to create submission header for worker ${worker.sequenceNo}`);
-              continue;
-            }
-
-            const currentSubId = subHeader.submissionId;
-            const submittedBy = subHeader.submittedBy || 1;
-
-            // Step 2: Ensure worker instance exists in DB for this worker
+            // Ensure worker instance exists in DB for this worker under the shared submission
             const { data: existingInst } = await supabase
               .from('ppe_worker_instances')
               .select('id')
@@ -512,7 +516,7 @@ export function SubmissionReviewScreen() {
               continue;
             }
 
-            // Step 3: Upload inspection photos to Supabase Storage 'evidence' bucket via Coordinator
+            // Upload inspection photos to Supabase Storage 'evidence' bucket via Coordinator
             console.log(`[PPEye] Uploading Worker ${worker.sequenceNo} photos to Supabase Storage (submission_${currentSubId})...`);
             const coordResult = await submissionCoordinator.submitWorkerEvidence({
               submissionId: currentSubId,
@@ -536,7 +540,7 @@ export function SubmissionReviewScreen() {
               cacheImage(coordResult.data.back.storagePath, worker.backUri, { isSensitive: true }).catch(() => {});
             }
 
-            // Step 4: Upload other/hazard evidence photos on the first worker iteration
+            // Upload other/hazard evidence photos on the first worker iteration
             if (i === 0 && reviewOtherPhotos && reviewOtherPhotos.length > 0) {
               for (let oIdx = 0; oIdx < reviewOtherPhotos.length; oIdx++) {
                 const otherP = reviewOtherPhotos[oIdx];
@@ -555,13 +559,19 @@ export function SubmissionReviewScreen() {
                 }
               }
             }
-
-            // Immediately broadcast new submission to Reviewer phones via Supabase realtime
-            broadcastNewSubmission(currentSubId);
           } catch (workerErr) {
-            console.error(`[PPEye] Error creating individual submission for worker ${worker.sequenceNo}:`, workerErr);
+            console.error(`[PPEye] Error uploading worker ${worker.sequenceNo}:`, workerErr);
           }
         }
+
+        // Immediately broadcast the single multi-worker submission to Reviewer phones via Supabase realtime
+        broadcastNewSubmission(currentSubId);
+        void broadcastNewSubmissionAlert({
+          submissionId: currentSubId,
+          siteName: finalSite,
+          workerCount: workerPhotos.length,
+          vendorName: user?.vendorName || 'ABC Telecom Ltd',
+        });
 
         // Final broadcast trigger when all worker uploads have settled
         broadcastNewSubmission();
@@ -570,8 +580,11 @@ export function SubmissionReviewScreen() {
       }
     })();
 
-    // Immediately navigate to history pending page
-    router.replace('/history?filter=pending' as Href);
+    // Clear pending submission context and return cleanly to camera
+    clearPendingSubmissionReviewCaptures();
+
+    // Navigate back to the camera screen
+    router.replace('/continuous-ppe-capture' as Href);
   }
 
   function updateActiveWorker(offsetX: number) {
@@ -1109,7 +1122,7 @@ const colors = {
   borderStrong: '#c0c7d5',
   danger: '#DC2626',
   photoStage: '#101214',
-  primary: '#005cad',
+  primary: '#0082F0',
   safe: '#16A34A',
   siteSurface: '#E6F3FE',
   surface: '#fcf9f8',
@@ -1174,7 +1187,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 12,
     padding: 16,
-    shadowColor: '#005cad',
+    shadowColor: '#0082F0',
     shadowOffset: { height: 8, width: 0 },
     shadowOpacity: 0.08,
     shadowRadius: 18,
@@ -1195,7 +1208,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     padding: 14,
-    shadowColor: '#005cad',
+    shadowColor: '#0082F0',
     shadowOffset: { height: 8, width: 0 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -1406,7 +1419,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     padding: 14,
-    shadowColor: '#005cad',
+    shadowColor: '#0082F0',
     shadowOffset: { height: 4, width: 0 },
     shadowOpacity: 0.06,
     shadowRadius: 14,
@@ -1580,7 +1593,7 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: 'center',
     marginTop: 12,
-    shadowColor: '#005cad',
+    shadowColor: '#0082F0',
     shadowOffset: { height: 2, width: 0 },
     shadowOpacity: 0.04,
     shadowRadius: 8,

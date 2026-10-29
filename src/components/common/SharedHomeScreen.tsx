@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Image, ImageSource } from 'expo-image';
 import { useFocusEffect, useSegments } from 'expo-router';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -9,13 +9,25 @@ import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from '@/hooks/useNavigate';
-import { formatWorkerCheckTime, formatWorkerCheckTitle, useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
+import { authStore } from '@/stores/auth.store';
+import { getProfilePictureUri } from '@/services/storage';
+import {
+  formatWorkerCheckTime,
+  formatWorkerCheckTitle,
+  useWorkerChecks,
+  WorkerCheck,
+} from '@/features/submissions/services/workerChecks.service';
 import { formatReviewTime, ReviewItem, useReviews } from '@/features/reviews/services/reviews.service';
 import { InProgressLimitModal } from '@/features/reviews/components/InProgressLimitModal';
 import {
   clearPendingSubmissionReviewCaptures,
+  setPendingResubmissionContext,
+  setPendingSubmissionReviewSite,
   setPendingSubmissionReviewTarget,
 } from '@/features/submissions/services/pendingSubmissionReview.service';
+import { SubmissionDetailsBottomSheet } from '@/features/submissions/components/SubmissionDetailsBottomSheet';
+import { NotificationBell } from '@/components/common/NotificationBell';
+import { RealtimeNotificationBanner } from '@/components/common/RealtimeNotificationBanner';
 import { DummyUserRole } from '@/utils/dummy-users';
 import { UserRole } from '@/features/auth/types';
 
@@ -31,50 +43,7 @@ export type SharedHomeScreenProps = {
   role?: SharedHomeScreenRole;
 };
 
-type RecentReview = {
-  avatar?: string;
-  initials?: string;
-  location: string;
-  photos: number;
-  status: 'waiting' | 'reviewed';
-  teamLeadKey: 'rahimLead' | 'karimLead' | 'shakibLead';
-  timeKey: 'time1042' | 'time1018' | 'yesterday';
-  vendor: string;
-  workers: number;
-};
 
-const recentReviews: RecentReview[] = [
-  {
-    avatar: 'RM',
-    location: 'Gazipur-ER-102',
-    photos: 8,
-    status: 'waiting',
-    teamLeadKey: 'rahimLead',
-    timeKey: 'time1042',
-    vendor: 'ABC Telecom',
-    workers: 4,
-  },
-  {
-    initials: 'K',
-    location: 'Dhaka-ER-231',
-    photos: 6,
-    status: 'reviewed',
-    teamLeadKey: 'karimLead',
-    timeKey: 'time1018',
-    vendor: 'XYZ Networks',
-    workers: 3,
-  },
-  {
-    initials: 'S',
-    location: 'Narayanganj-ER-087',
-    photos: 10,
-    status: 'reviewed',
-    teamLeadKey: 'shakibLead',
-    timeKey: 'yesterday',
-    vendor: 'ABC Telecom',
-    workers: 5,
-  },
-];
 
 
 function getBdtTimeOfDayKey(): 'morning' | 'afternoon' | 'evening' {
@@ -102,6 +71,51 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   const { pendingReviews, recentPendingReviews, inProgressCount, syncReviewsFromSupabase } = useReviews();
   const [isRefreshingReviewer, setIsRefreshingReviewer] = useState(false);
   const [isInProgressLimitModalVisible, setIsInProgressLimitModalVisible] = useState(false);
+  const [, setHomeFocusTick] = useState(0);
+
+  const activeUser = user || authStore.user;
+
+  useEffect(() => {
+    if (!activeUser?.profilePictureUrl && activeUser?.id) {
+      const dbUid = typeof activeUser.id === 'number' ? activeUser.id : Number(activeUser.id) || null;
+      if (dbUid) {
+        getProfilePictureUri(dbUid)
+          .then((cachedUri) => {
+            if (cachedUri) {
+              authStore.setProfilePictureUrl(cachedUri);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [activeUser]);
+
+  const [selectedVendorCheck, setSelectedVendorCheck] = useState<WorkerCheck | null>(null);
+  const [isVendorDetailsModalVisible, setIsVendorDetailsModalVisible] = useState(false);
+
+  const handleVendorFixAndResubmit = useCallback((item: WorkerCheck) => {
+    setIsVendorDetailsModalVisible(false);
+    setSelectedVendorCheck(null);
+    const unsafeWorkers =
+      item.workerReviews?.filter((w) => w.status === 'unsafe') || [];
+
+    setPendingResubmissionContext({
+      submissionId: item.submissionId,
+      unsafeWorkers: unsafeWorkers.map((w) => ({
+        workerInstanceId: w.workerInstanceId!,
+        sequenceNo: w.sequenceNo,
+      })),
+      sequenceNo: unsafeWorkers[0]?.sequenceNo || 1,
+      workerInstanceId: unsafeWorkers[0]?.workerInstanceId,
+    });
+
+    setPendingSubmissionReviewTarget({
+      workerNumber: unsafeWorkers[0]?.sequenceNo || 1,
+      side: 'FRONT',
+    });
+    setPendingSubmissionReviewSite(item.siteName || '');
+    navigate('/continuous-ppe-capture' as any);
+  }, [navigate]);
 
   const handleReviewItemPress = useCallback((item: ReviewItem) => {
     if (inProgressCount >= 3 && !item.isDraft) {
@@ -113,6 +127,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
 
   useFocusEffect(
     useCallback(() => {
+      setHomeFocusTick((prev) => prev + 1);
       syncReviewsFromSupabase();
     }, [syncReviewsFromSupabase])
   );
@@ -129,12 +144,12 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   // Determine whether to show Vendor or Reviewer UI
   const resolvedRole =
     propRole ||
-    (user?.role
-      ? user.role === 'external'
+    (activeUser?.role
+      ? activeUser.role === 'external'
         ? 'vendor'
-        : user.role === 'internal'
+        : activeUser.role === 'internal'
           ? 'reviewer'
-          : user.role
+          : activeUser.role
       : undefined) ||
     ((segments as string[]).includes('(external)')
       ? 'vendor'
@@ -143,15 +158,18 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
         : 'vendor');
 
   const isVendor = resolvedRole === 'vendor' || resolvedRole === 'external';
+  const rawName = activeUser?.name?.trim();
+  const userFirstName = rawName ? rawName.split(/\s+/)[0] : (isVendor ? 'Vendor' : 'Reviewer');
 
   if (isVendor) {
     return (
       <SafeAreaView style={vendorStyles.safeArea}>
+        <RealtimeNotificationBanner role="vendor" />
         <View style={vendorStyles.shell}>
           <View style={vendorStyles.header}>
             <View style={vendorStyles.headerCopy}>
               <Text style={vendorStyles.greeting}>
-                {t('external.greeting', { timeGreeting, name: 'Rahim' })}
+                {t('external.greeting', { timeGreeting, name: userFirstName })}
               </Text>
               <View style={vendorStyles.companyRow}>
                 <Icon
@@ -164,14 +182,29 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                 </Text>
               </View>
             </View>
-            <Pressable
-              accessibilityLabel="Profile"
-              accessibilityRole="button"
-              onPress={() => navigate('/profile')}
-              {...({ onClick: () => navigate('/profile') } as any)}
-              style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}>
-              <Image source={assets.fieldRahimAvatar} style={vendorStyles.avatar} />
-            </Pressable>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <NotificationBell role="vendor" />
+              <Pressable
+                accessibilityLabel="Profile"
+                accessibilityRole="button"
+                onPress={() => navigate('/profile')}
+                {...({ onClick: () => navigate('/profile') } as any)}
+                style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}>
+                {activeUser?.profilePictureUrl ? (
+                  <Image
+                    contentFit="cover"
+                    source={{ uri: activeUser.profilePictureUrl }}
+                    style={vendorStyles.avatar}
+                  />
+                ) : (
+                  <View style={[vendorStyles.avatar, vendorStyles.placeholderAvatar]}>
+                    <Text style={vendorStyles.placeholderInitial}>
+                      {(userFirstName || 'V').charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
           </View>
 
           <ScrollView
@@ -237,107 +270,138 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
               </View>
 
               <View style={vendorStyles.feed}>
-                {vendorRecentChecks
-                  .slice()
-                  .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-                  .map((item, index) => {
-                  const isSafe = item.status === 'safe';
-                  const statusLabel = t(`external.statuses.${item.status}`);
+                {vendorRecentChecks.length === 0 ? (
+                  <View style={vendorStyles.emptyFeed}>
+                    <Icon
+                      color={vendorColors.outlineVariant}
+                      name={{ ios: 'tray', android: 'inbox', web: 'inbox' }}
+                      size={36}
+                    />
+                    <Text style={vendorStyles.emptyFeedText}>
+                      {t('external.history.noRecords', { defaultValue: 'No recent checks found' })}
+                    </Text>
+                  </View>
+                ) : (
+                  vendorRecentChecks
+                    .slice()
+                    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+                    .map((item, index) => {
+                      const isSafe = item.status === 'safe';
+                      const statusLabel = t(`external.statuses.${item.status}`);
 
-                  return (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityState={{ disabled: isSafe }}
-                      disabled={isSafe}
-                      key={item.id}
-                      onPress={item.status === 'unsafe' ? () => navigate(`/submission-details?id=${item.id}` as any) : undefined}
-                      style={({ pressed }) => [
-                        vendorStyles.feedRow,
-                        index < vendorRecentChecks.length - 1 && vendorStyles.feedDivider,
-                        pressed && !isSafe && vendorStyles.pressed,
-                      ]}>
-                      {item.image ? (
-                        <Image source={item.image} style={vendorStyles.thumbnail} />
-                      ) : (
-                        <View style={vendorStyles.pendingThumbnail}>
-                          <Icon
-                            color={vendorColors.outlineVariant}
-                            name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
-                            size={24}
-                          />
-                        </View>
-                      )}
-
-                      <View style={vendorStyles.feedCopy}>
-                        <View style={vendorStyles.feedTitleRow}>
-                          <Text numberOfLines={1} style={vendorStyles.workerName}>
-                            {formatWorkerCheckTitle(item, t, i18n.language)}
-                          </Text>
-                          <Text style={vendorStyles.time}>
-                            {formatWorkerCheckTime(item, t)}
-                          </Text>
-                        </View>
-                        <View
-                          style={[
-                            vendorStyles.statusChip,
-                            item.status === 'safe' && vendorStyles.safeChip,
-                            item.status === 'unsafe' && vendorStyles.unsafeChip,
-                            item.status === 'review' && vendorStyles.reviewChip,
-                          ]}>
-                          {item.status === 'safe' ? (
-                            <Icon
-                              color={vendorColors.successGreen}
-                              name={{
-                                ios: 'checkmark.circle.fill',
-                                android: 'check_circle',
-                                web: 'check_circle',
-                              }}
-                              size={12}
-                            />
-                          ) : item.status === 'unsafe' ? (
-                            <Icon
-                              color={vendorColors.error}
-                              name={{
-                                ios: 'exclamationmark.triangle.fill',
-                                android: 'warning',
-                                web: 'warning',
-                              }}
-                              size={12}
-                            />
-                          ) : (
-                            <Icon
-                              color={vendorColors.tertiaryContainer}
-                              name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
-                              size={12}
-                            />
-                          )}
-                          <Text
-                            style={[
-                              vendorStyles.statusText,
-                              item.status === 'safe' && vendorStyles.safeText,
-                              item.status === 'unsafe' && vendorStyles.unsafeText,
-                              item.status === 'review' && vendorStyles.reviewText,
-                            ]}>
-                            {statusLabel}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {!isSafe ? (
-                        <Icon
-                          color={vendorColors.outline}
-                          name={{
-                            ios: 'chevron.right',
-                            android: 'chevron_right',
-                            web: 'chevron_right',
+                      return (
+                        <Pressable
+                          accessibilityRole="button"
+                          key={item.id}
+                          onPress={() => {
+                            setSelectedVendorCheck(item);
+                            setIsVendorDetailsModalVisible(true);
                           }}
-                          size={22}
-                          style={vendorStyles.chevron}
-                        />
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
+                          style={({ pressed }) => [
+                            vendorStyles.feedRow,
+                            index < vendorRecentChecks.length - 1 && vendorStyles.feedDivider,
+                            pressed && vendorStyles.pressed,
+                          ]}>
+                          {item.image ? (
+                            <Image cachePolicy="memory-disk" source={item.image} style={vendorStyles.thumbnail} />
+                          ) : (
+                            <View style={vendorStyles.pendingThumbnail}>
+                              <Icon
+                                color={vendorColors.outlineVariant}
+                                name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+                                size={24}
+                              />
+                            </View>
+                          )}
+
+                          <View style={vendorStyles.feedCopy}>
+                            <View style={vendorStyles.feedTitleRow}>
+                              <Text numberOfLines={1} style={vendorStyles.workerName}>
+                                {formatWorkerCheckTitle(item, t, i18n.language)}
+                              </Text>
+                              <Text style={vendorStyles.time}>
+                                {formatWorkerCheckTime(item, t)}
+                              </Text>
+                            </View>
+
+                            {/* Workers count summary text - matches Reviewer side */}
+                            {item.workerReviews && item.workerReviews.length > 0 && (
+                              <Text style={vendorStyles.workerSummaryText}>
+                                {item.status === 'unsafe'
+                                  ? `${item.workerReviews.filter((w) => w.status === 'unsafe').length} of ${item.workerCount || item.workerReviews.length} workers unsafe`
+                                  : item.status === 'safe'
+                                  ? `${item.workerReviews.filter((w) => w.status === 'safe').length} of ${item.workerCount || item.workerReviews.length} workers safe`
+                                  : `${item.workerCount || item.workerReviews.length} workers pending review`}
+                              </Text>
+                            )}
+
+                            <View style={vendorStyles.metaRow}>
+                              <View
+                                style={[
+                                  vendorStyles.statusChip,
+                                  item.status === 'safe' && vendorStyles.safeChip,
+                                  item.status === 'unsafe' && vendorStyles.unsafeChip,
+                                  item.status === 'review' && vendorStyles.reviewChip,
+                                ]}>
+                                {item.status === 'safe' ? (
+                                  <Icon
+                                    color={vendorColors.successGreen}
+                                    name={{
+                                      ios: 'checkmark.circle.fill',
+                                      android: 'check_circle',
+                                      web: 'check_circle',
+                                    }}
+                                    size={12}
+                                  />
+                                ) : item.status === 'unsafe' ? (
+                                  <Icon
+                                    color={vendorColors.error}
+                                    name={{
+                                      ios: 'exclamationmark.triangle.fill',
+                                      android: 'warning',
+                                      web: 'warning',
+                                    }}
+                                    size={12}
+                                  />
+                                ) : (
+                                  <Icon
+                                    color={vendorColors.pendingYellow}
+                                    name={{ ios: 'clock.fill', android: 'schedule', web: 'schedule' }}
+                                    size={12}
+                                  />
+                                )}
+                                <Text
+                                  style={[
+                                    vendorStyles.statusText,
+                                    item.status === 'safe' && vendorStyles.safeText,
+                                    item.status === 'unsafe' && vendorStyles.unsafeText,
+                                    item.status === 'review' && vendorStyles.reviewText,
+                                  ]}>
+                                  {item.workerReviews && item.workerReviews.length > 1
+                                    ? item.status === 'unsafe'
+                                      ? `${item.workerReviews.filter((w) => w.status === 'unsafe').length} Unsafe`
+                                      : item.status === 'safe'
+                                      ? `${item.workerReviews.filter((w) => w.status === 'safe').length} Safe`
+                                      : statusLabel
+                                    : statusLabel}
+                                </Text>
+                              </View>
+
+                              {isSafe ? (
+                                <Text style={vendorStyles.badgeHint}>
+                                  {t('external.history.approvedByEhs')}
+                                </Text>
+                              ) : null}
+                            </View>
+                          </View>
+
+                          <View style={vendorStyles.viewDetailsContainer}>
+                            <Text style={vendorStyles.viewDetailsText}>Tap to view details</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })
+                )}
               </View>
             </View>
           </ScrollView>
@@ -384,6 +448,16 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             </Pressable>
           </View>
         </View>
+
+        <SubmissionDetailsBottomSheet
+          visible={isVendorDetailsModalVisible}
+          item={selectedVendorCheck}
+          onClose={() => {
+            setIsVendorDetailsModalVisible(false);
+            setSelectedVendorCheck(null);
+          }}
+          onFixAndResubmit={handleVendorFixAndResubmit}
+        />
       </SafeAreaView>
     );
   }
@@ -391,22 +465,38 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   // Reviewer UI
   return (
     <SafeAreaView style={reviewerStyles.safeArea}>
+      <RealtimeNotificationBanner role="reviewer" />
       <View style={reviewerStyles.shell}>
         <View style={reviewerStyles.header}>
           <View style={{ flex: 1, paddingRight: 12 }}>
             <Text numberOfLines={1} style={reviewerStyles.greeting}>
-              {t('internal.greeting', { timeGreeting, name: 'Mahmud' })}
+              {t('internal.greeting', { timeGreeting, name: userFirstName })}
             </Text>
-            <Text style={reviewerStyles.role}>{t('internal.role')}</Text>
+            <Text style={reviewerStyles.role}>{activeUser?.designation || t('internal.role')}</Text>
           </View>
-          <Pressable
-            accessibilityLabel="Profile"
-            accessibilityRole="button"
-            onPress={() => navigate('/profile')}
-            {...({ onClick: () => navigate('/profile') } as any)}
-            style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}>
-            <Image source={assets.ehsProfile} style={reviewerStyles.profileImage} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <NotificationBell role="reviewer" />
+            <Pressable
+              accessibilityLabel="Profile"
+              accessibilityRole="button"
+              onPress={() => navigate('/profile')}
+              {...({ onClick: () => navigate('/profile') } as any)}
+              style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}>
+              {activeUser?.profilePictureUrl ? (
+                <Image
+                  contentFit="cover"
+                  source={{ uri: activeUser.profilePictureUrl }}
+                  style={reviewerStyles.profileImage}
+                />
+              ) : (
+                <View style={[reviewerStyles.profileImage, reviewerStyles.placeholderAvatar]}>
+                  <Text style={reviewerStyles.placeholderInitial}>
+                    {(userFirstName || 'R').charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          </View>
         </View>
 
         <ScrollView
@@ -483,7 +573,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                         {item.isDraft && (
                           <View style={reviewerStyles.draftBadge}>
                             <Icon
-                              color="#005cad"
+                              color={reviewerColors.warningOrange}
                               name={{ ios: 'pencil', android: 'edit', web: 'edit' }}
                               size={10}
                             />
@@ -518,7 +608,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                   {item.isDraft ? (
                     <View style={[reviewerStyles.statusChip, reviewerStyles.inProgressChip]}>
                       <Icon
-                        color="#005cad"
+                        color={reviewerColors.warningOrange}
                         name={{ ios: 'clock.arrow.circlepath', android: 'pending', web: 'pending' }}
                         size={14}
                       />
@@ -531,8 +621,8 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                   ) : (
                     <View style={[reviewerStyles.statusChip, reviewerStyles.waitingChip]}>
                       <Icon
-                        color={reviewerColors.warningOrange}
-                        name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+                        color={reviewerColors.pendingYellow}
+                        name={{ ios: 'clock.fill', android: 'schedule', web: 'schedule' }}
                         size={14}
                       />
                       <Text style={[reviewerStyles.statusText, reviewerStyles.waitingText]}>
@@ -612,20 +702,27 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
 const vendorColors = {
   background: '#f9f9ff',
   borderSubtle: '#E4E7EC',
-  chipGreen: 'rgba(22, 163, 74, 0.1)',
-  chipRed: 'rgba(186, 26, 26, 0.1)',
-  chipReview: 'rgba(190, 86, 0, 0.1)',
+  chipGreen: 'rgba(22, 163, 74, 0.12)',
+  chipRed: 'rgba(186, 26, 26, 0.12)',
+  chipYellow: 'rgba(234, 179, 8, 0.15)',
+  chipOrange: 'rgba(234, 88, 12, 0.15)',
+  chipReview: 'rgba(234, 179, 8, 0.15)',
   error: '#ba1a1a',
-  outline: '#717785',
+  outline: '#74777F',
   outlineVariant: '#c0c7d5',
-  primary: '#005cad',
+  primary: '#0082F0',
   safetyBlue: '#0082F0',
+  secondary: '#005DB6',
+  tertiary: '#D36001',
+  neutral: '#74777F',
   secondaryContainer: '#63a1ff',
   successGreen: '#16A34A',
+  pendingYellow: '#CA8A04',
+  inProgressOrange: '#EA580C',
   surface: '#f9f9ff',
   surfaceContainer: '#ebedf7',
   surfaceContainerLow: '#f1f3fd',
-  tertiaryContainer: '#be5600',
+  tertiaryContainer: '#CA8A04',
   text: '#181c22',
   textMuted: '#404753',
   white: '#ffffff',
@@ -685,6 +782,16 @@ const vendorStyles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 3,
     width: 48,
+  },
+  placeholderAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#dbeafe',
+    justifyContent: 'center',
+  },
+  placeholderInitial: {
+    color: vendorColors.safetyBlue,
+    fontSize: 18,
+    fontWeight: '700',
   },
   scroll: {
     flex: 1,
@@ -876,7 +983,7 @@ const vendorStyles = StyleSheet.create({
     backgroundColor: vendorColors.chipRed,
   },
   reviewChip: {
-    backgroundColor: vendorColors.chipReview,
+    backgroundColor: vendorColors.chipYellow,
   },
   statusText: {
     fontSize: 11,
@@ -890,7 +997,44 @@ const vendorStyles = StyleSheet.create({
     color: vendorColors.error,
   },
   reviewText: {
-    color: vendorColors.tertiaryContainer,
+    color: vendorColors.pendingYellow,
+  },
+  metaRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  badgeHint: {
+    color: vendorColors.textMuted,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  emptyFeed: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    gap: 8,
+  },
+  emptyFeedText: {
+    color: vendorColors.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  workerSummaryText: {
+    color: vendorColors.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: -2,
+  },
+  viewDetailsContainer: {
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingLeft: 4,
+  },
+  viewDetailsText: {
+    color: vendorColors.primary,
+    fontSize: 11,
+    fontWeight: '600',
   },
   chevron: {
     height: 22,
@@ -961,19 +1105,25 @@ const vendorStyles = StyleSheet.create({
 
 const reviewerColors = {
   background: '#F7F8FA',
-  chipGreen: 'rgba(22, 163, 74, 0.1)',
-  chipOrange: 'rgba(152, 67, 0, 0.1)',
+  chipGreen: 'rgba(22, 163, 74, 0.12)',
+  chipOrange: 'rgba(234, 88, 12, 0.15)',
+  chipYellow: 'rgba(234, 179, 8, 0.15)',
+  chipRed: 'rgba(186, 26, 26, 0.12)',
   outlineVariant: '#c0c7d5',
-  primary: '#005cad',
+  primary: '#0082F0',
+  secondary: '#005DB6',
+  tertiary: '#D36001',
+  neutral: '#74777F',
   primaryFixed: '#d5e3ff',
   secondaryContainer: '#64a1fe',
   successGreen: '#16A34A',
+  warningOrange: '#EA580C',
+  pendingYellow: '#CA8A04',
   surface: '#f9f9ff',
   surfaceContainerHigh: '#e5e8f1',
   surfaceContainerLow: '#f1f3fd',
   text: '#181c22',
   textMuted: '#404753',
-  warningOrange: '#984300',
   white: '#ffffff',
 };
 
@@ -1015,6 +1165,16 @@ const reviewerStyles = StyleSheet.create({
     borderWidth: 2,
     height: 48,
     width: 48,
+  },
+  placeholderAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#dbeafe',
+    justifyContent: 'center',
+  },
+  placeholderInitial: {
+    color: '#005cad',
+    fontSize: 18,
+    fontWeight: '700',
   },
   scroll: {
     flex: 1,
@@ -1059,7 +1219,7 @@ const reviewerStyles = StyleSheet.create({
     marginBottom: 24,
   },
   waitingDot: {
-    backgroundColor: '#ffdad6',
+    backgroundColor: '#EAB308',
     borderRadius: 4,
     height: 8,
     width: 8,
@@ -1196,14 +1356,16 @@ const reviewerStyles = StyleSheet.create({
     paddingVertical: 4,
   },
   waitingChip: {
-    backgroundColor: reviewerColors.chipOrange,
+    backgroundColor: reviewerColors.chipYellow,
+    borderColor: 'rgba(234, 179, 8, 0.3)',
+    borderWidth: 1,
   },
   reviewedChip: {
     backgroundColor: reviewerColors.chipGreen,
   },
   inProgressChip: {
-    backgroundColor: '#eff6ff',
-    borderColor: 'rgba(0, 92, 173, 0.25)',
+    backgroundColor: reviewerColors.chipOrange,
+    borderColor: 'rgba(234, 88, 12, 0.3)',
     borderWidth: 1,
   },
   statusText: {
@@ -1212,28 +1374,29 @@ const reviewerStyles = StyleSheet.create({
     lineHeight: 14,
   },
   waitingText: {
-    color: reviewerColors.warningOrange,
+    color: reviewerColors.pendingYellow,
+    fontWeight: '600',
   },
   reviewedText: {
     color: reviewerColors.successGreen,
   },
   inProgressText: {
-    color: '#005cad',
+    color: reviewerColors.warningOrange,
     fontWeight: '600',
   },
   draftBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#eff6ff',
-    borderColor: 'rgba(0, 92, 173, 0.25)',
+    backgroundColor: reviewerColors.chipOrange,
+    borderColor: 'rgba(234, 88, 12, 0.3)',
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
   draftBadgeText: {
-    color: '#005cad',
+    color: reviewerColors.warningOrange,
     fontSize: 10,
     fontWeight: '700',
   },

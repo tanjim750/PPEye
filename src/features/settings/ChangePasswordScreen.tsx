@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -13,6 +14,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui/Icon';
+import { updatePassword } from '@/services/supabase/auth';
+import { updateUserCredential } from '@/services/auth/credentialSync.service';
+import { authStore } from '@/stores/auth.store';
 
 export function ChangePasswordScreen() {
   const router = useRouter();
@@ -21,31 +25,63 @@ export function ChangePasswordScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isNewVisible, setIsNewVisible] = useState(false);
   const [isConfirmVisible, setIsConfirmVisible] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  function handleUpdatePassword() {
-    if (!newPassword.trim()) {
+  async function handleUpdatePassword() {
+    if (isSubmitting) return;
+
+    const trimmedNew = newPassword.trim();
+    const trimmedConfirm = confirmPassword.trim();
+
+    if (!trimmedNew) {
       Alert.alert(t('changePasswordScreen.errorTitle'), t('changePasswordScreen.errorEmpty'));
       return;
     }
 
-    if (newPassword !== confirmPassword) {
+    if (trimmedNew.length < 6) {
+      Alert.alert(t('changePasswordScreen.errorTitle'), 'Password must be at least 6 characters.');
+      return;
+    }
+
+    if (trimmedNew !== trimmedConfirm) {
       Alert.alert(t('changePasswordScreen.errorTitle'), t('changePasswordScreen.errorMismatch'));
       return;
     }
 
-    console.log('Password updated successfully:', {
-      newPassword,
-      confirmPassword,
-    });
+    setIsSubmitting(true);
+    try {
+      if (authStore.user?.email) {
+        await updateUserCredential(authStore.user.email, trimmedNew);
+      }
 
-    setSuccessMessage(t('changePasswordScreen.successMessage'));
-    setNewPassword('');
-    setConfirmPassword('');
+      try {
+        await updatePassword(trimmedNew);
+      } catch (e) {
+        console.warn('[ChangePasswordScreen] Supabase auth update warning:', e);
+      }
 
-    Alert.alert(t('changePasswordScreen.successTitle'), t('changePasswordScreen.successAlert'), [
-      { text: t('changePasswordScreen.okButton'), onPress: () => router.back() },
-    ]);
+      setSuccessMessage(t('changePasswordScreen.successMessage'));
+      setNewPassword('');
+      setConfirmPassword('');
+
+      if (typeof window !== 'undefined' && window.alert) {
+        window.alert(t('changePasswordScreen.successAlert'));
+        router.back();
+      } else {
+        Alert.alert(t('changePasswordScreen.successTitle'), t('changePasswordScreen.successAlert'), [
+          { text: t('changePasswordScreen.okButton'), onPress: () => router.back() },
+        ]);
+      }
+    } catch (err: any) {
+      console.error('[ChangePasswordScreen] Failed to update password:', err);
+      Alert.alert(
+        t('changePasswordScreen.errorTitle'),
+        err?.message || 'Failed to update password. Please check your connection or re-login.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -158,9 +194,18 @@ export function ChangePasswordScreen() {
           <View style={styles.actionContainer}>
             <Pressable
               accessibilityRole="button"
+              disabled={isSubmitting}
               onPress={handleUpdatePassword}
-              style={({ pressed }) => [styles.updateButton, pressed && styles.pressedScale]}>
-              <Text style={styles.updateButtonText}>{t('changePasswordScreen.updateButton')}</Text>
+              style={({ pressed }) => [
+                styles.updateButton,
+                pressed && !isSubmitting && styles.pressedScale,
+                isSubmitting && styles.disabledButton,
+              ]}>
+              {isSubmitting ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : (
+                <Text style={styles.updateButtonText}>{t('changePasswordScreen.updateButton')}</Text>
+              )}
             </Pressable>
           </View>
         </ScrollView>
@@ -293,6 +338,9 @@ const styles = StyleSheet.create({
     height: 50,
     justifyContent: 'center',
     width: '100%',
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
   updateButtonText: {
     color: colors.white,

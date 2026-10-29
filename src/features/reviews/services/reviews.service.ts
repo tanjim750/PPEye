@@ -7,6 +7,7 @@ import { createRefCountedSubscription } from "@/services/realtime/refCountedSubs
 import { computeReviewsSignature } from "./reviewSignature";
 import { persistCompletedSubmissionReview, persistReviewerDraft } from "./reviewPersistence";
 import { isDemoMode } from "@/constants/devMode";
+import { broadcastReviewVerdictAlert } from "@/services/notifications/notification.service";
 
 export type WorkerReviewVerdict = {
   sequenceNo: number;
@@ -81,234 +82,7 @@ const minute = 60 * 1000;
 const hour = 60 * minute;
 const day = 24 * hour;
 
-// Initial state: Pending reviews (status === 'waiting'), Safe (status === 'reviewed'), and Unsafe (status === 'unsafe')
-const demoReviews = [
-  // 1. Pending for review (waiting)
-  {
-    isDemo: true,
-    avatar: 'RM',
-    id: 'rev-01',
-    location: 'Gazipur-ER-102',
-    photos: 8,
-    status: 'waiting',
-    teamLead: 'Rahim Mia · Team Leader',
-    teamLeadKey: 'rahimLead',
-    timeDisplay: '10:42 AM',
-    timeKey: 'time1042',
-    timestamp: now - 15 * minute,
-    vendor: 'ABC Telecom',
-    workers: 4,
-  },
-  {
-    isDemo: true,
-    id: 'rev-02',
-    initials: 'T',
-    location: 'Mirpur-DH-044',
-    photos: 6,
-    status: 'waiting',
-    teamLead: 'Tariq Islam · Team Leader',
-    timeDisplay: '10:30 AM',
-    timestamp: now - 27 * minute,
-    vendor: 'Apex Power',
-    workers: 3,
-  },
-  {
-    isDemo: true,
-    id: 'rev-03',
-    initials: 'K',
-    location: 'Uttara-DH-109',
-    photos: 10,
-    status: 'waiting',
-    teamLead: 'Kamal Hossain · Team Leader',
-    timeDisplay: '10:05 AM',
-    timestamp: now - 52 * minute,
-    vendor: 'Delta Comms',
-    workers: 5,
-  },
-  {
-    isDemo: true,
-    avatar: 'TA',
-    id: 'rev-04',
-    location: 'Mohakhali-ER-312',
-    photos: 6,
-    status: 'waiting',
-    teamLead: 'Tanvir Ahmed · Team Leader',
-    timeDisplay: '09:45 AM',
-    timestamp: now - 72 * minute,
-    vendor: 'Sigma Tech',
-    workers: 3,
-  },
-  {
-    isDemo: true,
-    id: 'rev-05',
-    initials: 'F',
-    location: 'Banani-DH-088',
-    photos: 8,
-    status: 'waiting',
-    teamLead: 'Farhan Kabir · Team Leader',
-    timeDisplay: '09:20 AM',
-    timestamp: now - 97 * minute,
-    vendor: 'Smart Infra',
-    workers: 4,
-  },
-  {
-    isDemo: true,
-    id: 'rev-06',
-    initials: 'J',
-    location: 'Tongi-GZ-204',
-    photos: 4,
-    status: 'waiting',
-    teamLead: 'Jalal Uddin · Team Leader',
-    timeDisplay: '08:50 AM',
-    timestamp: now - 127 * minute,
-    vendor: 'SpeedNet Ltd',
-    workers: 2,
-  },
-  {
-    isDemo: true,
-    id: 'rev-07',
-    initials: 'N',
-    location: 'Dhanmondi-DH-015',
-    photos: 12,
-    status: 'waiting',
-    teamLead: 'Nazmul Haque · Team Leader',
-    timeDisplay: 'Yesterday',
-    timeKey: 'yesterday',
-    timestamp: now - 1 * day - 2 * hour,
-    vendor: 'Echo Telecom',
-    workers: 6,
-  },
-
-  // 2. Safe / Completed reviews (reviewed)
-  {
-    isDemo: true,
-    id: 'rev-08',
-    initials: 'K',
-    location: 'Dhaka-ER-231',
-    photos: 6,
-    status: 'reviewed',
-    teamLead: 'Karim Hasan · Team Leader',
-    teamLeadKey: 'karimLead',
-    timeDisplay: '10:18 AM',
-    timeKey: 'time1018',
-    timestamp: now - 39 * minute,
-    vendor: 'XYZ Networks',
-    workers: 3,
-  },
-  {
-    isDemo: true,
-    id: 'rev-09',
-    initials: 'S',
-    location: 'Narayanganj-ER-087',
-    photos: 10,
-    status: 'reviewed',
-    teamLead: 'Shakib Ahmed · Team Leader',
-    teamLeadKey: 'shakibLead',
-    timeDisplay: 'Yesterday',
-    timeKey: 'yesterday',
-    timestamp: now - 1 * day - 4 * hour,
-    vendor: 'ABC Telecom',
-    workers: 5,
-  },
-  {
-    isDemo: true,
-    avatar: 'MK',
-    id: 'rev-10',
-    location: 'Savar-DH-501',
-    photos: 8,
-    status: 'reviewed',
-    teamLead: 'Monir Khan · Team Leader',
-    timeDisplay: 'Yesterday',
-    timeKey: 'yesterday',
-    timestamp: now - 1 * day - 6 * hour,
-    vendor: 'Vertex Tower',
-    workers: 4,
-  },
-
-  // 3. Unsafe reviews (marked unsafe by reviewer with reasons)
-  {
-    isDemo: true,
-    avatar: 'TA',
-    id: 'rev-unsafe-01',
-    location: 'Banani-DH-088',
-    otherReasonText: 'Chinstrap of helmet was unbuckled during climb',
-    photos: 6,
-    status: 'unsafe',
-    teamLead: 'Tanvir Ahmed · Team Leader',
-    timeDisplay: '11:15 AM',
-    timestamp: now - 90 * minute,
-    unsafeReasons: ['helmet', 'lanyard', 'other'],
-    vendor: 'Sigma Tech',
-    workers: 3,
-    workerReviews: [
-      {
-        sequenceNo: 1,
-        workerName: 'Worker 1',
-        status: 'unsafe',
-        unsafeReasons: ['helmet', 'other'],
-        otherReasonText: 'Chinstrap of helmet was unbuckled during climb',
-      },
-      {
-        sequenceNo: 2,
-        workerName: 'Worker 2',
-        status: 'safe',
-      },
-      {
-        sequenceNo: 3,
-        workerName: 'Worker 3',
-        status: 'unsafe',
-        unsafeReasons: ['lanyard', 'anchorage'],
-        otherReasonText: 'Lanyard carabiner not locked to anchor point',
-      },
-    ],
-  },
-  {
-    isDemo: true,
-    id: 'rev-unsafe-02',
-    initials: 'J',
-    location: 'Mirpur-DH-044',
-    otherReasonText: 'Lanyard carabiner not locked to anchor point',
-    photos: 8,
-    status: 'unsafe',
-    teamLead: 'Jalal Uddin · Team Leader',
-    timeDisplay: 'Yesterday, 04:20 PM',
-    timestamp: now - 1 * day - 3 * hour,
-    unsafeReasons: ['harness', 'anchorage', 'other'],
-    vendor: 'SpeedNet Ltd',
-    workers: 4,
-    workerReviews: [
-      {
-        sequenceNo: 1,
-        workerName: 'Worker 1',
-        status: 'unsafe',
-        unsafeReasons: ['harness', 'other'],
-        otherReasonText: 'Harness leg straps loose',
-      },
-      {
-        sequenceNo: 2,
-        workerName: 'Worker 2',
-        status: 'unsafe',
-        unsafeReasons: ['anchorage'],
-        otherReasonText: 'Not anchored to certified point',
-      },
-      {
-        sequenceNo: 3,
-        workerName: 'Worker 3',
-        status: 'safe',
-      },
-      {
-        sequenceNo: 4,
-        workerName: 'Worker 4',
-        status: 'unsafe',
-        unsafeReasons: ['shoes'],
-        otherReasonText: 'Normal sneakers worn instead of safety shoes',
-      },
-    ],
-  },
-] satisfies ReviewItem[];
-
-
-let reviews: ReviewItem[] = isDemoMode ? [...demoReviews] : [];
+let reviews: ReviewItem[] = [];
 
 const listeners = new Set<() => void>();
 let appStateSubscription: { remove: () => void } | null = null;
@@ -489,16 +263,37 @@ let isSyncing = false;
 let hasPendingSync = false;
 let realtimeSubscribed = false;
 let lastReviewsSignature = "";
+let lastSyncTimestamp = 0;
+const REVIEWS_SYNC_COOLDOWN_MS = 6000; // 6-second cooldown for routine focus syncs
+let reviewsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let activeReviewsSyncPromise: Promise<void> | null = null;
 
-export async function syncReviewsFromSupabase() {
+export function debouncedSyncReviews() {
+  if (reviewsDebounceTimer) clearTimeout(reviewsDebounceTimer);
+  reviewsDebounceTimer = setTimeout(() => {
+    void syncReviewsWhileFocused();
+  }, 400);
+}
+
+export async function syncReviewsFromSupabase(options?: { force?: boolean }) {
   if (authStore.user && authStore.user.category !== "INTERNAL" && authStore.user.role !== "reviewer") return;
+
+  const now = Date.now();
+  // Throttle routine focus syncs unless explicitly forced (e.g. pull-to-refresh)
+  if (!options?.force && now - lastSyncTimestamp < REVIEWS_SYNC_COOLDOWN_MS) {
+    return activeReviewsSyncPromise || Promise.resolve();
+  }
+
   if (isSyncing) {
     hasPendingSync = true;
-    return;
+    return activeReviewsSyncPromise || Promise.resolve();
   }
   isSyncing = true;
-  try {
-    const { data, error } = await supabase
+  lastSyncTimestamp = now;
+
+  activeReviewsSyncPromise = (async () => {
+    try {
+      const { data, error } = await supabase
       .from("ppe_submissions")
       .select(
         `
@@ -643,10 +438,8 @@ export async function syncReviewsFromSupabase() {
       };
     });
 
-    // Merge Supabase submissions:
-    // Any existing reviews with a numeric ID are replaced by the fresh database items.
-    const demoItems = isDemoMode ? reviews.filter((item) => item.isDemo) : [];
-    const nextReviews = sortReviewsWithRealFirst([...mappedItems, ...demoItems]);
+    // Update with fresh Supabase submissions
+    const nextReviews = sortReviewsWithRealFirst(mappedItems);
     const nextSignature = computeReviewsSignature(nextReviews);
     if (nextSignature !== lastReviewsSignature) {
       lastReviewsSignature = nextSignature;
@@ -660,13 +453,17 @@ export async function syncReviewsFromSupabase() {
     );
   } finally {
     isSyncing = false;
+    activeReviewsSyncPromise = null;
     if (hasPendingSync) {
       hasPendingSync = false;
       setTimeout(() => {
-        syncReviewsFromSupabase();
-      }, 50);
+        void syncReviewsFromSupabase();
+      }, 100);
     }
   }
+  })();
+
+  return activeReviewsSyncPromise;
 }
 
 const LIVE_SYNC_CHANNEL_NAME = "ppe_live_sync";
@@ -674,42 +471,51 @@ let liveSyncChannel: ReturnType<typeof supabase.channel> | null = null;
 
 export function getLiveSyncChannel() {
   if (!liveSyncChannel) {
+    if (typeof supabase?.getChannels === 'function') {
+      const existing = supabase.getChannels().find(
+        (c) => c.topic === `realtime:${LIVE_SYNC_CHANNEL_NAME}`
+      );
+      if (existing) {
+        if ((existing as any).state === 'joined' || (existing as any).state === 'joining') {
+          liveSyncChannel = existing as any;
+          realtimeSubscribed = true;
+          return liveSyncChannel;
+        }
+        try {
+          void supabase.removeChannel(existing);
+        } catch {}
+      }
+    }
+
     liveSyncChannel = supabase.channel(LIVE_SYNC_CHANNEL_NAME, {
       config: {
         broadcast: { ack: true, self: true },
       },
     });
 
-    // Attach listeners BEFORE subscribing so incoming broadcasts and DB events are never missed
+    // Attach listeners BEFORE subscribing so incoming broadcasts and DB events are never missed.
+    // Realtime events are debounced so multiple table inserts coalesce into a single sync call!
     liveSyncChannel
       .on("broadcast", { event: "new_submission" }, (payload) => {
-        console.log(
-          "[reviews.service] Received live broadcast new_submission:",
-          payload,
-        );
-        syncReviewsWhileFocused();
+        debouncedSyncReviews();
       })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "ppe_submissions" },
-        (payload) => {
-          console.log(
-            "[reviews.service] Postgres change on ppe_submissions:",
-            payload,
-          );
-          syncReviewsWhileFocused();
+        () => {
+          debouncedSyncReviews();
         },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "ppe_images" },
         () => {
-          syncReviewsWhileFocused();
+          debouncedSyncReviews();
         },
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_reviews" }, () => { void syncReviewsWhileFocused(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_review_reasons" }, () => { void syncReviewsWhileFocused(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "submission_reviews" }, () => { void syncReviewsWhileFocused(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_reviews" }, () => { debouncedSyncReviews(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_review_reasons" }, () => { debouncedSyncReviews(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "submission_reviews" }, () => { debouncedSyncReviews(); })
       .subscribe((status) => {
         console.log("[reviews.service] Live sync channel status:", status);
         if (status === "SUBSCRIBED") void syncReviewsWhileFocused();
@@ -723,34 +529,47 @@ export function getLiveSyncChannel() {
 export async function broadcastNewSubmission(submissionId?: number | string) {
   try {
     const channel = getLiveSyncChannel();
+    if (!channel) return;
+    const payload = { submissionId, timestamp: Date.now() };
 
-    // 1. Send broadcast via WebSocket channel
-    try {
+    const canPush =
+      typeof (channel as any).canPush === "function"
+        ? (channel as any).canPush()
+        : Boolean((channel as any).channelAdapter?.canPush?.() ?? channel.state === "joined");
+
+    if (canPush) {
+      try {
+        await channel.send({
+          type: "broadcast",
+          event: "new_submission",
+          payload,
+        });
+      } catch (wsErr) {
+        if (typeof (channel as any).httpSend === "function") {
+          await (channel as any).httpSend("new_submission", payload).catch(() => {});
+        }
+      }
+    } else if (typeof (channel as any).httpSend === "function") {
+      // WebSocket is not connected or still connecting: use explicit httpSend to avoid deprecation warning
+      try {
+        await (channel as any).httpSend("new_submission", payload);
+      } catch (httpErr) {
+        // Fallback to channel.send if httpSend fails
+        await channel.send({
+          type: "broadcast",
+          event: "new_submission",
+          payload,
+        }).catch(() => {});
+      }
+    } else {
       await channel.send({
         type: "broadcast",
         event: "new_submission",
-        payload: { submissionId, timestamp: Date.now() },
-      });
-    } catch (wsErr) {
-      console.warn(
-        "[reviews.service] WebSocket send error, using REST fallback:",
-        wsErr,
-      );
+        payload,
+      }).catch(() => {});
     }
 
-    // 2. Also send via HTTP REST broadcast for 100% guaranteed delivery across mobile devices
-    if (typeof (channel as any).httpSend === "function") {
-      try {
-        await (channel as any).httpSend("new_submission", {
-          submissionId,
-          timestamp: Date.now(),
-        });
-      } catch (httpErr) {
-        console.warn("[reviews.service] httpSend error:", httpErr);
-      }
-    }
-
-    // 3. Immediate local sync on sending device
+    // Immediate local sync on sending device
     syncReviewsFromSupabase();
   } catch (err) {
     console.warn("[reviews.service] Error broadcasting new submission:", err);
@@ -1068,6 +887,14 @@ export async function completeSubmissionReview(
       : item);
     notify();
     await broadcastNewSubmission(numId);
+    void broadcastReviewVerdictAlert({
+      submissionId: numId,
+      siteName: reviews.find((r) => r.id === String(id))?.location || 'Site',
+      verdict: verdictStatus,
+      hasUnsafe,
+      workerCount: workerVerdicts.length,
+      notes: combinedNotes,
+    });
     return { success: true };
   } else if (String(id).startsWith("rev-")) {
     localDraftSubmissions.delete(String(id));
@@ -1093,6 +920,14 @@ export async function completeSubmissionReview(
         : item
     );
     notify();
+    void broadcastReviewVerdictAlert({
+      submissionId: id,
+      siteName: reviews.find((r) => r.id === String(id))?.location || 'Site',
+      verdict: verdictStatus,
+      hasUnsafe,
+      workerCount: workerVerdicts.length,
+      notes: combinedNotes,
+    });
     return { success: true };
   }
   return { success: false, error: "This submission is unavailable." };

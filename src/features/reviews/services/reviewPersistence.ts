@@ -175,7 +175,7 @@ export async function persistCompletedSubmissionReview(
           }
           return {
             unsafe_reason_id: reasonId,
-            note: code.toLowerCase() === 'other' ? verdict.otherReasonText?.trim() || null : null,
+            note: code.toLowerCase().includes('other') || (verdict.unsafeReasons?.length === 1 && Boolean(verdict.otherReasonText)) ? verdict.otherReasonText?.trim() || null : null,
           };
         })
         : [];

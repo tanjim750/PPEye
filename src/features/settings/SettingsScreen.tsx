@@ -1,6 +1,6 @@
 import { Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/hooks/useLanguage';
 import { logout } from '@/features/auth/services/auth.service';
 import { authStore } from '@/stores/auth.store';
+import { getProfilePictureUri } from '@/services/storage';
 import { storeLanguagePreference } from '@/services/onboarding/languagePreference';
 
 // Lucide-style Icon Components using the project's native symbol system
@@ -62,14 +63,30 @@ export function SettingsScreen() {
   const { user } = useAuth();
   const { language, setLanguage } = useLanguage();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [, setFocusTick] = useState(0);
 
-  const effectiveRole = params.role || user?.role;
+  const activeUser = user || authStore.user;
+  const effectiveRole = params.role || activeUser?.role;
   const isVendor = effectiveRole === 'vendor' || effectiveRole === 'external';
   const isReviewer = effectiveRole === 'reviewer' || effectiveRole === 'internal';
-  const fullName = user?.name || (isVendor ? 'Rahim Mia' : 'Mahmud Hasan');
-  const roleName = isVendor ? t('fieldOperations') : t('ehsRepresentative');
-  const email = user?.email || (isVendor ? 'rahim@example.com' : 'mahmud@example.com');
-  const avatar = isVendor ? assets.fieldRahimAvatar : assets.ehsProfile;
+  const fullName = activeUser?.name || 'User Profile';
+  const roleName = activeUser?.designation || (isVendor ? 'External Member' : 'Compliance Representative');
+  const email = activeUser?.email || '';
+
+  useEffect(() => {
+    if (!activeUser?.profilePictureUrl && activeUser?.id) {
+      const dbUid = typeof activeUser.id === 'number' ? activeUser.id : null;
+      if (dbUid) {
+        getProfilePictureUri(dbUid)
+          .then((cachedUri) => {
+            if (cachedUri) {
+              authStore.setProfilePictureUrl(cachedUri);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [activeUser]);
 
   const handleGoHome = useCallback(() => {
     const homeRoute = isReviewer ? '/(internal)' : '/(external)';
@@ -78,6 +95,7 @@ export function SettingsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setFocusTick((prev) => prev + 1);
       const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
         handleGoHome();
         return true;
@@ -138,7 +156,15 @@ export function SettingsScreen() {
             className="flex flex-row items-center px-5 py-6 gap-4 border-b border-[#c0c7d5] active:scale-[0.98]"
             onPress={() => router.push('/profile' as Href)}
             style={({ pressed }) => [styles.profileCard, pressed && styles.pressedScale]}>
-            <Image contentFit="cover" source={avatar} style={styles.avatar} />
+            {activeUser?.profilePictureUrl ? (
+              <Image contentFit="cover" source={{ uri: activeUser.profilePictureUrl }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.placeholderAvatar]}>
+                <Text style={styles.placeholderInitial}>
+                  {(fullName || 'U').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
             <View className="flex-1" style={styles.profileInfo}>
               <Text className="text-lg font-semibold text-[#181c22]" style={styles.profileName}>
                 {fullName}
@@ -456,6 +482,16 @@ const styles = StyleSheet.create({
     height: 72,
     width: 72,
   },
+  placeholderAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#dbeafe',
+    justifyContent: 'center',
+  },
+  placeholderInitial: {
+    color: '#005cad',
+    fontSize: 26,
+    fontWeight: '700',
+  },
   profileInfo: {
     flex: 1,
   },
@@ -585,6 +621,21 @@ const styles = StyleSheet.create({
   },
   pressedScale: {
     transform: [{ scale: 0.98 }],
+  },
+  unreadBadge: {
+    alignItems: 'center',
+    backgroundColor: '#DC2626',
+    borderRadius: 10,
+    justifyContent: 'center',
+    marginRight: 8,
+    minWidth: 20,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  unreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });
 

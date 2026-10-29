@@ -35,12 +35,13 @@ import {
   getVendorSubmissionDetails,
   VendorSubmissionDetail,
 } from '@/services/vendor/vendorSubmissions.service';
+import {
+  getCachedSignedUrl,
+  preloadSubmissionSignedUrls,
+  supabaseStorageService,
+} from '@/services/storage/supabase-storage.client';
 
-const workerTwoFront =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuDgQU9bHBVHLqpP5L7JengM95PotCLUMm0pYSa5LrM8Tak4Qv7ZN0RbNzGeW5mlq6MGCveBJQQDXEWtSxpzqpzEqzO73hM9VW3OgXi4AkyKod79xg_aPJ9wxOMTPTb6_qUd51H5P1DcSqqEAji7jg9I2Kg465f111W36y-82wOnClR_5LezGuCHcZ0pf1_OvuhGY7GpysiX6hZC7JVN63eZ_gNo4b6GLcrM8yI56LZdN8ToE9jQBAt0';
 
-const workerTwoBack =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuB-I5Gv4lteN5XsmAXE1_cDPtr_NEzL0F2CWVDwg-sZ1I-sHC0rbP0roxgmqczH7trvuE09iErv3qWPdaBHjcUMQoCkQorKdchMTpc_UUiogIYbMk6JgnOI5qH9IntEebdbZ_cummC-xp7OVKcew1zHrrSby1porfloCpEp9kvEmQQMPGtP2B7Vc8qebXWvsrsMUP_7BXNFUpp_KpYAP-6afKkjDLBTdOpvXOk1EfqXOSazVPOvAIwS';
 
 const colors = {
   background: '#f9f9ff',
@@ -49,7 +50,7 @@ const colors = {
   errorContainer: '#ffdad6',
   errorLight: '#fef2f2',
   errorBorder: 'rgba(186, 26, 26, 0.2)',
-  primary: '#005cad',
+  primary: '#0082F0',
   primaryContainer: '#0075d8',
   success: '#16A34A',
   surface: '#ffffff',
@@ -88,6 +89,9 @@ export function SubmissionDetailsActionRequiredScreen() {
     targetWorkerSeq = parseInt(params.workerNumber, 10);
   }
 
+  const [frontSignedUrl, setFrontSignedUrl] = useState<string | null>(null);
+  const [backSignedUrl, setBackSignedUrl] = useState<string | null>(null);
+
   useEffect(() => {
     let subId: number | null = null;
     if (params.id) {
@@ -100,6 +104,8 @@ export function SubmissionDetailsActionRequiredScreen() {
     }
     if (subId && !isNaN(subId)) {
       setTargetSubId(subId);
+      // Preload & cache 1-day signed URLs for all images in this submission
+      preloadSubmissionSignedUrls(subId).catch(() => {});
       getVendorSubmissionDetails(subId).then((res) => {
         if (res) setLiveDetail(res);
       });
@@ -111,13 +117,60 @@ export function SubmissionDetailsActionRequiredScreen() {
     liveDetail?.workers?.find((w) => w.verdict === 'UNSAFE') ||
     liveDetail?.workers?.[0];
 
+  const rawFront = activeWorkerFromLive?.frontPhoto?.providerFileId || activeWorkerFromLive?.frontPhoto?.previewUrl;
+  const rawBack = activeWorkerFromLive?.backPhoto?.providerFileId || activeWorkerFromLive?.backPhoto?.previewUrl;
+
+  useEffect(() => {
+    let isCancelled = false;
+    async function resolveUrls() {
+      if (rawFront) {
+        if (rawFront.startsWith('http') || rawFront.startsWith('file://')) {
+          setFrontSignedUrl(rawFront);
+        } else {
+          const cached = getCachedSignedUrl('evidence', rawFront);
+          if (cached) {
+            setFrontSignedUrl(cached);
+          } else {
+            supabaseStorageService
+              .createSignedUrl('evidence', rawFront, 86400)
+              .then((res) => {
+                if (!isCancelled && res.signedUrl) setFrontSignedUrl(res.signedUrl);
+              })
+              .catch(() => {});
+          }
+        }
+      }
+      if (rawBack) {
+        if (rawBack.startsWith('http') || rawBack.startsWith('file://')) {
+          setBackSignedUrl(rawBack);
+        } else {
+          const cached = getCachedSignedUrl('evidence', rawBack);
+          if (cached) {
+            setBackSignedUrl(cached);
+          } else {
+            supabaseStorageService
+              .createSignedUrl('evidence', rawBack, 86400)
+              .then((res) => {
+                if (!isCancelled && res.signedUrl) setBackSignedUrl(res.signedUrl);
+              })
+              .catch(() => {});
+          }
+        }
+      }
+    }
+    resolveUrls();
+    return () => {
+      isCancelled = true;
+    };
+  }, [rawFront, rawBack]);
+
   const siteName =
-    liveDetail?.siteName || currentWorker?.siteName || 'Gazipur-ER-102 - Tower Sector 3';
+    liveDetail?.siteName || currentWorker?.siteName || '';
   const siteCode = extractSiteCode(siteName);
   const workerNumber =
     activeWorkerFromLive?.sequenceNo || targetWorkerSeq || currentWorker?.workerNumber || 1;
-  const frontPhotoUri = activeWorkerFromLive?.frontPhoto?.previewUrl || workerTwoFront;
-  const backPhotoUri = activeWorkerFromLive?.backPhoto?.previewUrl || workerTwoBack;
+  const frontPhotoUri = frontSignedUrl || (activeWorkerFromLive?.frontPhoto?.previewUrl?.startsWith('http') ? activeWorkerFromLive.frontPhoto.previewUrl : null);
+  const backPhotoUri = backSignedUrl || (activeWorkerFromLive?.backPhoto?.previewUrl?.startsWith('http') ? activeWorkerFromLive.backPhoto.previewUrl : null);
 
   function goBack() {
     if (router.canGoBack()) {
@@ -279,7 +332,15 @@ export function SubmissionDetailsActionRequiredScreen() {
                 else if (normalized.includes('shoe') || normalized.includes('boot')) matchedKey = 'shoes';
 
                 const iconConfig = reasonIcons[matchedKey] || reasonIcons.other;
-                const label = unsafeReasonLabels[matchedKey] || r;
+                const isOther = matchedKey === 'other' || r.toLowerCase().includes('other');
+                const isMultiWorker = Boolean(currentWorker?.workerReviews && currentWorker.workerReviews.length > 1);
+                const workerNote =
+                  activeWorkerFromLive?.reasons?.find((reason) => reason.code.toLowerCase().includes('other') || reason.note)?.note ||
+                  currentWorker?.workerReviews?.find((w) => w.sequenceNo === workerNumber)?.otherReasonText ||
+                  (!isMultiWorker ? (currentWorker?.reviewerNote || liveDetail?.reviewerFeedback) : undefined);
+                const label = isOther && workerNote
+                  ? `Other: ${workerNote}`
+                  : (unsafeReasonLabels[matchedKey] || r);
 
                 return (
                   <View key={r} style={styles.reasonItem}>
@@ -349,7 +410,7 @@ export function SubmissionDetailsActionRequiredScreen() {
                 />
               </View>
               <Text style={styles.notesText}>
-                "{liveDetail?.reviewerFeedback || currentWorker?.reviewerNote || 'Worker was observed without required PPE gear properly fastened during inspection.'}"
+                "{activeWorkerFromLive?.reasons?.find((reason) => reason.note)?.note || currentWorker?.workerReviews?.find((w) => w.sequenceNo === workerNumber)?.otherReasonText || (!Boolean(currentWorker?.workerReviews && currentWorker.workerReviews.length > 1) ? (liveDetail?.reviewerFeedback || currentWorker?.reviewerNote) : null) || 'Worker was observed without required PPE gear properly fastened during inspection.'}"
               </Text>
             </View>
           </View>
@@ -363,45 +424,65 @@ export function SubmissionDetailsActionRequiredScreen() {
               <Pressable
                 accessibilityLabel="View Front Inspection Photo"
                 accessibilityRole="button"
-                onPress={() => setSelectedPhoto({ uri: frontPhotoUri, label: 'FRONT INSPECTION' })}
+                disabled={!frontPhotoUri}
+                onPress={() => frontPhotoUri && setSelectedPhoto({ uri: frontPhotoUri, label: 'FRONT INSPECTION' })}
                 style={({ pressed }) => [styles.photoCard, pressed && styles.pressed]}>
                 <View style={styles.photoBadge}>
                   <Text style={styles.photoBadgeText}>FRONT</Text>
                 </View>
-                <Image
-                  contentFit="cover"
-                  source={{ uri: frontPhotoUri }}
-                  style={styles.photoImg}
-                />
-                <View style={styles.zoomButton}>
-                  <Icon
-                    color={colors.white}
-                    name={{
-                      ios: 'arrow.up.left.and.arrow.down.right',
-                      android: 'fullscreen',
-                      web: 'fullscreen',
-                    }}
-                    size={14}
+                {frontPhotoUri ? (
+                  <Image
+                    cachePolicy="memory-disk"
+                    contentFit="cover"
+                    source={{ uri: frontPhotoUri }}
+                    style={styles.photoImg}
                   />
-                </View>
+                ) : (
+                  <View style={styles.noPhotoContainer}>
+                    <Icon color={colors.textMuted} name={{ ios: 'photo', android: 'photo', web: 'photo' }} size={24} />
+                    <Text style={styles.noPhotoText}>No Photo</Text>
+                  </View>
+                )}
+                {frontPhotoUri && (
+                  <View style={styles.zoomButton}>
+                    <Icon
+                      color={colors.white}
+                      name={{
+                        ios: 'arrow.up.left.and.arrow.down.right',
+                        android: 'fullscreen',
+                        web: 'fullscreen',
+                      }}
+                      size={14}
+                    />
+                  </View>
+                )}
               </Pressable>
 
               {/* Back Photo - Flagged */}
               <Pressable
                 accessibilityLabel="View Back Inspection Photo Flagged"
                 accessibilityRole="button"
-                onPress={() => setSelectedPhoto({ uri: backPhotoUri, label: 'BACK - VIOLATION FLAGGED' })}
+                disabled={!backPhotoUri}
+                onPress={() => backPhotoUri && setSelectedPhoto({ uri: backPhotoUri, label: 'BACK - VIOLATION FLAGGED' })}
                 style={({ pressed }) => [styles.photoCard, styles.photoCardFlagged, pressed && styles.pressed]}>
                 <View style={[styles.photoBadge, styles.photoBadgeFlagged]}>
                   <Text style={[styles.photoBadgeText, styles.photoBadgeTextFlagged]}>
                     BACK - FLAG
                   </Text>
                 </View>
-                <Image
-                  contentFit="cover"
-                  source={{ uri: backPhotoUri }}
-                  style={styles.photoImg}
-                />
+                {backPhotoUri ? (
+                  <Image
+                    cachePolicy="memory-disk"
+                    contentFit="cover"
+                    source={{ uri: backPhotoUri }}
+                    style={styles.photoImg}
+                  />
+                ) : (
+                  <View style={styles.noPhotoContainer}>
+                    <Icon color={colors.textMuted} name={{ ios: 'photo', android: 'photo', web: 'photo' }} size={24} />
+                    <Text style={styles.noPhotoText}>No Photo</Text>
+                  </View>
+                )}
                 <View style={styles.flagShade} />
                 <View style={styles.inspectBadge}>
                   <Icon
@@ -416,17 +497,19 @@ export function SubmissionDetailsActionRequiredScreen() {
                   />
                   <Text style={styles.inspectBadgeText}>Violation Area</Text>
                 </View>
-                <View style={styles.zoomButton}>
-                  <Icon
-                    color={colors.white}
-                    name={{
-                      ios: 'arrow.up.left.and.arrow.down.right',
-                      android: 'fullscreen',
-                      web: 'fullscreen',
-                    }}
-                    size={14}
-                  />
-                </View>
+                {backPhotoUri && (
+                  <View style={styles.zoomButton}>
+                    <Icon
+                      color={colors.white}
+                      name={{
+                        ios: 'arrow.up.left.and.arrow.down.right',
+                        android: 'fullscreen',
+                        web: 'fullscreen',
+                      }}
+                      size={14}
+                    />
+                  </View>
+                )}
               </Pressable>
             </View>
           </View>
@@ -490,6 +573,7 @@ export function SubmissionDetailsActionRequiredScreen() {
               </View>
               {selectedPhoto ? (
                 <Image
+                  cachePolicy="memory-disk"
                   contentFit="contain"
                   source={{ uri: selectedPhoto.uri }}
                   style={styles.modalFullImage}
@@ -842,6 +926,18 @@ const styles = StyleSheet.create({
   photoImg: {
     height: '100%',
     width: '100%',
+  },
+  noPhotoContainer: {
+    alignItems: 'center',
+    flex: 1,
+    height: '100%',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  noPhotoText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
   },
   flagShade: {
     backgroundColor: 'rgba(186, 26, 26, 0.1)',

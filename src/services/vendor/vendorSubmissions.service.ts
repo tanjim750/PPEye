@@ -59,6 +59,9 @@ function resolvePreviewUrl(
     clean.startsWith("https://") ||
     clean.startsWith("file://")
   ) {
+    if (clean.includes("drive.google.com") || clean.includes("googleusercontent.com")) {
+      return "";
+    }
     return clean;
   }
   const isSupabase =
@@ -71,10 +74,16 @@ function resolvePreviewUrl(
     const { getCachedImageUriSync } = require("@/utils/image");
     const cached = getCachedImageUriSync(clean);
     if (cached) return cached;
+    try {
+      const { getCachedSignedUrl } = require("@/services/storage/supabase-storage.client");
+      const bucket = clean.startsWith("users/") ? "avatars" : "evidence";
+      const signed = getCachedSignedUrl(bucket, clean);
+      if (signed) return signed;
+    } catch {}
     return clean;
   }
 
-  return getDriveThumbnailUrl(clean);
+  return "";
 }
 
 export interface VendorDashboardStats {
@@ -501,158 +510,199 @@ export async function listVendorSubmissions(options: {
   }
 }
 
+const vendorSubmissionDetailsCache = new Map<number, { data: VendorSubmissionDetail; loadedAt: number }>();
+const inFlightVendorSubmissionDetails = new Map<number, Promise<VendorSubmissionDetail | null>>();
+
+export function invalidateVendorSubmissionDetailsCache(submissionId?: number): void {
+  if (submissionId !== undefined) {
+    vendorSubmissionDetailsCache.delete(submissionId);
+  } else {
+    vendorSubmissionDetailsCache.clear();
+  }
+}
+
 /**
  * Fetches comprehensive details for a specific submission including worker photos,
  * Others evidence, and full reviewer feedback.
+ * Memoized and deduplicated to eliminate repeated Supabase queries.
  */
 export async function getVendorSubmissionDetails(
   submissionId: number,
+  options?: { forceRefresh?: boolean }
 ): Promise<VendorSubmissionDetail | null> {
-  try {
-    const { data: sub, error } = await getDb()
-      .from("ppe_submissions")
-      .select(
-        `
-        id,
-        vendor_profile_id,
-        site_name,
-        status,
-        metadata,
-        created_at,
-        submitted_at,
-        ppe_worker_instances (
+  const parsedId = Number(submissionId);
+  if (isNaN(parsedId) || parsedId <= 0) return null;
+
+  if (!options?.forceRefresh) {
+    const cached = vendorSubmissionDetailsCache.get(parsedId);
+    if (cached && Date.now() - cached.loadedAt < 60_000) {
+      return cached.data;
+    }
+    const inFlight = inFlightVendorSubmissionDetails.get(parsedId);
+    if (inFlight) {
+      return inFlight;
+    }
+  }
+
+  const fetchPromise = (async (): Promise<VendorSubmissionDetail | null> => {
+    try {
+      const { data: sub, error } = await getDb()
+        .from("ppe_submissions")
+        .select(
+          `
           id,
-          sequence_no,
-          ppe_reviews (
+          vendor_profile_id,
+          site_name,
+          status,
+          metadata,
+          created_at,
+          submitted_at,
+          ppe_worker_instances (
             id,
-            verdict,
-            reviewed_at,
-            ppe_review_reasons (
-              note,
-              unsafe_reasons ( code, label )
+            sequence_no,
+            ppe_reviews (
+              id,
+              verdict,
+              reviewed_at,
+              ppe_review_reasons (
+                note,
+                unsafe_reasons ( code, label )
+              )
+            ),
+            ppe_images (
+              id,
+              file_id,
+              side,
+              created_at,
+              files ( id, file_name, provider_file_id )
             )
           ),
-          ppe_images (
+          other_images (
             id,
             file_id,
-            side,
-            created_at,
+            sequence_no,
             files ( id, file_name, provider_file_id )
+          ),
+          submission_reviews (
+            verdict,
+            reason,
+            reviewed_at
           )
-        ),
-        other_images (
-          id,
-          file_id,
-          sequence_no,
-          files ( id, file_name, provider_file_id )
-        ),
-        submission_reviews (
-          verdict,
-          reason,
-          reviewed_at
+        `,
         )
-      `,
+        .eq("id", parsedId)
+        .single();
+
+      if (error || !sub) {
+        console.warn(
+          `[VendorSubmissions] Error fetching submission ${parsedId}:`,
+          error?.message,
+        );
+        return null;
+      }
+
+      const subData = sub as any;
+      const subReview = [...(subData.submission_reviews || [])].sort((a: any, b: any) => new Date(b.reviewed_at).getTime() - new Date(a.reviewed_at).getTime())[0];
+      const metadataWorkers = Array.isArray(subData.metadata?.workerReviews) ? subData.metadata.workerReviews : [];
+
+      const workers: VendorSubmissionWorkerDetail[] = (
+        subData.ppe_worker_instances || []
       )
-      .eq("id", submissionId)
-      .single();
+        .sort((a: any, b: any) => a.sequence_no - b.sequence_no)
+        .map((w: any) => {
+          const front = w.ppe_images?.find((img: any) => img.side === "FRONT");
+          const back = w.ppe_images?.find((img: any) => img.side === "BACK");
+          const review = [...(w.ppe_reviews || [])].sort((a: any, b: any) => new Date(b.reviewed_at).getTime() - new Date(a.reviewed_at).getTime())[0];
+          const newestPhotoAt = Math.max(0, ...(w.ppe_images || []).map((img: any) => new Date(img.created_at || 0).getTime()));
+          const metadataReview = metadataWorkers.find((item: any) => Number(item.sequenceNo) === Number(w.sequence_no));
+          const relationCurrent = Boolean(review && new Date(review.reviewed_at).getTime() >= newestPhotoAt);
+          const metadataCurrent = Boolean(metadataReview && Number(metadataReview.reviewedAt || 0) >= newestPhotoAt);
+          const currentReview = relationCurrent ? review : metadataCurrent ? metadataReview : null;
 
-    if (error || !sub) {
-      console.warn(
-        `[VendorSubmissions] Error fetching submission ${submissionId}:`,
-        error?.message,
-      );
-      return null;
-    }
+          const reasons = (relationCurrent ? (review?.ppe_review_reasons || []) : metadataCurrent ? (metadataReview?.unsafeReasons || []).map((code: string) => ({ unsafe_reasons: { code, label: code }, note: metadataReview?.otherReasonText })) : []).map((rr: any) => ({
+            code: rr.unsafe_reasons?.code || "OTHER",
+            label: rr.unsafe_reasons?.label || "Safety issue",
+            note: rr.note || (String(rr.unsafe_reasons?.code || '').toLowerCase().includes('other') ? metadataReview?.otherReasonText : undefined),
+          }));
 
-    const subData = sub as any;
-    const subReview = [...(subData.submission_reviews || [])].sort((a: any, b: any) => new Date(b.reviewed_at).getTime() - new Date(a.reviewed_at).getTime())[0];
-    const metadataWorkers = Array.isArray(subData.metadata?.workerReviews) ? subData.metadata.workerReviews : [];
+          const frontProviderId = front?.files?.provider_file_id;
+          const backProviderId = back?.files?.provider_file_id;
 
-    const workers: VendorSubmissionWorkerDetail[] = (
-      subData.ppe_worker_instances || []
-    )
-      .sort((a: any, b: any) => a.sequence_no - b.sequence_no)
-      .map((w: any) => {
-        const front = w.ppe_images?.find((img: any) => img.side === "FRONT");
-        const back = w.ppe_images?.find((img: any) => img.side === "BACK");
-        const review = [...(w.ppe_reviews || [])].sort((a: any, b: any) => new Date(b.reviewed_at).getTime() - new Date(a.reviewed_at).getTime())[0];
-        const newestPhotoAt = Math.max(0, ...(w.ppe_images || []).map((img: any) => new Date(img.created_at || 0).getTime()));
-        const metadataReview = metadataWorkers.find((item: any) => Number(item.sequenceNo) === Number(w.sequence_no));
-        const relationCurrent = Boolean(review && new Date(review.reviewed_at).getTime() >= newestPhotoAt);
-        const metadataCurrent = Boolean(metadataReview && Number(metadataReview.reviewedAt || 0) >= newestPhotoAt);
-        const currentReview = relationCurrent ? review : metadataCurrent ? metadataReview : null;
+          return {
+            id: w.id,
+            sequenceNo: w.sequence_no,
+            frontPhoto:
+              front && frontProviderId
+                ? {
+                    fileId: front.file_id,
+                    providerFileId: frontProviderId,
+                    previewUrl: resolvePreviewUrl(frontProviderId, front?.files?.storage_provider),
+                  }
+                : null,
+            backPhoto:
+              back && backProviderId
+                ? {
+                    fileId: back.file_id,
+                    providerFileId: backProviderId,
+                    previewUrl: resolvePreviewUrl(backProviderId, back?.files?.storage_provider),
+                  }
+                : null,
+            verdict: (currentReview?.verdict || (currentReview?.status === "safe" ? "SAFE" : currentReview?.status === "unsafe" ? "UNSAFE" : null)) ?? null,
+            reasons,
+          };
+        });
 
-        const reasons = (relationCurrent ? (review?.ppe_review_reasons || []) : metadataCurrent ? (metadataReview?.unsafeReasons || []).map((code: string) => ({ unsafe_reasons: { code, label: code }, note: metadataReview?.otherReasonText })) : []).map((rr: any) => ({
-          code: rr.unsafe_reasons?.code || "OTHER",
-          label: rr.unsafe_reasons?.label || "Safety issue",
-          note: rr.note,
-        }));
+      const anyUnsafe = workers.some((worker) => worker.verdict === "UNSAFE");
+      const allCurrent = workers.length > 0 && workers.every((worker) => worker.verdict === "SAFE" || worker.verdict === "UNSAFE");
+      const overallVerdict: SafetyVerdict | null = allCurrent ? (anyUnsafe ? "UNSAFE" : "SAFE") : null;
+      const reviewerFeedback = subReview?.reason ?? (workers.flatMap((worker) => worker.reasons.map((reason) => reason.note).filter(Boolean)).join("; ") || subData.metadata?.otherReasonText || subData.metadata?.combinedNotes || null);
+      const reviewedAt = allCurrent ? (subReview?.reviewed_at ?? null) : null;
 
-        const frontProviderId = front?.files?.provider_file_id;
-        const backProviderId = back?.files?.provider_file_id;
-
+      const otherPhotos = (subData.other_images || []).map((o: any) => {
+        const providerId = o.files?.provider_file_id;
         return {
-          id: w.id,
-          sequenceNo: w.sequence_no,
-          frontPhoto:
-            front && frontProviderId
-              ? {
-                  fileId: front.file_id,
-                  providerFileId: frontProviderId,
-                  previewUrl: resolvePreviewUrl(frontProviderId, front?.files?.storage_provider),
-                }
-              : null,
-          backPhoto:
-            back && backProviderId
-              ? {
-                  fileId: back.file_id,
-                  providerFileId: backProviderId,
-                  previewUrl: resolvePreviewUrl(backProviderId, back?.files?.storage_provider),
-                }
-              : null,
-          verdict: (currentReview?.verdict || (currentReview?.status === "safe" ? "SAFE" : currentReview?.status === "unsafe" ? "UNSAFE" : null)) ?? null,
-          reasons,
+          id: o.id,
+          fileId: o.file_id,
+          providerFileId: providerId,
+          previewUrl: resolvePreviewUrl(providerId, o.files?.storage_provider),
+          sequenceNo: o.sequence_no,
         };
       });
 
-    const anyUnsafe = workers.some((worker) => worker.verdict === "UNSAFE");
-    const allCurrent = workers.length > 0 && workers.every((worker) => worker.verdict === "SAFE" || worker.verdict === "UNSAFE");
-    const overallVerdict: SafetyVerdict | null = allCurrent ? (anyUnsafe ? "UNSAFE" : "SAFE") : null;
-    const reviewerFeedback = allCurrent ? (subReview?.reason ?? (workers.flatMap((worker) => worker.reasons.map((reason) => reason.note).filter(Boolean)).join("; ") || null)) : null;
-    const reviewedAt = allCurrent ? (subReview?.reviewed_at ?? null) : null;
-
-    const otherPhotos = (subData.other_images || []).map((o: any) => {
-      const providerId = o.files?.provider_file_id;
-      return {
-        id: o.id,
-        fileId: o.file_id,
-        providerFileId: providerId,
-        previewUrl: resolvePreviewUrl(providerId, o.files?.storage_provider),
-        sequenceNo: o.sequence_no,
+      const detailResult: VendorSubmissionDetail = {
+        id: subData.id,
+        vendorProfileId: subData.vendor_profile_id,
+        siteName: subData.site_name,
+        status: subData.status,
+        verdict: overallVerdict,
+        reviewerFeedback,
+        reviewedAt,
+        submittedAt: subData.submitted_at,
+        createdAt: subData.created_at,
+        metadata: subData.metadata || {},
+        workers,
+        otherPhotos,
       };
-    });
 
-    return {
-      id: subData.id,
-      vendorProfileId: subData.vendor_profile_id,
-      siteName: subData.site_name,
-      status: subData.status,
-      verdict: overallVerdict,
-      reviewerFeedback,
-      reviewedAt,
-      submittedAt: subData.submitted_at,
-      createdAt: subData.created_at,
-      metadata: subData.metadata || {},
-      workers,
-      otherPhotos,
-    };
-  } catch (err) {
-    console.warn(
-      "[VendorSubmissions] Exception in getVendorSubmissionDetails:",
-      err,
-    );
-    return null;
-  }
+      vendorSubmissionDetailsCache.set(parsedId, {
+        data: detailResult,
+        loadedAt: Date.now(),
+      });
+
+      return detailResult;
+    } catch (err) {
+      console.warn(
+        "[VendorSubmissions] Exception in getVendorSubmissionDetails:",
+        err,
+      );
+      return null;
+    } finally {
+      inFlightVendorSubmissionDetails.delete(parsedId);
+    }
+  })();
+
+  inFlightVendorSubmissionDetails.set(parsedId, fetchPromise);
+  return fetchPromise;
 }
 
 /**
@@ -937,6 +987,13 @@ export async function resubmitUnsafeWorker(
     if (subError) {
       throw new Error(`The replacement photo was saved, but the submission could not be returned for review: ${subError.message}`);
     }
+
+    // Invalidate caches so fresh replacement photo is fetched immediately
+    invalidateVendorSubmissionDetailsCache(submissionId);
+    try {
+      const { invalidateSubmissionPreloadCache } = require('@/services/storage/supabase-storage.client');
+      invalidateSubmissionPreloadCache(submissionId);
+    } catch {}
 
     return { success: true };
   } catch (err: any) {

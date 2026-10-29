@@ -1,19 +1,51 @@
 import { Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useState } from 'react';
-import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  BackHandler,
+  Dimensions,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
-import { formatWorkerCheckTime, formatWorkerCheckTitle, useWorkerChecks } from '@/features/submissions/services/workerChecks.service';
+import { assets } from '@/constants/assets';
+import {
+  formatWorkerCheckTime,
+  formatWorkerCheckTitle,
+  useWorkerChecks,
+  WorkerCheck,
+} from '@/features/submissions/services/workerChecks.service';
+import {
+  setPendingResubmissionContext,
+  setPendingSubmissionReviewSite,
+  setPendingSubmissionReviewTarget,
+} from '@/features/submissions/services/pendingSubmissionReview.service';
+import { SubmissionDetailsBottomSheet } from '@/features/submissions/components/SubmissionDetailsBottomSheet';
 
 type HistoryTab = 'all' | 'pending' | 'unsafe';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const reasonIcons: Record<string, { ios: string; android: string; web: string }> = {
+  anchorage: { ios: 'anchor', android: 'anchor', web: 'anchor' },
+  harness: { ios: 'figure.stand', android: 'accessibility_new', web: 'accessibility_new' },
+  helmet: { ios: 'wrench.and.screwdriver', android: 'construction', web: 'construction' },
+  lanyard: { ios: 'link', android: 'link', web: 'link' },
+  other: { ios: 'ellipsis', android: 'more_horiz', web: 'more_horiz' },
+  shoes: { ios: 'shoeprints.fill', android: 'directions_walk', web: 'directions_walk' },
+};
 
 export function SubmissionHistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ filter?: string }>();
+  const params = useLocalSearchParams<{ filter?: string; submissionId?: string; workerNumber?: string }>();
   const { t, i18n } = useTranslation('home');
   const { safeChecks, pendingChecks, unsafeChecks, resubmitWorkerCheck } = useWorkerChecks();
 
@@ -52,6 +84,61 @@ export function SubmissionHistoryScreen() {
       setActiveTab('all');
     }
   }, [params.filter]);
+
+  // Modal bottom sheet states
+  const [selectedItem, setSelectedItem] = useState<WorkerCheck | null>(null);
+  const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
+
+  function openDetailsModal(item: WorkerCheck) {
+    setSelectedItem(item);
+    setIsDetailsModalVisible(true);
+  }
+
+  // Auto-open specific submission details if passed via query params
+  const hasAutoOpenedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (params.submissionId && hasAutoOpenedRef.current !== String(params.submissionId)) {
+      const match = [...safeChecks, ...pendingChecks, ...unsafeChecks].find(
+        (c) => String(c.submissionId) === String(params.submissionId) || c.id === String(params.submissionId)
+      );
+      if (match) {
+        hasAutoOpenedRef.current = String(params.submissionId);
+        setSelectedItem(match);
+        setIsDetailsModalVisible(true);
+      }
+    }
+  }, [params.submissionId, safeChecks, pendingChecks, unsafeChecks]);
+
+  function closeModal() {
+    setIsDetailsModalVisible(false);
+    setSelectedItem(null);
+    if (params.submissionId) {
+      router.setParams({ submissionId: '' });
+    }
+  }
+
+  function handleFixAndResubmit(item: WorkerCheck) {
+    closeModal();
+    const unsafeWorkers =
+      item.workerReviews?.filter((w) => w.status === 'unsafe') || [];
+
+    setPendingResubmissionContext({
+      submissionId: item.submissionId,
+      unsafeWorkers: unsafeWorkers.map((w) => ({
+        workerInstanceId: w.workerInstanceId!,
+        sequenceNo: w.sequenceNo,
+      })),
+      sequenceNo: unsafeWorkers[0]?.sequenceNo || 1,
+      workerInstanceId: unsafeWorkers[0]?.workerInstanceId,
+    });
+
+    setPendingSubmissionReviewTarget({
+      workerNumber: unsafeWorkers[0]?.sequenceNo || 1,
+      side: 'FRONT',
+    });
+    setPendingSubmissionReviewSite(item.siteName || '');
+    router.push('/continuous-ppe-capture' as Href);
+  }
 
   // Both lists are sorted chronologically (latest time first)
   const displayedList = (
@@ -137,7 +224,7 @@ export function SubmissionHistoryScreen() {
           <View style={styles.floatingBadgeContainer}>
             <View style={styles.floatingBadge}>
               <Icon
-                color="#f59e0b"
+                color="#ca8a04"
                 name={{ ios: 'clock.fill', android: 'schedule', web: 'schedule' }}
                 size={14}
                 weight="bold"
@@ -181,21 +268,15 @@ export function SubmissionHistoryScreen() {
                 return (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityState={{ disabled: isSafe }}
-                    disabled={isSafe}
                     key={item.id}
-                    onPress={
-                      !isSafe && item.status === 'unsafe'
-                        ? () => router.push(`/submission-details?id=${item.id}` as any)
-                        : undefined
-                    }
+                    onPress={() => openDetailsModal(item)}
                     style={({ pressed }) => [
                       styles.feedRow,
                       index < displayedList.length - 1 && styles.feedDivider,
-                      pressed && !isSafe && styles.pressed,
+                      pressed && styles.pressed,
                     ]}>
                     {item.image ? (
-                      <Image source={item.image} style={styles.thumbnail} />
+                      <Image cachePolicy="memory-disk" source={item.image} style={styles.thumbnail} />
                     ) : (
                       <View style={styles.pendingThumbnail}>
                         <Icon
@@ -216,15 +297,26 @@ export function SubmissionHistoryScreen() {
                         </Text>
                       </View>
 
+                      {/* Workers count summary text - matches Reviewer side */}
+                      {item.workerReviews && item.workerReviews.length > 0 && (
+                        <Text style={styles.workerSummaryText}>
+                          {activeTab === 'unsafe' || (activeTab === 'all' && item.status === 'unsafe' && !item.workerReviews.some(w => w.status === 'safe'))
+                            ? `${item.workerReviews.filter((w) => w.status === 'unsafe').length} of ${item.workerCount || item.workerReviews.length} workers unsafe`
+                            : activeTab === 'all'
+                            ? `${item.workerReviews.filter((w) => w.status === 'safe').length} of ${item.workerCount || item.workerReviews.length} workers safe`
+                            : `${item.workerCount || item.workerReviews.length} workers pending review`}
+                        </Text>
+                      )}
+
                       <View style={styles.metaRow}>
                         <View
                           style={[
                             styles.statusChip,
-                            item.status === 'safe' && styles.safeChip,
-                            item.status === 'unsafe' && styles.unsafeChip,
+                            (activeTab === 'all' || (item.status === 'safe' && activeTab !== 'unsafe')) && styles.safeChip,
+                            (activeTab === 'unsafe' || (item.status === 'unsafe' && activeTab !== 'all')) && styles.unsafeChip,
                             item.status === 'review' && styles.reviewChip,
                           ]}>
-                          {item.status === 'safe' ? (
+                          {activeTab === 'all' || (item.status === 'safe' && activeTab !== 'unsafe') ? (
                             <Icon
                               color={colors.successGreen}
                               name={{
@@ -234,7 +326,7 @@ export function SubmissionHistoryScreen() {
                               }}
                               size={12}
                             />
-                          ) : item.status === 'unsafe' ? (
+                          ) : activeTab === 'unsafe' || item.status === 'unsafe' ? (
                             <Icon
                               color={colors.error}
                               name={{
@@ -246,19 +338,23 @@ export function SubmissionHistoryScreen() {
                             />
                           ) : (
                             <Icon
-                              color={colors.tertiaryContainer}
-                              name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+                              color={colors.pendingYellow}
+                              name={{ ios: 'clock.fill', android: 'schedule', web: 'schedule' }}
                               size={12}
                             />
                           )}
                           <Text
                             style={[
                               styles.statusText,
-                              item.status === 'safe' && styles.safeText,
-                              item.status === 'unsafe' && styles.unsafeText,
+                              (activeTab === 'all' || (item.status === 'safe' && activeTab !== 'unsafe')) && styles.safeText,
+                              (activeTab === 'unsafe' || (item.status === 'unsafe' && activeTab !== 'all')) && styles.unsafeText,
                               item.status === 'review' && styles.reviewText,
                             ]}>
-                            {statusLabel}
+                            {activeTab === 'unsafe'
+                              ? `${item.workerReviews?.filter((w) => w.status === 'unsafe').length || 1} Unsafe`
+                              : activeTab === 'all'
+                              ? `${item.workerReviews?.filter((w) => w.status === 'safe').length || 1} Safe`
+                              : statusLabel}
                           </Text>
                         </View>
 
@@ -268,6 +364,10 @@ export function SubmissionHistoryScreen() {
                           </Text>
                         ) : null}
                       </View>
+                    </View>
+
+                    <View style={styles.viewDetailsContainer}>
+                      <Text style={styles.viewDetailsText}>Tap to view details</Text>
                     </View>
                   </Pressable>
                 );
@@ -320,6 +420,15 @@ export function SubmissionHistoryScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* Bottom Sheet Details Modal for Safe, Unsafe & Pending Inspection Details */}
+      <SubmissionDetailsBottomSheet
+        contextTab={activeTab}
+        visible={isDetailsModalVisible}
+        item={selectedItem}
+        onClose={closeModal}
+        onFixAndResubmit={handleFixAndResubmit}
+      />
     </SafeAreaView>
   );
 }
@@ -327,19 +436,26 @@ export function SubmissionHistoryScreen() {
 const colors = {
   background: '#f9f9ff',
   borderSubtle: '#E4E7EC',
-  chipGreen: 'rgba(22, 163, 74, 0.1)',
-  chipRed: 'rgba(186, 26, 26, 0.1)',
-  chipReview: 'rgba(190, 86, 0, 0.1)',
+  chipGreen: 'rgba(22, 163, 74, 0.12)',
+  chipRed: 'rgba(186, 26, 26, 0.12)',
+  chipYellow: 'rgba(234, 179, 8, 0.15)',
+  chipOrange: 'rgba(234, 88, 12, 0.15)',
+  chipReview: 'rgba(234, 179, 8, 0.15)',
   error: '#ba1a1a',
-  outline: '#717785',
+  outline: '#74777F',
   outlineVariant: '#c0c7d5',
-  primary: '#005cad',
+  primary: '#0082F0',
+  secondary: '#005DB6',
+  tertiary: '#D36001',
+  neutral: '#74777F',
   safetyBlue: '#0082F0',
   secondaryContainer: '#63a1ff',
   successGreen: '#16A34A',
+  pendingYellow: '#CA8A04',
+  inProgressOrange: '#EA580C',
   surface: '#ffffff',
   surfaceContainer: '#ebedf7',
-  tertiaryContainer: '#be5600',
+  tertiaryContainer: '#CA8A04',
   text: '#181c22',
   textMuted: '#555e6d',
   white: '#ffffff',
@@ -562,12 +678,28 @@ const styles = StyleSheet.create({
     color: colors.error,
   },
   reviewText: {
-    color: colors.tertiaryContainer,
+    color: colors.pendingYellow,
   },
   badgeHint: {
     color: colors.textMuted,
     fontSize: 11,
     fontWeight: '500',
+  },
+  workerSummaryText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: -2,
+  },
+  viewDetailsContainer: {
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingLeft: 4,
+  },
+  viewDetailsText: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '600',
   },
   emptyContainer: {
     alignItems: 'center',

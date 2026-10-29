@@ -63,7 +63,8 @@ export interface ISupabaseStorageService {
   createSignedUrl(
     bucket: StorageBucket,
     storagePath: string,
-    expiresInSeconds?: number
+    expiresInSeconds?: number,
+    options?: { forceRefresh?: boolean }
   ): Promise<StorageSignedUrlResult>;
   downloadFile(
     bucket: StorageBucket,

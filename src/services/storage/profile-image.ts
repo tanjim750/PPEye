@@ -340,20 +340,23 @@ export async function getProfilePictureUri(
 
   const cacheKey = getAvatarCacheKey(userId);
 
-  // 1. Check local private cache first (unless forceRefresh)
+  // 1. Fetch user's profile_picture_file_id from database first
+  const db = getDb(client);
+  const user = await verifyUserExists(userId, db);
+
+  if (!user.profile_picture_file_id) {
+    try {
+      await invalidateImageCache(cacheKey);
+    } catch {}
+    return null;
+  }
+
+  // 2. Check local private cache (unless forceRefresh)
   if (!options?.forceRefresh) {
     const cachedUri = await getCachedImageUri(cacheKey);
     if (cachedUri) {
       return cachedUri;
     }
-  }
-
-  // 2. Fetch user's profile_picture_file_id
-  const db = getDb(client);
-  const user = await verifyUserExists(userId, db);
-
-  if (!user.profile_picture_file_id) {
-    return null;
   }
 
   // 3. Resolve files record

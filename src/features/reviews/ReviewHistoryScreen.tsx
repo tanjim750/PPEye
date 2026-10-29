@@ -28,7 +28,7 @@ import {
 } from '@/features/reviews/services/reviews.service';
 import { supabase } from '@/services/supabase/client';
 import { getCachedImageUri, getImageUri } from '@/utils/image';
-import { getValidAccessToken } from '@/services/google-drive/auth';
+import { preloadSubmissionSignedUrls } from '@/services/storage/supabase-storage.client';
 
 const reviewerColors = {
   background: '#f9f9ff',
@@ -37,7 +37,7 @@ const reviewerColors = {
   chipRed: 'rgba(186, 26, 26, 0.1)',
   errorRed: '#ba1a1a',
   outlineVariant: '#c0c7d5',
-  primary: '#005cad',
+  primary: '#0082F0',
   primaryFixed: '#d5e3ff',
   successGreen: '#16A34A',
   surface: '#ffffff',
@@ -56,13 +56,6 @@ const reasonIcons: Record<string, { ios: string; android: string; web: string }>
   shoes: { ios: 'shoeprints.fill', android: 'directions_walk', web: 'directions_walk' },
 };
 
-const sampleWorkerPhotos: Record<number, { front: any; back: any }> = {
-  1: { front: assets.fieldSafeCheck, back: assets.captureRecentPhoto },
-  2: { front: assets.fieldUnsafeCheck, back: assets.captureRecentPhoto },
-  3: { front: assets.fieldSafeCheck, back: assets.captureRecentPhoto },
-  4: { front: assets.fieldUnsafeCheck, back: assets.captureRecentPhoto },
-};
-
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 function extractDriveId(fileIdOrUri?: string | null): string | null {
@@ -75,23 +68,26 @@ function extractDriveId(fileIdOrUri?: string | null): string | null {
   ) {
     return null;
   }
-  if (clean.startsWith('http://') || clean.startsWith('https://')) {
-    const match =
-      clean.match(/\/files\/([a-zA-Z0-9_-]+)/) ||
-      clean.match(/\/d\/([a-zA-Z0-9_-]+)/) ||
-      clean.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (match && match[1]) {
-      return match[1];
-    }
+  // Ignore any Google Drive URLs or Drive file IDs
+  if (
+    clean.includes('drive.google.com') ||
+    clean.includes('googleusercontent.com') ||
+    clean.includes('googleapis.com/drive')
+  ) {
     return null;
   }
-  if (/^[a-zA-Z0-9_-]{15,}$/.test(clean)) {
+  // Only accept Supabase storage paths
+  if (
+    clean.startsWith('submissions/') ||
+    clean.startsWith('users/') ||
+    (clean.includes('/') && !clean.startsWith('http://') && !clean.startsWith('https://'))
+  ) {
     return clean;
   }
   return null;
 }
 
-interface HistoryInspectionPhotoProps {
+export interface HistoryInspectionPhotoProps {
   badgeLabel: 'FRONT' | 'BACK';
   fileIdOrUri?: string | null;
   driveId?: string | null;
@@ -102,7 +98,7 @@ interface HistoryInspectionPhotoProps {
   onPressZoom?: (source: any, title: string) => void;
 }
 
-function HistoryInspectionPhoto({
+export function HistoryInspectionPhoto({
   badgeLabel,
   fileIdOrUri,
   driveId: directDriveId,
@@ -140,31 +136,19 @@ function HistoryInspectionPhoto({
       // 2. Resolve Drive File ID
       let resolvedDriveId = directDriveId || extractDriveId(fileIdOrUri);
 
-      // If no drive ID from URL and submissionId is a database numeric ID, fetch from Supabase
+      // If no drive ID from URL and submissionId is a database numeric ID, fetch from Supabase (memoized)
       const parsedSubId = Number(submissionId);
       let resolvedFileProvider: string | null = null;
       if (!resolvedDriveId && !isNaN(parsedSubId) && parsedSubId > 0) {
         try {
-          const { data: instances } = await supabase
-            .from('ppe_worker_instances')
-            .select(`
-              sequence_no,
-              ppe_images (
-                side,
-                files ( provider_file_id, storage_provider )
-              )
-            `)
-            .eq('submission_id', parsedSubId);
-
-          const inst = (instances || []).find((w: any) => w.sequence_no === workerSequenceNo) || instances?.[0];
-          if (inst) {
-            const img = ((inst as any).ppe_images || []).find((im: any) => im.side === badgeLabel);
-            const rawFile = Array.isArray(img?.files) ? img.files[0] : img?.files;
-            resolvedDriveId = rawFile?.provider_file_id || null;
-            resolvedFileProvider = rawFile?.storage_provider || null;
+          const { resolveSubmissionWorkerPhoto } = require('@/services/storage/supabase-storage.client');
+          const photoPath = await resolveSubmissionWorkerPhoto(parsedSubId, workerSequenceNo || 1, badgeLabel);
+          if (photoPath) {
+            resolvedDriveId = photoPath;
+            resolvedFileProvider = 'SUPABASE';
           }
         } catch (err) {
-          console.warn('[ReviewHistory] Error resolving worker photo from DB:', err);
+          console.warn('[ReviewHistory] Error resolving worker photo:', err);
         }
       }
 
@@ -187,10 +171,12 @@ function HistoryInspectionPhoto({
           try {
             const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
             const bucket = resolvedDriveId.startsWith('users/') ? 'avatars' : 'evidence';
-            const signedUrl = await supabaseStorageService.createSignedUrl(bucket, resolvedDriveId, 3600);
-            if (signedUrl && !isCancelled) {
-              setPhotoSource({ uri: signedUrl });
+            const signedRes = await supabaseStorageService.createSignedUrl(bucket, resolvedDriveId, 86400);
+            const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
+            if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http') && !isCancelled) {
+              setPhotoSource({ uri: urlStr });
               setIsLoading(false);
+              Image.prefetch(urlStr, 'memory-disk').catch(() => {});
               getImageUri(resolvedDriveId, { storageProvider: 'SUPABASE' })
                 .then((localPath) => {
                   if (!isCancelled && localPath) {
@@ -205,29 +191,10 @@ function HistoryInspectionPhoto({
           }
         }
 
-        // Get authenticated Bearer token
-        const token = await getValidAccessToken().catch(() => null);
-        if (token && !isCancelled) {
-          setPhotoSource({
-            uri: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(resolvedDriveId)}?alt=media`,
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          // Cache in background to local disk
-          getImageUri(resolvedDriveId)
-            .then((localPath) => {
-              if (!isCancelled && localPath) {
-                setPhotoSource({ uri: localPath });
-              }
-            })
-            .catch(() => {});
-          return;
-        }
-
-        // Fallback thumbnail
+        // All Google Drive photos are completely removed
         if (!isCancelled) {
-          setPhotoSource({
-            uri: `https://drive.google.com/thumbnail?id=${resolvedDriveId}&sz=w800`,
-          });
+          setPhotoSource(null);
+          setIsLoading(false);
         }
         return;
       }
@@ -251,21 +218,7 @@ function HistoryInspectionPhoto({
     };
   }, [fileIdOrUri, directDriveId, submissionId, workerSequenceNo, badgeLabel, fallbackAsset]);
 
-  const handleError = async () => {
-    if (retryCountRef.current === 0) {
-      retryCountRef.current += 1;
-      const driveId = directDriveId || extractDriveId(fileIdOrUri);
-      if (driveId) {
-        const freshToken = await getValidAccessToken({ forceRefresh: true }).catch(() => null);
-        if (freshToken) {
-          setPhotoSource({
-            uri: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveId)}?alt=media`,
-            headers: { Authorization: `Bearer ${freshToken}` },
-          });
-          return;
-        }
-      }
-    }
+  const handleError = () => {
     setIsLoading(false);
     setHasError(true);
   };
@@ -287,6 +240,7 @@ function HistoryInspectionPhoto({
 
       {photoSource ? (
         <Image
+          cachePolicy="memory-disk"
           contentFit="cover"
           onError={handleError}
           onLoadEnd={() => setIsLoading(false)}
@@ -347,7 +301,7 @@ export function ReviewHistoryScreen() {
   );
 
   // 2 Tabs: "Safe reviewed" and "Unsafe reviewed"
-  const params = useLocalSearchParams<{ tab?: 'safe' | 'unsafe' }>();
+  const params = useLocalSearchParams<{ tab?: 'safe' | 'unsafe'; submissionId?: string }>();
   const [activeTab, setActiveTab] = useState<'safe' | 'unsafe'>(
     params.tab === 'unsafe' ? 'unsafe' : 'safe'
   );
@@ -358,6 +312,18 @@ export function ReviewHistoryScreen() {
     }
   }, [params.tab]);
   const [selectedUnsafeItem, setSelectedUnsafeItem] = useState<ReviewItem | null>(null);
+
+  // Auto-open specific review item if submissionId is passed
+  useEffect(() => {
+    if (params.submissionId) {
+      const match = [...safeReviews, ...unsafeReviews].find(
+        (r) => String(r.id) === String(params.submissionId)
+      );
+      if (match) {
+        openUnsafeModal(match);
+      }
+    }
+  }, [params.submissionId, safeReviews, unsafeReviews]);
 
   const translateY = useRef(new Animated.Value(0)).current;
 
@@ -432,6 +398,9 @@ export function ReviewHistoryScreen() {
   function openUnsafeModal(item: ReviewItem) {
     translateY.setValue(0);
     setSelectedUnsafeItem(item);
+    if (item.id) {
+      preloadSubmissionSignedUrls(item.id).catch(() => {});
+    }
   }
 
   const displayedList = useMemo(() => {
@@ -626,9 +595,10 @@ export function ReviewHistoryScreen() {
                               </Text>
                             </View>
                           ))}
-                          <Text style={styles.viewDetailsPrompt}>Tap to view details ›</Text>
                         </View>
                       )}
+
+                      <Text style={styles.viewDetailsPrompt}>Tap to view details</Text>
                     </View>
                   </Pressable>
                 );
@@ -726,7 +696,7 @@ export function ReviewHistoryScreen() {
                 style={detailsStyles.modalHeader}>
                 <View>
                   <Text style={detailsStyles.modalTitle}>
-                    {selectedUnsafeItem?.status === 'unsafe' ? 'Unsafe Review Details' : 'Safe Review Details'}
+                    {activeTab === 'safe' ? 'Safe Review Details' : 'Unsafe Review Details'}
                   </Text>
                   <Text style={detailsStyles.modalSubtitle}>
                     {selectedUnsafeItem?.vendor} • {selectedUnsafeItem?.teamLead}
@@ -749,7 +719,7 @@ export function ReviewHistoryScreen() {
                 contentContainerStyle={detailsStyles.scrollContent}
                 showsVerticalScrollIndicator={false}>
                 {/* Alert Badge */}
-                {selectedUnsafeItem?.status === 'unsafe' ? (
+                {activeTab === 'unsafe' ? (
                   <View style={detailsStyles.alertBanner}>
                     <Icon
                       color={reviewerColors.errorRed}
@@ -781,18 +751,19 @@ export function ReviewHistoryScreen() {
 
                 {/* Multiple Workers Stacking with Scroll */}
                 {(() => {
+                  const isSafeTab = activeTab === 'safe';
                   const workersToDisplay =
                     selectedUnsafeItem?.workerReviews && selectedUnsafeItem.workerReviews.length > 0
-                      ? (selectedUnsafeItem.status === 'unsafe'
-                          ? selectedUnsafeItem.workerReviews.filter((w) => w.status === 'unsafe')
-                          : selectedUnsafeItem.workerReviews)
+                      ? (isSafeTab
+                          ? selectedUnsafeItem.workerReviews.filter((w) => w.status === 'safe')
+                          : selectedUnsafeItem.workerReviews.filter((w) => w.status === 'unsafe'))
                       : [
                           {
                             sequenceNo: 1,
                             workerName: 'Worker 1',
-                            status: (selectedUnsafeItem?.status === 'unsafe' ? 'unsafe' : 'safe') as any,
-                            unsafeReasons: selectedUnsafeItem?.unsafeReasons || (selectedUnsafeItem?.status === 'unsafe' ? ['helmet'] : []),
-                            otherReasonText: selectedUnsafeItem?.otherReasonText,
+                            status: (isSafeTab ? 'safe' : 'unsafe') as any,
+                            unsafeReasons: !isSafeTab ? (selectedUnsafeItem?.unsafeReasons || ['helmet']) : [],
+                            otherReasonText: !isSafeTab ? selectedUnsafeItem?.otherReasonText : undefined,
                             frontUri: null,
                             backUri: null,
                             frontDriveId: null,
@@ -897,7 +868,7 @@ export function ReviewHistoryScreen() {
                                   driveId={worker.frontDriveId}
                                   submissionId={selectedUnsafeItem?.id}
                                   workerSequenceNo={worker.sequenceNo}
-                                  fallbackAsset={sampleWorkerPhotos[worker.sequenceNo]?.front || (isWorkerUnsafe ? assets.fieldUnsafeCheck : assets.fieldSafeCheck)}
+                                  fallbackAsset={null}
                                   workerTitle={workerTitle}
                                   onPressZoom={openZoomModal}
                                 />
@@ -907,7 +878,7 @@ export function ReviewHistoryScreen() {
                                   driveId={worker.backDriveId}
                                   submissionId={selectedUnsafeItem?.id}
                                   workerSequenceNo={worker.sequenceNo}
-                                  fallbackAsset={sampleWorkerPhotos[worker.sequenceNo]?.back || assets.captureRecentPhoto}
+                                  fallbackAsset={null}
                                   workerTitle={workerTitle}
                                   onPressZoom={openZoomModal}
                                 />
@@ -978,6 +949,7 @@ export function ReviewHistoryScreen() {
                     justifyContent: 'center',
                   }}>
                   <Image
+                    cachePolicy="memory-disk"
                     contentFit="contain"
                     source={zoomedImage.source}
                     style={zoomModalStyles.zoomedImage}
@@ -1262,7 +1234,7 @@ const styles = StyleSheet.create({
     color: reviewerColors.primary,
     fontSize: 12,
     fontWeight: '600',
-    marginLeft: 4,
+    marginTop: 6,
   },
   emptyState: {
     alignItems: 'center',

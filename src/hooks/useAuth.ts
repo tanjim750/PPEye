@@ -10,19 +10,19 @@ import {
 } from '@/stores/auth.store';
 
 export function useAuth() {
-  const [user, setUser] = useState(() => authStore.user);
+  const [user, setUser] = useState(() => (authStore.user ? { ...authStore.user } : null));
   const [isHydrated, setIsHydrated] = useState(() => isAuthStoreHydrated());
 
   useEffect(() => {
-    setUser(authStore.user);
+    setUser(authStore.user ? { ...authStore.user } : null);
     hydrateAuthStore().then((hydrated) => {
       setIsHydrated(true);
-      setUser(hydrated ?? authStore.user);
+      setUser(hydrated ? { ...hydrated } : authStore.user ? { ...authStore.user } : null);
     });
 
     const unsubscribe = subscribeAuthStore(() => {
       setIsHydrated(isAuthStoreHydrated());
-      setUser(authStore.user);
+      setUser(authStore.user ? { ...authStore.user } : null);
     });
 
     return unsubscribe;

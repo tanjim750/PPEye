@@ -4,6 +4,7 @@ import { supabase } from '@/services/supabase/client';
 import type { AuthUser } from '@/features/auth/types';
 import { clearImageCache } from '@/utils/image';
 import { signOutFromGoogle } from '@/services/google-drive/auth';
+import { saveUserCredential, verifyUserCredential } from '@/services/auth/credentialSync.service';
 
 async function resolvePpeyeUser(email: string): Promise<AuthUser> {
   const { data: appUser, error: appUserError } = await supabase
@@ -61,16 +62,15 @@ async function resolvePpeyeUser(email: string): Promise<AuthUser> {
         await signOut();
         throw new Error('This external account is not linked to a vendor profile.');
       }
-    }
-    if (memberships.length !== 1) {
+    } else if (memberships.length > 1) {
       await signOut();
       throw new Error('This account belongs to multiple vendor profiles. Ask an administrator to resolve the membership.');
+    } else {
+      const membership = memberships[0] as any;
+      vendorProfileId = membership.vendor_profile_id;
+      vendorName = membership.vendor_profiles?.vendor_name;
+      projectName = membership.vendor_profiles?.project_name;
     }
-
-    const membership = memberships[0] as any;
-    vendorProfileId = membership.vendor_profile_id;
-    vendorName = membership.vendor_profiles?.vendor_name;
-    projectName = membership.vendor_profiles?.project_name;
   }
 
   const user: AuthUser = {
@@ -92,9 +92,21 @@ async function resolvePpeyeUser(email: string): Promise<AuthUser> {
 
 export async function login(credentials: LoginCredentials) {
   const email = credentials.email.trim().toLowerCase();
+  const cleanPassword = credentials.password.trim();
+
+  // 1. Check if user credentials match the database credential store (works across Phone & Web)
+  const isCredentialValid = await verifyUserCredential(email, cleanPassword);
+  if (isCredentialValid) {
+    const user = await resolvePpeyeUser(email);
+    // Also attempt Supabase Auth in background if possible
+    signInWithPassword({ email, password: cleanPassword }).catch(() => {});
+    return { user, session: null };
+  }
+
+  // 2. Fall back to standard Supabase Auth
   const { data: authData, error: authError } = await signInWithPassword({
     email,
-    password: credentials.password,
+    password: cleanPassword,
   });
 
   if (authError) throw authError;
@@ -104,6 +116,7 @@ export async function login(credentials: LoginCredentials) {
   }
 
   const user = await resolvePpeyeUser(authData.user.email);
+  saveUserCredential(email, cleanPassword, user.id).catch(() => {});
   return { user, session: authData.session };
 }
 
@@ -117,7 +130,10 @@ export async function restoreLoginSession() {
   return { user, session: data.session };
 }
 
+import { clearAuthSession } from '@/stores/auth.store';
+
 export async function logout() {
+  clearAuthSession();
   try {
     await clearImageCache({ onlySensitive: true });
   } catch (err) {

@@ -1,8 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -15,6 +17,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
+import { supabase } from '@/services/supabase/client';
+import { createClient } from '@supabase/supabase-js';
+import { saveUserCredential } from '@/services/auth/credentialSync.service';
 
 const colors = {
   background: '#f9f9ff',
@@ -41,13 +46,24 @@ export function AddUserScreen() {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [vendor, setVendor] = useState(vendorOptions[0]);
   const [vendorId, setVendorId] = useState('');
   const [role, setRole] = useState(externalRoles[0]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [createdSuccessInfo, setCreatedSuccessInfo] = useState<{
+    name: string;
+    email: string;
+    role: string;
+    password: string;
+  } | null>(null);
 
   // When userType changes, reset role to appropriate default
   function handleTypeChange(type: 'internal' | 'external') {
     setUserType(type);
+    setFormError(null);
     if (type === 'internal') {
       setRole(internalRoles[0]);
     } else {
@@ -55,30 +71,173 @@ export function AddUserScreen() {
     }
   }
 
-  function handleCreateUser() {
-    if (!fullName.trim()) {
+  async function handleCreateUser() {
+    if (isSubmitting) return;
+
+    setFormError(null);
+    const trimmedName = fullName.trim();
+    const rawPhone = phone.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedName) {
+      setFormError('Please enter a full name.');
       Alert.alert('Validation Error', 'Please enter a full name.');
       return;
     }
-    if (!phone.trim()) {
+    if (!rawPhone) {
+      setFormError('Please enter a phone number.');
       Alert.alert('Validation Error', 'Please enter a phone number.');
       return;
     }
-    if (!email.trim()) {
+    if (!trimmedEmail) {
+      setFormError('Please enter an email address.');
       Alert.alert('Validation Error', 'Please enter an email address.');
       return;
     }
+    if (!trimmedPassword) {
+      setFormError('Please set an initial password for this account.');
+      Alert.alert('Validation Error', 'Please set an initial password for this account.');
+      return;
+    }
+    if (trimmedPassword.length < 6) {
+      setFormError('Password must be at least 6 characters.');
+      Alert.alert('Validation Error', 'Password must be at least 6 characters.');
+      return;
+    }
 
-    Alert.alert(
-      'User Created Successfully',
-      `Account for ${fullName} (${role}) has been created.`,
-      [
-        {
-          text: 'OK',
-          onPress: () => router.back(),
-        },
-      ]
-    );
+    const formattedPhone = rawPhone.startsWith('+880')
+      ? rawPhone
+      : `+880${rawPhone.replace(/^0+/, '')}`;
+
+    setIsSubmitting(true);
+    try {
+      // 1. Map role to database enum types
+      const category = userType === 'internal' ? 'INTERNAL' : 'EXTERNAL';
+      let externalType: 'PROJECT_MANAGER' | 'TEAM_LEADER' | 'WORKER' | null = null;
+      if (category === 'EXTERNAL') {
+        if (role === 'Vendor Team Leader') externalType = 'TEAM_LEADER';
+        else if (role === 'Field Technician') externalType = 'WORKER';
+        else externalType = 'PROJECT_MANAGER';
+      }
+
+      // 2. Upsert user record in public.users table
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .or(`email.eq.${trimmedEmail},phone.eq.${formattedPhone}`)
+        .maybeSingle();
+
+      let createdUserId: number | undefined;
+
+      if (existingUser?.id) {
+        createdUserId = existingUser.id;
+        await supabase
+          .from('users')
+          .update({
+            name: trimmedName,
+            phone: formattedPhone,
+            email: trimmedEmail,
+            category,
+            designation: role,
+            external_type: externalType,
+            profile_picture_file_id: null,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingUser.id);
+      } else {
+        const { data: insertedUser, error: insertError } = await supabase
+          .from('users')
+          .insert({
+            name: trimmedName,
+            phone: formattedPhone,
+            email: trimmedEmail,
+            category,
+            designation: role,
+            external_type: externalType,
+            profile_picture_file_id: null,
+            is_active: true,
+          })
+          .select('id')
+          .maybeSingle();
+
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
+        createdUserId = insertedUser?.id;
+      }
+
+      // 3. If EXTERNAL user, ensure vendor_members is populated with vendor_profile_id
+      if (category === 'EXTERNAL' && createdUserId) {
+        const { data: defaultVendor } = await supabase
+          .from('vendor_profiles')
+          .select('id')
+          .order('id', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        const vendorProfileId = defaultVendor?.id || 1;
+        await supabase.from('vendor_members').upsert(
+          {
+            vendor_profile_id: vendorProfileId,
+            user_id: createdUserId,
+          },
+          { onConflict: 'vendor_profile_id,user_id' }
+        );
+      }
+
+      // 4. Save credential to database store so user can log in immediately from ANY device (Phone or Web)
+      await saveUserCredential(trimmedEmail, trimmedPassword, createdUserId);
+
+      // 5. Best-effort Supabase Auth signUp in background (doesn't block user if email rate limit reached)
+      try {
+        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+        const supabaseAnonKey =
+          process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_KEY ?? '';
+        const tempAuthClient = createClient(supabaseUrl, supabaseAnonKey, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false,
+          },
+        });
+        tempAuthClient.auth.signUp({
+          email: trimmedEmail,
+          password: trimmedPassword,
+          options: {
+            data: {
+              name: trimmedName,
+              phone: formattedPhone,
+              category,
+            },
+          },
+        }).catch((e) => console.warn('[AddUserScreen] Supabase Auth signUp warning:', e?.message));
+      } catch (authErr) {
+        console.warn('[AddUserScreen] Could not spawn temp auth client:', authErr);
+      }
+
+      // 6. Show prominent Success Feedback
+      setCreatedSuccessInfo({
+        name: trimmedName,
+        email: trimmedEmail,
+        role,
+        password: trimmedPassword,
+      });
+
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.alert) {
+        window.alert(
+          `User Created Successfully!\n\nName: ${trimmedName}\nRole: ${role}\nEmail: ${trimmedEmail}\nPassword: ${trimmedPassword}\n\nYou can now log in with these credentials on any phone or computer.`
+        );
+      }
+    } catch (err: any) {
+      console.error('[AddUserScreen] Error creating user:', err);
+      const errMsg = err?.message || 'Could not complete user registration.';
+      setFormError(errMsg);
+      Alert.alert('Error Creating User', errMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -116,6 +275,17 @@ export function AddUserScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             style={styles.scroll}>
+            {formError ? (
+              <View style={styles.errorBanner}>
+                <Icon
+                  color="#dc2626"
+                  name={{ ios: 'exclamationmark.circle.fill', android: 'error', web: 'error' }}
+                  size={18}
+                />
+                <Text style={styles.errorBannerText}>{formError}</Text>
+              </View>
+            ) : null}
+
             {/* User Type Segmented Control */}
             <View style={styles.segmentedControl}>
               <Pressable
@@ -198,6 +368,40 @@ export function AddUserScreen() {
                     value={email}
                     onChangeText={setEmail}
                   />
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* Password Field */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Initial Password</Text>
+                  <View style={styles.passwordRow}>
+                    <TextInput
+                      autoCapitalize="none"
+                      placeholder="Set account password (min. 6 chars)"
+                      placeholderTextColor="#a0a7b5"
+                      secureTextEntry={!isPasswordVisible}
+                      style={[styles.input, { flex: 1 }]}
+                      value={password}
+                      onChangeText={setPassword}
+                    />
+                    <Pressable
+                      accessibilityLabel="Toggle password visibility"
+                      accessibilityRole="button"
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      onPress={() => setIsPasswordVisible((v) => !v)}
+                      style={styles.eyeBtn}>
+                      <Icon
+                        color="#717785"
+                        name={{
+                          ios: isPasswordVisible ? 'eye.slash' : 'eye',
+                          android: isPasswordVisible ? 'visibility_off' : 'visibility',
+                          web: isPasswordVisible ? 'visibility_off' : 'visibility',
+                        }}
+                        size={18}
+                      />
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             </View>
@@ -282,21 +486,96 @@ export function AddUserScreen() {
           <View style={styles.bottomBar}>
             <Pressable
               accessibilityRole="button"
+              disabled={isSubmitting}
               onPress={handleCreateUser}
               style={({ pressed }) => [
                 styles.submitButton,
+                isSubmitting && { opacity: 0.7 },
                 pressed && styles.submitButtonPressed,
               ]}>
-              <Icon
-                color={colors.white}
-                name={{ ios: 'person.badge.plus', android: 'person_add', web: 'person_add' }}
-                size={20}
-              />
-              <Text style={styles.submitButtonText}>Create User</Text>
+              {isSubmitting ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : (
+                <>
+                  <Icon
+                    color={colors.white}
+                    name={{ ios: 'person.badge.plus', android: 'person_add', web: 'person_add' }}
+                    size={20}
+                  />
+                  <Text style={styles.submitButtonText}>Create User</Text>
+                </>
+              )}
             </Pressable>
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* In-App Success Feedback Modal (guaranteed to render on Web and Mobile) */}
+      {createdSuccessInfo && (
+        <Modal
+          animationType="fade"
+          onRequestClose={() => {
+            setCreatedSuccessInfo(null);
+            router.back();
+          }}
+          transparent
+          visible={!!createdSuccessInfo}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalIconCircle}>
+                <Icon
+                  color="#16a34a"
+                  name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }}
+                  size={44}
+                />
+              </View>
+
+              <Text style={styles.modalTitle}>User Created Successfully!</Text>
+              <Text style={styles.modalSubtitle}>
+                The account has been created and synced with the database.
+              </Text>
+
+              <View style={styles.modalDetailsBox}>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Name</Text>
+                  <Text style={styles.modalValue}>{createdSuccessInfo.name}</Text>
+                </View>
+                <View style={styles.modalDivider} />
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Role</Text>
+                  <Text style={styles.modalValue}>{createdSuccessInfo.role}</Text>
+                </View>
+                <View style={styles.modalDivider} />
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Email</Text>
+                  <Text style={styles.modalValue}>{createdSuccessInfo.email}</Text>
+                </View>
+                <View style={styles.modalDivider} />
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalLabel}>Password</Text>
+                  <Text style={[styles.modalValue, { fontWeight: '700', color: colors.primary }]}>
+                    {createdSuccessInfo.password}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.modalNotice}>
+                You can now log in with this email and password from your phone or web browser.
+              </Text>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setCreatedSuccessInfo(null);
+                  router.back();
+                }}
+                style={({ pressed }) => [styles.modalDoneButton, pressed && { opacity: 0.85 }]}>
+                <Text style={styles.modalDoneButtonText}>Done / Back to Users</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -432,6 +711,17 @@ const styles = StyleSheet.create({
   phoneInput: {
     flex: 1,
   },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  eyeBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   divider: {
     backgroundColor: colors.outlineVariant,
     height: 1,
@@ -488,6 +778,115 @@ const styles = StyleSheet.create({
   submitButtonText: {
     color: colors.white,
     fontSize: 16,
+    fontWeight: '600',
+  },
+  errorBanner: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    borderColor: '#fca5a5',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+    padding: 12,
+  },
+  errorBannerText: {
+    color: '#dc2626',
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  modalBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    elevation: 8,
+    maxWidth: 400,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    width: '100%',
+  },
+  modalIconCircle: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(22, 163, 74, 0.12)',
+    borderRadius: 36,
+    height: 72,
+    justifyContent: 'center',
+    marginBottom: 16,
+    width: 72,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    color: colors.textMuted,
+    fontSize: 14,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  modalDetailsBox: {
+    backgroundColor: colors.background,
+    borderColor: colors.outlineVariant,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginVertical: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    width: '100%',
+  },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  modalLabel: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  modalValue: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalDivider: {
+    backgroundColor: colors.outlineVariant,
+    height: 1,
+    marginVertical: 2,
+    opacity: 0.5,
+  },
+  modalNotice: {
+    color: '#059669',
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  modalDoneButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primaryButton,
+    borderRadius: 10,
+    height: 46,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  modalDoneButtonText: {
+    color: colors.white,
+    fontSize: 15,
     fontWeight: '600',
   },
 });

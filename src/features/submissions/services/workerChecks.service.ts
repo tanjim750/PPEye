@@ -17,8 +17,24 @@ export type WorkerIssue = {
   tone: "error" | "warning";
 };
 
+export type WorkerReviewSummary = {
+  sequenceNo: number;
+  workerInstanceId?: number;
+  workerName: string;
+  status: "safe" | "unsafe" | "review";
+  unsafeReasons?: string[];
+  otherReasonText?: string;
+  frontUri?: string | null;
+  backUri?: string | null;
+  frontDriveId?: string | null;
+  backDriveId?: string | null;
+};
+
 export type WorkerCheck = {
   id: string;
+  submissionId?: number;
+  workerCount?: number;
+  workerReviews?: WorkerReviewSummary[];
   image?: ImageSource;
   issues?: WorkerIssue[];
   reviewerName?: string;
@@ -38,193 +54,7 @@ const minute = 60 * 1000;
 const hour = 60 * minute;
 const day = 24 * hour;
 
-// Initial state containing Safe, Unsafe, and Pending workers with exact timestamps and proper formatted timeKeys
-const demoWorkerChecks = [
-  // 1. Safe workers (Approved by EHS - shown in "All History" tab)
-  {
-    isDemo: true,
-    id: 'w130',
-    image: assets.fieldSafeCheck,
-    status: 'safe',
-    timeKey: 'time1510', // Today, 03:10 PM
-    timestamp: now - 20 * minute,
-    titleKey: 'worker130',
-    workerNumber: 130,
-  },
-  {
-    isDemo: true,
-    id: 'w129',
-    image: assets.fieldSafeCheck,
-    status: 'safe',
-    timeKey: 'time1420', // Today, 02:20 PM
-    timestamp: now - 70 * minute,
-    titleKey: 'worker129',
-    workerNumber: 129,
-  },
-  {
-    isDemo: true,
-    id: 'w128',
-    image: assets.fieldSafeCheck,
-    status: 'safe',
-    timeKey: 'time1215', // Today, 12:15 PM
-    timestamp: now - 195 * minute,
-    titleKey: 'worker128',
-    workerNumber: 128,
-  },
-  {
-    isDemo: true,
-    id: 'w126',
-    image: assets.fieldSafeCheck,
-    status: 'safe',
-    timeKey: 'time1130', // Today, 11:30 AM
-    timestamp: now - 240 * minute,
-    titleKey: 'worker126',
-    workerNumber: 126,
-  },
-  {
-    isDemo: true,
-    id: 'w125',
-    image: assets.fieldSafeCheck,
-    status: 'safe',
-    timeKey: 'time1100', // Today, 11:00 AM
-    timestamp: now - 270 * minute,
-    titleKey: 'worker125',
-    workerNumber: 125,
-  },
-  {
-    isDemo: true,
-    id: 'w124',
-    image: assets.fieldSafeCheck,
-    status: 'safe',
-    timeKey: 'time1042', // Today, 10:42 AM
-    timestamp: now - 288 * minute,
-    titleKey: 'worker124',
-    workerNumber: 124,
-  },
-  {
-    isDemo: true,
-    id: 'w132',
-    image: assets.fieldSafeCheck,
-    status: 'safe',
-    timeKey: 'time0915', // Today, 09:15 AM
-    timestamp: now - 375 * minute,
-    titleKey: 'worker132',
-    workerNumber: 132,
-  },
-  {
-    isDemo: true,
-    id: 'w134',
-    image: assets.fieldSafeCheck,
-    status: 'safe',
-    timeKey: 'yesterday1415', // Yesterday, 02:15 PM
-    timestamp: now - 1 * day - 2 * hour,
-    titleKey: 'worker134',
-    workerNumber: 134,
-  },
-
-  // 2. Unsafe workers (Action required - clickable to fix/resubmit)
-  {
-    isDemo: true,
-    id: 'w135',
-    image: assets.fieldUnsafeCheck,
-    issues: [
-      {
-        message: 'Worker helmet chin strap was unbuckled while climbing.',
-        severityKey: 'critical',
-        tags: ['Helmet', 'Safety Gear'],
-        title: 'Helmet Chin Strap Unbuckled',
-        tone: 'error',
-      },
-      {
-        message: 'Twin tail shock-absorbing lanyard not anchored to safety lifeline.',
-        severityKey: 'critical',
-        tags: ['Lanyard', 'Fall Arrest'],
-        title: 'Lanyard Anchorage Not Secured',
-        tone: 'error',
-      },
-    ],
-    reviewerName: 'Mahmudul Hasan · EHS Representative',
-    reviewerNote: 'Worker #135 was observed without the helmet chin strap fastened during vertical climbing. The lanyard carabiner was unclipped from the safety lifeline.',
-    siteName: 'Gazipur-ER-102 - Tower Sector 3',
-    status: 'unsafe',
-    timeKey: 'time0945', // Today, 09:45 AM
-    timestamp: now - 345 * minute,
-    titleKey: 'worker135',
-    unsafeReasons: ['helmet', 'lanyard'],
-    workerNumber: 135,
-  },
-  {
-    isDemo: true,
-    id: 'w127',
-    image: assets.fieldUnsafeCheck,
-    issues: [
-      {
-        message: 'Full-body harness leg straps and chest strap loose and improperly adjusted.',
-        severityKey: 'critical',
-        tags: ['Harness', 'Fall Protection'],
-        title: 'Full-Body Harness Fitting Failure',
-        tone: 'error',
-      },
-      {
-        message: 'Worker operating near edge with no active fall restraint connection.',
-        severityKey: 'critical',
-        tags: ['Anchorage', 'Fall Arrest'],
-        title: 'Anchorage Missing',
-        tone: 'error',
-      },
-    ],
-    reviewerName: 'Tanvir Hossain · EHS Safety Officer',
-    reviewerNote: 'Worker #127 full-body harness dorsal D-ring was misaligned and leg straps were unbuckled. Lanyard carabiner was unclipped from certified anchor point.',
-    siteName: 'Mirpur-DH-044 - Rooftop Mast',
-    status: 'unsafe',
-    timeKey: 'yesterday1630', // Yesterday, 04:30 PM
-    timestamp: now - 1 * day - 4 * hour,
-    titleKey: 'worker127',
-    unsafeReasons: ['harness', 'anchorage'],
-    workerNumber: 127,
-  },
-
-  // 3. Pending workers (Awaiting review - shown in "All pending" tab / "View all")
-  {
-    isDemo: true,
-    id: 'w136',
-    status: 'review',
-    timeKey: 'time1520', // Today, 03:20 PM
-    timestamp: now - 10 * minute,
-    titleKey: 'worker136',
-    workerNumber: 136,
-  },
-  {
-    isDemo: true,
-    id: 'w131',
-    status: 'review',
-    timeKey: 'time1345', // Today, 01:45 PM
-    timestamp: now - 105 * minute,
-    titleKey: 'worker131',
-    workerNumber: 131,
-  },
-  {
-    isDemo: true,
-    id: 'w133',
-    status: 'review',
-    timeKey: 'time1042', // Today, 10:42 AM
-    timestamp: now - 288 * minute,
-    titleKey: 'worker133',
-    workerNumber: 133,
-  },
-  {
-    isDemo: true,
-    id: 'w137',
-    status: 'review',
-    timeKey: 'yesterday1515', // Yesterday, 03:15 PM
-    timestamp: now - 1 * day - 1 * hour,
-    titleKey: 'worker137',
-    workerNumber: 137,
-  },
-] satisfies WorkerCheck[];
-
-
-let workerChecks: WorkerCheck[] = isDemoMode ? [...demoWorkerChecks] : [];
+let workerChecks: WorkerCheck[] = [];
 
 const listeners = new Set<() => void>();
 let workerChecksChannel: any = null;
@@ -253,6 +83,17 @@ function notify() {
   listeners.forEach((listener) => listener());
 }
 
+let lastWorkerChecksSyncTimestamp = 0;
+const WORKER_CHECKS_SYNC_COOLDOWN_MS = 6000;
+let workerChecksDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function debouncedSyncWorkerChecks() {
+  if (workerChecksDebounceTimer) clearTimeout(workerChecksDebounceTimer);
+  workerChecksDebounceTimer = setTimeout(() => {
+    syncWorkerChecksWhileFocused();
+  }, 400);
+}
+
 function ensureWorkerChecksRealtimeSubscription() {
   if (workerChecksChannel || listeners.size === 0) {
     return;
@@ -267,25 +108,25 @@ function ensureWorkerChecksRealtimeSubscription() {
         "postgres_changes",
         { event: "*", schema: "public", table: "ppe_reviews" },
         () => {
-          syncWorkerChecksWhileFocused();
+          debouncedSyncWorkerChecks();
         },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "submission_reviews" },
         () => {
-          syncWorkerChecksWhileFocused();
+          debouncedSyncWorkerChecks();
         },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "ppe_submissions" },
         () => {
-          syncWorkerChecksWhileFocused();
+          debouncedSyncWorkerChecks();
         },
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_images" }, () => { syncWorkerChecksWhileFocused(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_review_reasons" }, () => { syncWorkerChecksWhileFocused(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_images" }, () => { debouncedSyncWorkerChecks(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_review_reasons" }, () => { debouncedSyncWorkerChecks(); })
       .subscribe((status: string) => { if (status === 'SUBSCRIBED') syncWorkerChecksWhileFocused(); });
   } catch {
     // Ignore channel setup errors in offline mode
@@ -375,30 +216,48 @@ export function getRecentSafeAndUnsafeChecks(limit = 10): WorkerCheck[] {
 /**
  * Returns safe checks ONLY (for "All History" tab in History view).
  * Sorted chronologically (latest time first).
+ * Includes any completed check that has at least one safe worker.
  */
 export function getSafeWorkerChecks(): WorkerCheck[] {
   return workerChecks
-    .filter((item) => item.status === "safe")
+    .filter((item) => {
+      if (item.workerReviews && item.workerReviews.length > 0) {
+        return item.workerReviews.some((w) => w.status === "safe");
+      }
+      return item.status === "safe";
+    })
     .sort((a, b) => b.timestamp - a.timestamp);
 }
 
 /**
  * Returns pending/review checks ONLY (for "All pending" tab in History view).
  * Sorted chronologically (latest time first).
+ * Includes any check that has at least one worker under review.
  */
 export function getPendingWorkerChecks(): WorkerCheck[] {
   return workerChecks
-    .filter((item) => item.status === "review")
+    .filter((item) => {
+      if (item.workerReviews && item.workerReviews.length > 0) {
+        return item.workerReviews.some((w) => w.status === "review");
+      }
+      return item.status === "review";
+    })
     .sort((a, b) => b.timestamp - a.timestamp);
 }
 
 /**
  * Returns unsafe checks ONLY (for "All Unsafe" tab in History view).
  * Sorted chronologically (latest time first).
+ * Includes any check that has at least one unsafe worker.
  */
 export function getUnsafeWorkerChecks(): WorkerCheck[] {
   return workerChecks
-    .filter((item) => item.status === "unsafe")
+    .filter((item) => {
+      if (item.workerReviews && item.workerReviews.length > 0) {
+        return item.workerReviews.some((w) => w.status === "unsafe");
+      }
+      return item.status === "unsafe";
+    })
     .sort((a, b) => b.timestamp - a.timestamp);
 }
 
@@ -466,12 +325,16 @@ export function extractSiteCode(siteName?: string): string {
  * Worker ID is removed as per user request.
  */
 export function formatWorkerCheckTitle(
-  item: { siteName?: string; workerNumber?: number; titleKey?: string },
+  item: { siteName?: string; workerNumber?: number; workerCount?: number; titleKey?: string },
   t?: (key: string, options?: any) => string,
   language?: string,
 ): string {
   const siteCode = extractSiteCode(item.siteName);
   const isBn = language === "bn" || language?.startsWith("bn");
+  if (item.workerCount && item.workerCount > 1) {
+    const workerWord = isBn ? `${item.workerCount} জন কর্মী` : `${item.workerCount} workers`;
+    return `${siteCode} · ${workerWord}`;
+  }
   const prefix = isBn ? "কর্মী" : "Worker";
   return `${prefix} - ${siteCode}`;
 }
@@ -613,12 +476,20 @@ let lastWorkerChecksSignature = "";
 
 /**
  * Synchronizes real worker submissions from Supabase to provide fully dynamic worker IDs and checks.
+ * Routine syncs are throttled to prevent spamming Supabase on fast tab switches.
  */
-export async function syncWorkerChecksFromSupabase(): Promise<void> {
+export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }): Promise<void> {
   if (authStore.user?.category !== "EXTERNAL") return;
+
+  const now = Date.now();
+  if (!options?.force && now - lastWorkerChecksSyncTimestamp < WORKER_CHECKS_SYNC_COOLDOWN_MS) {
+    return syncWorkerChecksInFlight || Promise.resolve();
+  }
+
   if (syncWorkerChecksInFlight) {
     return syncWorkerChecksInFlight;
   }
+  lastWorkerChecksSyncTimestamp = now;
 
   syncWorkerChecksInFlight = (async () => {
     try {
@@ -677,67 +548,170 @@ export async function syncWorkerChecksFromSupabase(): Promise<void> {
 
       for (const sub of subs) {
         const workers = (sub.ppe_worker_instances as any[]) || [];
+        if (workers.length === 0) continue;
+
+        const workerReviews: WorkerReviewSummary[] = [];
+        let anyUnsafe = false;
+        let anyPending = false;
+        const allUnsafeReasons: string[] = [];
+        const allNotes: string[] = [];
+        let maxTimestamp = new Date(sub.created_at).getTime();
 
         for (const w of workers) {
-          const review = latestCurrentReview(w, ((sub as any).metadata?.workerReviews || []).find((item: any) => Number(item.sequenceNo) === Number(w.sequence_no)));
-          const newestPhotoAt = Math.max(0, ...(w.ppe_images || []).map((image: any) => new Date(image.created_at || 0).getTime()));
-          let status: "safe" | "unsafe" | "review" = "review";
+          const review = latestCurrentReview(
+            w,
+            ((sub as any).metadata?.workerReviews || []).find(
+              (item: any) => Number(item.sequenceNo) === Number(w.sequence_no)
+            )
+          );
+          const newestPhotoAt = Math.max(
+            0,
+            ...(w.ppe_images || []).map((image: any) =>
+              new Date(image.created_at || 0).getTime()
+            )
+          );
+          let wStatus: "safe" | "unsafe" | "review" = "review";
           let unsafeReasons: string[] = [];
           let reviewerNote: string | undefined;
 
           if (review?.verdict === "SAFE") {
-            status = "safe";
+            wStatus = "safe";
           } else if (review?.verdict === "UNSAFE") {
-            status = "unsafe";
-            if (review.ppe_review_reasons) {
+            wStatus = "unsafe";
+            anyUnsafe = true;
+            if (review.ppe_review_reasons && review.ppe_review_reasons.length > 0) {
               unsafeReasons = review.ppe_review_reasons
                 .map(
                   (rr: any) =>
-                    rr.unsafe_reasons?.label || rr.unsafe_reasons?.code,
+                    rr.unsafe_reasons?.label || rr.unsafe_reasons?.code
                 )
                 .filter(Boolean);
-              reviewerNote = review.ppe_review_reasons[0]?.note;
+              
+              // Extract any note attached to reasons (especially 'other' or custom note)
+              const noteEntry = review.ppe_review_reasons.find((rr: any) => Boolean(rr.note && rr.note.trim()));
+              reviewerNote = noteEntry?.note?.trim();
+
+              allUnsafeReasons.push(...unsafeReasons);
             }
-          }
 
-          const frontImg = [...(w.ppe_images || [])].filter((img: any) => img.side === "FRONT").sort(
-            (a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
-          )[0];
-          const fileId = frontImg?.files?.provider_file_id;
-          const storageProvider = frontImg?.files?.storage_provider;
-          const isSupabase =
-            storageProvider === "SUPABASE" ||
-            fileId?.startsWith("submissions/") ||
-            fileId?.includes("/");
+            // Fallback to metadata if relational note was missing for THIS worker
+            if (!reviewerNote) {
+              const metaWorker = (Array.isArray(sub.metadata?.workerReviews) ? sub.metadata.workerReviews : []).find(
+                (mw: any) => Number(mw.sequenceNo) === Number(w.sequence_no)
+              );
+              reviewerNote =
+                metaWorker?.otherReasonText?.trim() ||
+                (workers.length === 1
+                  ? sub.metadata?.otherReasonText?.trim() || sub.metadata?.combinedNotes?.trim()
+                  : undefined);
+            }
 
-          let imageUrl: string | undefined;
-          if (fileId) {
-            if (isSupabase) {
-              const { getCachedImageUriSync } = require("@/utils/image");
-              imageUrl = getCachedImageUriSync(fileId) ?? undefined;
+            if (reviewerNote) allNotes.push(reviewerNote);
+          } else {
+            // Check metadata if review relation row is not yet loaded
+            const metaWorker = (Array.isArray(sub.metadata?.workerReviews) ? sub.metadata.workerReviews : []).find(
+              (mw: any) => Number(mw.sequenceNo) === Number(w.sequence_no)
+            );
+            if (metaWorker?.status === "unsafe") {
+              wStatus = "unsafe";
+              anyUnsafe = true;
+              unsafeReasons = metaWorker.unsafeReasons || [];
+              reviewerNote =
+                metaWorker?.otherReasonText?.trim() ||
+                (workers.length === 1
+                  ? sub.metadata?.otherReasonText?.trim() || sub.metadata?.combinedNotes?.trim()
+                  : undefined);
+              allUnsafeReasons.push(...unsafeReasons);
+              if (reviewerNote) allNotes.push(reviewerNote);
+            } else if (metaWorker?.status === "safe") {
+              wStatus = "safe";
             } else {
-              imageUrl = getDriveThumbnailUrl(fileId);
+              anyPending = true;
             }
           }
-          const latestReviewAt = review?.reviewed_at ? new Date(review.reviewed_at).getTime() : 0;
 
-          liveChecks.push({
-            id: `sub_${sub.id}_w_${w.sequence_no}`,
-            image: imageUrl ? ({ uri: imageUrl } as any) : undefined,
-            siteName: sub.site_name,
-            status,
-            timeKey: "today",
-            timestamp: Math.max(new Date(sub.created_at).getTime(), newestPhotoAt, latestReviewAt),
-            titleKey: `worker${w.sequence_no}`,
-            workerNumber: w.sequence_no,
+          const frontImg = [...(w.ppe_images || [])]
+            .filter((img: any) => img.side === "FRONT")
+            .sort(
+              (a: any, b: any) =>
+                new Date(b.created_at || 0).getTime() -
+                new Date(a.created_at || 0).getTime()
+            )[0];
+          const backImg = [...(w.ppe_images || [])]
+            .filter((img: any) => img.side === "BACK")
+            .sort(
+              (a: any, b: any) =>
+                new Date(b.created_at || 0).getTime() -
+                new Date(a.created_at || 0).getTime()
+            )[0];
+
+          const frontFileId = frontImg?.files?.provider_file_id;
+          const backFileId = backImg?.files?.provider_file_id;
+          const latestReviewAt = review?.reviewed_at
+            ? new Date(review.reviewed_at).getTime()
+            : 0;
+          maxTimestamp = Math.max(maxTimestamp, newestPhotoAt, latestReviewAt);
+
+          workerReviews.push({
+            sequenceNo: Number(w.sequence_no),
+            workerInstanceId: w.id,
+            workerName: `Worker ${w.sequence_no}`,
+            status: wStatus,
             unsafeReasons,
-            reviewerNote,
+            otherReasonText: reviewerNote,
+            frontDriveId: (frontImg?.files?.storage_provider === 'SUPABASE' || frontFileId?.includes('/')) ? frontFileId : null,
+            backDriveId: (backImg?.files?.storage_provider === 'SUPABASE' || backFileId?.includes('/')) ? backFileId : null,
           });
         }
+
+        let overallStatus: "safe" | "unsafe" | "review" = "review";
+        if (anyUnsafe) {
+          overallStatus = "unsafe";
+        } else if (
+          workerReviews.length > 0 &&
+          workerReviews.every((w) => w.status === "safe")
+        ) {
+          overallStatus = "safe";
+        }
+
+        const firstWorkerFront = [...(workers[0]?.ppe_images || [])]
+          .filter((img: any) => img.side === "FRONT")
+          .sort(
+            (a: any, b: any) =>
+              new Date(b.created_at || 0).getTime() -
+              new Date(a.created_at || 0).getTime()
+          )[0];
+        const fileId = firstWorkerFront?.files?.provider_file_id;
+        const storageProvider = firstWorkerFront?.files?.storage_provider;
+        const isSupabase =
+          storageProvider === "SUPABASE" ||
+          fileId?.startsWith("submissions/") ||
+          fileId?.includes("/");
+
+        let imageUrl: string | undefined;
+        if (fileId && isSupabase) {
+          const { getCachedImageUriSync } = require("@/utils/image");
+          imageUrl = getCachedImageUriSync(fileId) ?? undefined;
+        }
+
+        liveChecks.push({
+          id: `sub_${sub.id}`,
+          submissionId: sub.id,
+          workerCount: workers.length,
+          workerReviews,
+          image: imageUrl ? ({ uri: imageUrl } as any) : undefined,
+          siteName: sub.site_name,
+          status: overallStatus,
+          timeKey: "today",
+          timestamp: maxTimestamp,
+          titleKey: `sub_${sub.id}`,
+          workerNumber: workers.length,
+          unsafeReasons: Array.from(new Set(allUnsafeReasons)),
+          reviewerNote: allNotes.filter(Boolean).join("; ") || sub.metadata?.otherReasonText || sub.metadata?.combinedNotes || undefined,
+        });
       }
 
-      const demoItems = isDemoMode ? workerChecks.filter((item) => item.isDemo) : [];
-      const nextChecks = [...liveChecks, ...demoItems].sort(
+      const nextChecks = [...liveChecks].sort(
         (a, b) => (b.timestamp || 0) - (a.timestamp || 0),
       );
       const nextSignature = nextChecks.map((check) => [

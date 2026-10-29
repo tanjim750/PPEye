@@ -9,12 +9,41 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui/Icon';
 import { assets } from '@/constants/assets';
 import { useAuth } from '@/hooks/useAuth';
-import { authStore } from '@/stores/auth.store';
+import { AuthUser } from '@/features/auth/types';
+import { authStore, updateAuthUser } from '@/stores/auth.store';
 import { getProfilePictureUri } from '@/services/storage';
 import { submissionCoordinator } from '@/services/submission-coordination/submission-coordinator';
 import { cacheImage } from '@/utils/image';
 
 type EditableField = 'fullName' | 'phoneNumber' | 'email';
+
+async function resolveDatabaseUserId(currentUser: any): Promise<number> {
+  if (typeof currentUser?.id === 'number' && currentUser.id > 0) {
+    return currentUser.id;
+  }
+  try {
+    const { supabase } = require('@/services/supabase/client');
+    if (supabase) {
+      if (currentUser?.phone) {
+        const { data: byPhone } = await supabase.from('users').select('id').eq('phone', currentUser.phone).maybeSingle();
+        if (byPhone?.id) return Number(byPhone.id);
+      }
+      if (currentUser?.email) {
+        const { data: byEmail } = await supabase.from('users').select('id').ilike('email', currentUser.email).maybeSingle();
+        if (byEmail?.id) return Number(byEmail.id);
+      }
+      const category = currentUser?.category || (currentUser?.role === 'reviewer' ? 'INTERNAL' : 'EXTERNAL');
+      const { data: byCat } = await supabase.from('users').select('id').eq('category', category).limit(1).maybeSingle();
+      if (byCat?.id) return Number(byCat.id);
+
+      const { data: anyUser } = await supabase.from('users').select('id').limit(1).maybeSingle();
+      if (anyUser?.id) return Number(anyUser.id);
+    }
+  } catch (err) {
+    console.warn('[ProfileScreen] resolveDatabaseUserId error:', err);
+  }
+  return 1;
+}
 
 export function ProfileScreen() {
   const router = useRouter();
@@ -22,28 +51,40 @@ export function ProfileScreen() {
   const { user } = useAuth();
   const activeUserId = typeof user?.id === 'number' ? user.id : 1;
 
-  const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [fullName, setFullName] = useState(user?.name || 'User Profile');
-  const [phoneNumber, setPhoneNumber] = useState(user?.phone || '+880 1712 345678');
-  const [email, setEmail] = useState(user?.email || 'user@example.com');
+  const [profileImage, setProfileImage] = useState<string | null>(user?.profilePictureUrl || null);
+  const [fullName, setFullName] = useState(user?.name || '');
+  const [phoneNumber, setPhoneNumber] = useState(user?.phone || '');
+  const [email, setEmail] = useState(user?.email || '');
   const [focusedField, setFocusedField] = useState<EditableField | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user?.name) setFullName(user.name);
-    if (user?.phone) setPhoneNumber(user.phone);
-    if (user?.email) setEmail(user.email);
+    setFullName(user?.name || '');
+    setPhoneNumber(user?.phone || '');
+    setEmail(user?.email || '');
+    setProfileImage(user?.profilePictureUrl || null);
   }, [user]);
 
   useEffect(() => {
-    getProfilePictureUri(activeUserId)
-      .then((cachedUri) => {
-        if (cachedUri) {
+    if (user?.profilePictureUrl) {
+      setProfileImage(user.profilePictureUrl);
+      return;
+    }
+    if (!user?.id) {
+      setProfileImage(null);
+      return;
+    }
+    resolveDatabaseUserId(user).then((dbUid) => {
+      getProfilePictureUri(dbUid)
+        .then((cachedUri) => {
           setProfileImage(cachedUri);
-        }
-      })
-      .catch(() => {});
-  }, [activeUserId]);
+          if (cachedUri && authStore.user && !authStore.user.profilePictureUrl) {
+            authStore.setProfilePictureUrl(cachedUri);
+          }
+        })
+        .catch(() => setProfileImage(null));
+    });
+  }, [user, activeUserId]);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -61,21 +102,40 @@ export function ProfileScreen() {
     if (!result.canceled && result.assets[0]?.uri) {
       const pickedUri = result.assets[0].uri;
       setProfileImage(pickedUri);
-      submissionCoordinator
-        .uploadAvatar({ userId: activeUserId, localUri: pickedUri, cleanOldAvatar: true })
-        .then((res) => {
-          if (res.status === 'COMPLETE_SUCCESS' && res.data?.storagePath) {
-            cacheImage(res.data.storagePath, pickedUri, { isSensitive: true }).catch(() => {});
-            cacheImage(`user_avatar_${activeUserId}`, pickedUri, { isSensitive: true }).catch(() => {});
-          }
-        })
-        .catch((err) => {
-          console.warn('[ProfileScreen] Profile image upload error:', err);
+      authStore.setProfilePictureUrl(pickedUri);
+
+      try {
+        const targetUserId = await resolveDatabaseUserId(user);
+        const res = await submissionCoordinator.uploadAvatar({
+          userId: targetUserId,
+          localUri: pickedUri,
+          cleanOldAvatar: true,
         });
+
+        if (res.status === 'COMPLETE_SUCCESS' && res.data?.storagePath) {
+          cacheImage(res.data.storagePath, pickedUri, { isSensitive: true }).catch(() => {});
+          cacheImage(`user_avatar_${targetUserId}`, pickedUri, { isSensitive: true }).catch(() => {});
+
+          try {
+            const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+            const signed = await supabaseStorageService.createSignedUrl('avatars', res.data.storagePath, 86400);
+            if (signed?.signedUrl) {
+              authStore.setProfilePictureUrl(signed.signedUrl);
+              setProfileImage(signed.signedUrl);
+            }
+          } catch {}
+
+          setToastMessage(t('profileScreen.saveSuccess'));
+        } else if (res.error) {
+          console.warn('[ProfileScreen] Avatar upload failed:', res.error);
+        }
+      } catch (err) {
+        console.warn('[ProfileScreen] Profile image upload error:', err);
+      }
     }
   }
 
-  function handleSave() {
+  async function handleSave() {
     const trimmedName = fullName.trim();
     const trimmedPhone = phoneNumber.trim();
     const trimmedEmail = email.trim();
@@ -93,13 +153,39 @@ export function ProfileScreen() {
       return;
     }
 
-    if (authStore.user) {
-      authStore.user = {
-        ...authStore.user,
-        name: trimmedName,
-        phone: trimmedPhone,
-        email: trimmedEmail,
-      };
+    const baseUser: Partial<AuthUser> = authStore.user || user || {
+      id: 1,
+      role: 'reviewer',
+      category: 'INTERNAL',
+    };
+
+    const updatedUser: AuthUser = {
+      ...(baseUser as AuthUser),
+      name: trimmedName,
+      phone: trimmedPhone,
+      email: trimmedEmail,
+      profilePictureUrl: profileImage || (baseUser as AuthUser).profilePictureUrl,
+    };
+
+    authStore.user = updatedUser;
+    updateAuthUser(updatedUser);
+
+    try {
+      const targetUserId = await resolveDatabaseUserId(updatedUser);
+      const { supabase } = require('@/services/supabase/client');
+      if (supabase && targetUserId) {
+        await supabase
+          .from('users')
+          .update({
+            name: trimmedName,
+            phone: trimmedPhone,
+            email: trimmedEmail,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', targetUserId);
+      }
+    } catch (dbErr) {
+      console.warn('[ProfileScreen] Database user update error:', dbErr);
     }
 
     console.log('Profile saved:', { fullName: trimmedName, phoneNumber: trimmedPhone, email: trimmedEmail, profileImage });
@@ -136,11 +222,19 @@ export function ProfileScreen() {
 
           <View style={styles.profileSection}>
             <View style={styles.avatarWrapper}>
-              <Image
-                contentFit="cover"
-                source={profileImage ? { uri: profileImage } : assets.ehsProfile}
-                style={styles.avatar}
-              />
+              {profileImage ? (
+                <Image
+                  contentFit="cover"
+                  source={{ uri: profileImage }}
+                  style={styles.avatar}
+                />
+              ) : (
+                <View style={[styles.avatar, styles.placeholderAvatar]}>
+                  <Text style={styles.placeholderInitial}>
+                    {(fullName || user?.name || 'U').charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
               <Pressable
                 accessibilityLabel="Change profile photo"
                 accessibilityRole="button"
@@ -149,8 +243,10 @@ export function ProfileScreen() {
                 <Icon color={colors.white} name={{ ios: 'pencil', android: 'edit', web: 'edit' }} size={16} />
               </Pressable>
             </View>
-            <Text style={styles.name}>{fullName}</Text>
-            <Text style={styles.subtitle}>{t('profileScreen.ehsSubtitle')}</Text>
+            <Text style={styles.name}>{fullName || 'User Profile'}</Text>
+            <Text style={styles.subtitle}>
+              {user?.designation || (user?.role === 'vendor' || user?.role === 'external' ? 'Vendor Member' : 'Compliance Officer')}
+            </Text>
           </View>
 
           <View style={styles.section}>
@@ -180,7 +276,9 @@ export function ProfileScreen() {
                 name={{ ios: 'checkmark.shield', android: 'shield_person', web: 'shield_person' }}
                 size={20}
               />
-              <Text style={styles.roleText}>{t('profileScreen.roleValue')}</Text>
+              <Text style={styles.roleText}>
+                {user?.designation || (user?.role === 'vendor' || user?.role === 'external' ? 'Vendor Member' : 'Compliance Officer')}
+              </Text>
             </View>
           </View>
 
@@ -271,6 +369,16 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     height: 96,
     width: 96,
+  },
+  placeholderAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#dbeafe',
+    justifyContent: 'center',
+  },
+  placeholderInitial: {
+    color: '#005cad',
+    fontSize: 34,
+    fontWeight: '700',
   },
   editBadge: {
     alignItems: 'center',
