@@ -30,7 +30,11 @@
     "reviewUpdates": "Review updates",
     "reviewUpdatesSub": "Receive alerts when the status of your submitted reviews changes.",
     "accountUpdates": "Important account updates",
-    "accountUpdatesSub": "Mandatory notifications regarding security and compliance."
+    "accountUpdatesSub": "Mandatory notifications regarding security and compliance.",
+    "batterySection": "Battery & Background Delivery",
+    "batteryOptimization": "Disable Battery Optimization",
+    "batteryOptimizationSub": "Ensure PPEye is set to Unrestricted so real-time safety alerts arrive when the screen is locked or idle.",
+    "batteryAction": "Configure System Settings"
   },
 
   "helpScreen": {

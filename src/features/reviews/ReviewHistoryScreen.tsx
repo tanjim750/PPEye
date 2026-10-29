@@ -111,6 +111,7 @@ export function HistoryInspectionPhoto({
   const [photoSource, setPhotoSource] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const retryCountRef = useRef(0);
 
   useEffect(() => {
@@ -119,12 +120,14 @@ export function HistoryInspectionPhoto({
     setHasError(false);
 
     async function resolveSource() {
-      // 1. Direct local file URI
+      // 1. Direct local file URI or already resolved HTTP signed URL
       if (
         fileIdOrUri &&
         (fileIdOrUri.startsWith('file://') ||
           fileIdOrUri.startsWith('ph://') ||
-          fileIdOrUri.startsWith('content://'))
+          fileIdOrUri.startsWith('content://') ||
+          fileIdOrUri.startsWith('http://') ||
+          fileIdOrUri.startsWith('https://'))
       ) {
         if (!isCancelled) {
           setPhotoSource({ uri: fileIdOrUri });
@@ -137,7 +140,7 @@ export function HistoryInspectionPhoto({
       let resolvedDriveId = directDriveId || extractDriveId(fileIdOrUri);
 
       // If no drive ID from URL and submissionId is a database numeric ID, fetch from Supabase (memoized)
-      const parsedSubId = Number(submissionId);
+      const parsedSubId = Number(String(submissionId || '').replace(/\D/g, ''));
       let resolvedFileProvider: string | null = null;
       if (!resolvedDriveId && !isNaN(parsedSubId) && parsedSubId > 0) {
         try {
@@ -153,6 +156,15 @@ export function HistoryInspectionPhoto({
       }
 
       if (resolvedDriveId) {
+        // If already a full URL, use it directly
+        if (resolvedDriveId.startsWith('http://') || resolvedDriveId.startsWith('https://')) {
+          if (!isCancelled) {
+            setPhotoSource({ uri: resolvedDriveId });
+            setIsLoading(false);
+          }
+          return;
+        }
+
         const isSupabase =
           resolvedFileProvider === 'SUPABASE' ||
           resolvedDriveId.startsWith('submissions/') ||
@@ -216,7 +228,7 @@ export function HistoryInspectionPhoto({
     return () => {
       isCancelled = true;
     };
-  }, [fileIdOrUri, directDriveId, submissionId, workerSequenceNo, badgeLabel, fallbackAsset]);
+  }, [fileIdOrUri, directDriveId, submissionId, workerSequenceNo, badgeLabel, fallbackAsset, retryTick]);
 
   const handleError = () => {
     setIsLoading(false);
@@ -227,8 +239,14 @@ export function HistoryInspectionPhoto({
     <Pressable
       accessibilityLabel={`Inspect ${badgeLabel} photo`}
       accessibilityRole="button"
-      disabled={!photoSource || hasError}
+      disabled={!photoSource && !hasError}
       onPress={() => {
+        if (hasError) {
+          setHasError(false);
+          setIsLoading(true);
+          setRetryTick((c) => c + 1);
+          return;
+        }
         if (photoSource && !hasError && onPressZoom) {
           onPressZoom(photoSource, `${workerTitle} • ${badgeLabel} VIEW`);
         }

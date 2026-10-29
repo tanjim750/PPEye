@@ -832,7 +832,11 @@ export async function preloadSubmissionSignedUrls(
           if (fileId && (rawFile?.storage_provider === 'SUPABASE' || fileId.includes('/'))) {
             pathsToLoad.add(fileId);
             if (img.side) {
+              const sUpper = String(img.side).toUpperCase();
+              const sLower = String(img.side).toLowerCase();
               workerPhotoMap.set(`${seq}:${img.side}`, fileId);
+              workerPhotoMap.set(`${seq}:${sUpper}`, fileId);
+              workerPhotoMap.set(`${seq}:${sLower}`, fileId);
             }
           }
         }
@@ -932,7 +936,32 @@ export async function getSubmissionWorkerPhotos(submissionId: number | string): 
             const rawFile = Array.isArray(img.files) ? img.files[0] : img.files;
             const fileId = rawFile?.provider_file_id;
             if (fileId && (rawFile?.storage_provider === 'SUPABASE' || fileId.includes('/'))) {
-              map.set(`${seq}:${img.side}`, fileId);
+              const sideUpper = String(img.side || 'FRONT').toUpperCase();
+              const sideLower = sideUpper.toLowerCase();
+              map.set(`${seq}:${sideUpper}`, fileId);
+              map.set(`${seq}:${sideLower}`, fileId);
+              if (!map.has(String(seq))) {
+                map.set(String(seq), fileId);
+              }
+            }
+          }
+        }
+      }
+
+      // Fallback: If no worker photos found, check general other/hazard evidence
+      if (map.size === 0) {
+        const { data: otherImgs } = await supabase
+          .from('other_images')
+          .select('files ( provider_file_id, storage_provider )')
+          .eq('submission_id', subIdNumber);
+        if (otherImgs && otherImgs.length > 0) {
+          for (const oth of otherImgs) {
+            const rawFile = Array.isArray(oth.files) ? oth.files[0] : oth.files;
+            const fileId = rawFile?.provider_file_id;
+            if (fileId && (rawFile?.storage_provider === 'SUPABASE' || fileId.includes('/'))) {
+              map.set('1:FRONT', fileId);
+              map.set('1', fileId);
+              break;
             }
           }
         }

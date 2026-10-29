@@ -118,10 +118,11 @@ export function ProfileScreen() {
 
           try {
             const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
-            const signed = await supabaseStorageService.createSignedUrl('avatars', res.data.storagePath, 86400);
-            if (signed?.signedUrl) {
-              authStore.setProfilePictureUrl(signed.signedUrl);
-              setProfileImage(signed.signedUrl);
+            const signed = await supabaseStorageService.createSignedUrl('avatars', res.data.storagePath, 86400 * 7);
+            const signedUrl = typeof signed === 'string' ? signed : signed?.signedUrl;
+            if (signedUrl && typeof signedUrl === 'string' && signedUrl.startsWith('http')) {
+              authStore.setProfilePictureUrl(signedUrl);
+              setProfileImage(signedUrl);
             }
           } catch {}
 

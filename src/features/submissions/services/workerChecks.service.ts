@@ -1,7 +1,6 @@
 import { authStore } from "@/stores/auth.store";
 import { latestCurrentReview } from "@/services/vendor/vendorSubmissions.service";
 import { createRefCountedSubscription } from "@/services/realtime/refCountedSubscription";
-import { getDriveThumbnailUrl } from "@/services/google-drive/files";
 import { ImageSource } from "expo-image";
 import { useCallback, useState } from "react";
 import { useFocusEffect } from "expo-router";
@@ -321,22 +320,16 @@ export function extractSiteCode(siteName?: string): string {
 
 /**
  * Returns dynamic title for worker check on vendor side:
- * Displays "Worker - <site code>" (or Bengali "কর্মী - <site code>")
- * Worker ID is removed as per user request.
+ * Displays site name directly (Worker prefix removed as per user request).
  */
 export function formatWorkerCheckTitle(
   item: { siteName?: string; workerNumber?: number; workerCount?: number; titleKey?: string },
   t?: (key: string, options?: any) => string,
   language?: string,
 ): string {
-  const siteCode = extractSiteCode(item.siteName);
-  const isBn = language === "bn" || language?.startsWith("bn");
-  if (item.workerCount && item.workerCount > 1) {
-    const workerWord = isBn ? `${item.workerCount} জন কর্মী` : `${item.workerCount} workers`;
-    return `${siteCode} · ${workerWord}`;
-  }
-  const prefix = isBn ? "কর্মী" : "Worker";
-  return `${prefix} - ${siteCode}`;
+  let name = item.siteName?.trim() || extractSiteCode(item.siteName) || "Site";
+  name = name.replace(/^(Worker|কর্মী)\s*[-–—:]\s*/i, "");
+  return name.trim() || "Site";
 }
 
 /**
@@ -475,8 +468,11 @@ let syncWorkerChecksInFlight: Promise<void> | null = null;
 let lastWorkerChecksSignature = "";
 
 /**
- * Synchronizes real worker submissions from Supabase to provide fully dynamic worker IDs and checks.
- * Routine syncs are throttled to prevent spamming Supabase on fast tab switches.
+ * Synchronizes worker submissions from Supabase in real-time.
+ * Features:
+ * - Strict role-based isolation (workers only see their submissions; team leaders see all vendor submissions)
+ * - Concurrent generation and memory-disk prefetching of FRONT & BACK photo signed URLs
+ * - Zero-delay instant display when tapping "Tap to view details"
  */
 export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }): Promise<void> {
   if (authStore.user?.category !== "EXTERNAL") return;
@@ -631,22 +627,59 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
           }
 
           const frontImg = [...(w.ppe_images || [])]
-            .filter((img: any) => img.side === "FRONT")
+            .filter((img: any) => String(img.side || '').toUpperCase() === "FRONT")
             .sort(
               (a: any, b: any) =>
                 new Date(b.created_at || 0).getTime() -
                 new Date(a.created_at || 0).getTime()
             )[0];
           const backImg = [...(w.ppe_images || [])]
-            .filter((img: any) => img.side === "BACK")
+            .filter((img: any) => String(img.side || '').toUpperCase() === "BACK")
             .sort(
               (a: any, b: any) =>
                 new Date(b.created_at || 0).getTime() -
                 new Date(a.created_at || 0).getTime()
             )[0];
 
-          const frontFileId = frontImg?.files?.provider_file_id;
-          const backFileId = backImg?.files?.provider_file_id;
+          const frontRawFile = Array.isArray(frontImg?.files) ? frontImg.files[0] : frontImg?.files;
+          const backRawFile = Array.isArray(backImg?.files) ? backImg.files[0] : backImg?.files;
+
+          const frontFileId = frontRawFile?.provider_file_id;
+          const backFileId = backRawFile?.provider_file_id;
+
+          let frontUri: string | null = null;
+          let backUri: string | null = null;
+          const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+          const { Image } = require('expo-image');
+
+          if (frontFileId && (frontRawFile?.storage_provider === 'SUPABASE' || frontFileId.includes('/'))) {
+            try {
+              const bucket = frontFileId.startsWith('users/') ? 'avatars' : 'evidence';
+              const signed = await supabaseStorageService.createSignedUrl(bucket, frontFileId, 86400);
+              const u = typeof signed === 'string' ? signed : signed?.signedUrl;
+              if (u && typeof u === 'string' && u.startsWith('http')) {
+                frontUri = u;
+                if (Image && typeof Image.prefetch === 'function') {
+                  Image.prefetch(u, 'memory-disk').catch(() => {});
+                }
+              }
+            } catch {}
+          }
+
+          if (backFileId && (backRawFile?.storage_provider === 'SUPABASE' || backFileId.includes('/'))) {
+            try {
+              const bucket = backFileId.startsWith('users/') ? 'avatars' : 'evidence';
+              const signed = await supabaseStorageService.createSignedUrl(bucket, backFileId, 86400);
+              const u = typeof signed === 'string' ? signed : signed?.signedUrl;
+              if (u && typeof u === 'string' && u.startsWith('http')) {
+                backUri = u;
+                if (Image && typeof Image.prefetch === 'function') {
+                  Image.prefetch(u, 'memory-disk').catch(() => {});
+                }
+              }
+            } catch {}
+          }
+
           const latestReviewAt = review?.reviewed_at
             ? new Date(review.reviewed_at).getTime()
             : 0;
@@ -659,8 +692,10 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
             status: wStatus,
             unsafeReasons,
             otherReasonText: reviewerNote,
-            frontDriveId: (frontImg?.files?.storage_provider === 'SUPABASE' || frontFileId?.includes('/')) ? frontFileId : null,
-            backDriveId: (backImg?.files?.storage_provider === 'SUPABASE' || backFileId?.includes('/')) ? backFileId : null,
+            frontDriveId: (frontRawFile?.storage_provider === 'SUPABASE' || frontFileId?.includes('/')) ? frontFileId : null,
+            backDriveId: (backRawFile?.storage_provider === 'SUPABASE' || backFileId?.includes('/')) ? backFileId : null,
+            frontUri: frontUri || undefined,
+            backUri: backUri || undefined,
           });
         }
 
@@ -674,15 +709,27 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
           overallStatus = "safe";
         }
 
-        const firstWorkerFront = [...(workers[0]?.ppe_images || [])]
-          .filter((img: any) => img.side === "FRONT")
-          .sort(
-            (a: any, b: any) =>
-              new Date(b.created_at || 0).getTime() -
-              new Date(a.created_at || 0).getTime()
-          )[0];
-        const fileId = firstWorkerFront?.files?.provider_file_id;
-        const storageProvider = firstWorkerFront?.files?.storage_provider;
+        let fileId: string | undefined;
+        let storageProvider: string | undefined;
+
+        for (const w of workers) {
+          const imgs = (w?.ppe_images || []).slice().sort((a: any, b: any) => {
+            const aSide = String(a.side || '').toUpperCase();
+            const bSide = String(b.side || '').toUpperCase();
+            if (aSide === 'FRONT' && bSide !== 'FRONT') return -1;
+            if (bSide === 'FRONT' && aSide !== 'FRONT') return 1;
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+          });
+          if (imgs.length > 0) {
+            const rawFile = Array.isArray(imgs[0]?.files) ? imgs[0].files[0] : imgs[0]?.files;
+            if (rawFile?.provider_file_id) {
+              fileId = rawFile.provider_file_id;
+              storageProvider = rawFile.storage_provider;
+              break;
+            }
+          }
+        }
+
         const isSupabase =
           storageProvider === "SUPABASE" ||
           fileId?.startsWith("submissions/") ||
@@ -692,6 +739,26 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
         if (fileId && isSupabase) {
           const { getCachedImageUriSync } = require("@/utils/image");
           imageUrl = getCachedImageUriSync(fileId) ?? undefined;
+          if (!imageUrl) {
+            try {
+              const { supabaseStorageService } = require("@/services/storage/supabase-storage.client");
+              const bucket = fileId.startsWith("users/") ? "avatars" : "evidence";
+              const signedRes = await supabaseStorageService.createSignedUrl(bucket, fileId, 86400);
+              const urlStr = typeof signedRes === "string" ? signedRes : signedRes?.signedUrl;
+              if (urlStr && typeof urlStr === "string" && urlStr.startsWith("http")) {
+                imageUrl = urlStr;
+                const { Image } = require("expo-image");
+                if (Image && typeof Image.prefetch === 'function') {
+                  Image.prefetch(urlStr, 'memory-disk').catch(() => {});
+                }
+              }
+            } catch {}
+          }
+        }
+
+        if (!imageUrl) {
+          const firstWithPhoto = workerReviews.find((r) => r.frontUri || r.backUri);
+          imageUrl = firstWithPhoto?.frontUri || firstWithPhoto?.backUri || undefined;
         }
 
         liveChecks.push({

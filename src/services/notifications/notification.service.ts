@@ -56,6 +56,8 @@ export type NotificationRole = 'vendor' | 'reviewer';
 export interface AppNotification {
   id: string;
   recipientRole: NotificationRole;
+  vendorName?: string;
+  vendorProfileId?: number;
   type: NotificationType;
   title: string;
   titleBn: string;
@@ -64,6 +66,9 @@ export interface AppNotification {
   submissionId?: number | string;
   siteName?: string;
   workerCount?: number;
+  workerSummary?: string;
+  verdict?: 'safe' | 'unsafe';
+  unsafeReasons?: string[];
   read: boolean;
   createdAt: number; // timestamp
 }
@@ -72,6 +77,7 @@ export interface NotificationPreferences {
   newSubmissions: boolean;
   reviewUpdates: boolean;
   accountUpdates: boolean;
+  batteryOptimization: boolean;
 }
 
 const STORAGE_KEY = 'ppeye:notifications:v3';
@@ -83,6 +89,7 @@ let preferences: NotificationPreferences = {
   newSubmissions: true,
   reviewUpdates: true,
   accountUpdates: true,
+  batteryOptimization: true,
 };
 
 // Initial demo notifications strictly partitioned by role
@@ -99,6 +106,7 @@ const INITIAL_DEMO_NOTIFICATIONS: AppNotification[] = [
     submissionId: 1,
     siteName: 'Site-01',
     workerCount: 1,
+    workerSummary: 'Worker #1 (Pending)',
     read: false,
     createdAt: Date.now() - 1000 * 60 * 10,
   },
@@ -106,6 +114,7 @@ const INITIAL_DEMO_NOTIFICATIONS: AppNotification[] = [
   {
     id: 'demo-ven-1',
     recipientRole: 'vendor',
+    vendorName: 'ABC Telecom',
     type: 'REVIEW_UNSAFE',
     title: 'Safety Action Required',
     titleBn: 'নিরাপত্তা ব্যবস্থা প্রয়োজন',
@@ -114,12 +123,16 @@ const INITIAL_DEMO_NOTIFICATIONS: AppNotification[] = [
     submissionId: 3,
     siteName: 'Site-03',
     workerCount: 1,
+    verdict: 'unsafe',
+    workerSummary: 'Worker #1: Unsafe (Missing Helmet)',
+    unsafeReasons: ['Missing Helmet'],
     read: false,
     createdAt: Date.now() - 1000 * 60 * 35,
   },
   {
     id: 'demo-ven-2',
     recipientRole: 'vendor',
+    vendorName: 'ABC Telecom',
     type: 'REVIEW_SAFE',
     title: 'Submission Verified Safe',
     titleBn: 'সাবমিশন অনুমোদিত (নিরাপদ)',
@@ -128,6 +141,8 @@ const INITIAL_DEMO_NOTIFICATIONS: AppNotification[] = [
     submissionId: 2,
     siteName: 'Site-02',
     workerCount: 2,
+    verdict: 'safe',
+    workerSummary: 'Worker #1, #2: Safe',
     read: true,
     createdAt: Date.now() - 1000 * 60 * 120,
   },
@@ -177,7 +192,7 @@ export async function hydrateNotifications(): Promise<void> {
     if (rawNotifs) {
       try {
         const parsed = JSON.parse(rawNotifs);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           notifications = parsed;
         }
       } catch {}
@@ -226,11 +241,36 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return true;
 }
 
-export function getNotifications(role?: NotificationRole): AppNotification[] {
+export type VendorFilter = {
+  vendorProfileId?: number;
+  vendorName?: string;
+};
+
+export function getNotifications(
+  role?: NotificationRole,
+  vendorFilter?: VendorFilter
+): AppNotification[] {
   let list = notifications;
   // STRICT role filtering: vendor sees ONLY vendor; reviewer sees ONLY reviewer
   if (role) {
     list = list.filter((n) => n.recipientRole === role);
+  }
+
+  // STRICT vendor filtering: vendor sees only notifications belonging to their vendor
+  if (role === 'vendor' && vendorFilter?.vendorName) {
+    const filterName = vendorFilter.vendorName.trim().toLowerCase();
+    list = list.filter((n) => {
+      if (n.vendorName) {
+        return (
+          n.vendorName.trim().toLowerCase().includes(filterName) ||
+          filterName.includes(n.vendorName.trim().toLowerCase())
+        );
+      }
+      if (n.vendorProfileId && vendorFilter.vendorProfileId) {
+        return n.vendorProfileId === vendorFilter.vendorProfileId;
+      }
+      return false;
+    });
   }
 
   // Filter based on active preferences toggles
@@ -251,8 +291,11 @@ export function getNotifications(role?: NotificationRole): AppNotification[] {
   });
 }
 
-export function getUnreadCount(role?: NotificationRole): number {
-  return getNotifications(role).filter((n) => !n.read).length;
+export function getUnreadCount(
+  role?: NotificationRole,
+  vendorFilter?: VendorFilter
+): number {
+  return getNotifications(role, vendorFilter).filter((n) => !n.read).length;
 }
 
 export function getActiveNotificationBanner(): AppNotification | null {
@@ -266,6 +309,59 @@ export function dismissNotificationBanner(): void {
   }
   activeBanner = null;
   notify();
+}
+
+function dispatchSystemNotification(title: string, body: string, id: string) {
+  try {
+    // 1. Web Notification API (works foreground & background when browser tab is inactive/minimized)
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        const n = new Notification(title, {
+          body,
+          tag: id,
+          icon: '/favicon.ico',
+        });
+        n.onclick = () => {
+          try {
+            window.focus();
+          } catch {}
+        };
+      } else if (Notification.permission === 'default') {
+        void Notification.requestPermission().then((perm) => {
+          if (perm === 'granted') {
+            const n = new Notification(title, { body, tag: id, icon: '/favicon.ico' });
+            n.onclick = () => {
+              try { window.focus(); } catch {}
+            };
+          }
+        });
+      }
+    }
+  } catch {}
+
+  // 2. React Native / Mobile expo-notifications (if present)
+  try {
+    const Notifications = require('expo-notifications');
+    if (Notifications?.scheduleNotificationAsync) {
+      void Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: true,
+          vibrate: [0, 250, 150, 250],
+        },
+        trigger: null,
+      });
+    }
+  } catch {}
+
+  // 3. Physical phone vibration feedback for mobile devices
+  try {
+    const { Vibration } = require('react-native');
+    if (Vibration?.vibrate) {
+      Vibration.vibrate([0, 250, 150, 250]);
+    }
+  } catch {}
 }
 
 export async function addNotification(
@@ -325,6 +421,9 @@ export async function addNotification(
     safeHaptic('success');
   }
 
+  // Trigger OS-level / Background Notification
+  dispatchSystemNotification(newNotif.title, newNotif.body, newNotif.id);
+
   // Show in-app banner immediately
   if (input.showBanner !== false) {
     if (bannerTimer) clearTimeout(bannerTimer);
@@ -340,59 +439,69 @@ export async function addNotification(
 }
 
 export async function markAsRead(id: string): Promise<void> {
-  await hydrateNotifications();
-  let changed = false;
   notifications = notifications.map((n) => {
-    if (n.id === id && !n.read) {
-      changed = true;
+    if (n.id === id) {
       return { ...n, read: true };
     }
     return n;
   });
-  if (changed) {
-    void persist();
-    notify();
-  }
+  notify();
+  void persist();
 }
 
-export async function markAllAsRead(role?: NotificationRole): Promise<void> {
-  await hydrateNotifications();
-  let changed = false;
+export async function markAllAsRead(
+  role?: NotificationRole,
+  vendorFilter?: VendorFilter
+): Promise<void> {
+  const filterName = vendorFilter?.vendorName?.trim().toLowerCase();
   notifications = notifications.map((n) => {
     const roleMatches = !role || n.recipientRole === role;
-    if (roleMatches && !n.read) {
-      changed = true;
-      return { ...n, read: true };
+    if (!roleMatches) return n;
+    if (role === 'vendor' && filterName) {
+      const vendorMatches =
+        n.vendorName?.trim().toLowerCase().includes(filterName) ||
+        filterName.includes(n.vendorName?.trim().toLowerCase() || '');
+      return vendorMatches ? { ...n, read: true } : n;
     }
-    return n;
+    return { ...n, read: true };
   });
-  if (changed) {
-    void persist();
-    notify();
-  }
+  notify();
+  void persist();
 }
 
 export async function deleteNotification(id: string): Promise<void> {
-  await hydrateNotifications();
   notifications = notifications.filter((n) => n.id !== id);
-  void persist();
   notify();
+  void persist();
 }
 
-export async function clearAllNotifications(role?: NotificationRole): Promise<void> {
-  await hydrateNotifications();
+export async function clearAllNotifications(
+  role?: NotificationRole,
+  vendorFilter?: VendorFilter
+): Promise<void> {
+  const filterName = vendorFilter?.vendorName?.trim().toLowerCase();
   if (!role) {
     notifications = [];
+  } else if (role === 'vendor' && filterName) {
+    notifications = notifications.filter((n) => {
+      if (n.recipientRole !== 'vendor') return true;
+      const vendorMatches =
+        n.vendorName?.trim().toLowerCase().includes(filterName) ||
+        filterName.includes(n.vendorName?.trim().toLowerCase() || '');
+      return !vendorMatches;
+    });
   } else {
     notifications = notifications.filter((n) => n.recipientRole !== role);
   }
-  void persist();
   notify();
+  void persist();
 }
 
 // -------------------------------------------------------------
 // Realtime Broadcasts & Supabase Channel Setup
 // -------------------------------------------------------------
+
+let notificationChannel: any = null;
 
 export async function broadcastNewSubmissionAlert(meta: {
   submissionId: number | string;
@@ -403,7 +512,7 @@ export async function broadcastNewSubmissionAlert(meta: {
   try {
     const supabase = getSupabaseClient();
     if (!supabase) return;
-    const channel = supabase.channel(NOTIFICATION_CHANNEL_NAME);
+    const channel = notificationChannel || supabase.channel(NOTIFICATION_CHANNEL_NAME);
     await channel.send({
       type: 'broadcast',
       event: 'new_submission_notification',
@@ -420,15 +529,64 @@ export async function broadcastNewSubmissionAlert(meta: {
 export async function broadcastReviewVerdictAlert(meta: {
   submissionId: number | string;
   siteName?: string;
+  vendorName?: string;
+  vendorProfileId?: number;
   verdict: 'safe' | 'unsafe' | 'reviewed';
   hasUnsafe?: boolean;
   workerCount?: number;
+  workerSummary?: string;
+  unsafeReasons?: string[];
   notes?: string;
 }): Promise<void> {
+  const isSafe = meta.verdict === 'safe' || meta.verdict === 'reviewed' || !meta.hasUnsafe;
+  const siteStr = meta.siteName || 'Site';
+  const workerDetail = meta.workerSummary || (isSafe ? `Worker verified Safe` : `Worker flagged for safety violations`);
+
+  // 1. Immediately create local notification for Vendor
+  void addNotification({
+    recipientRole: 'vendor',
+    vendorName: meta.vendorName,
+    vendorProfileId: meta.vendorProfileId,
+    type: isSafe ? 'REVIEW_SAFE' : 'REVIEW_UNSAFE',
+    title: isSafe ? 'PPE Verified: Safe' : 'Action Required: Unsafe Worker',
+    titleBn: isSafe ? 'পিপিই যাচাই: নিরাপদ' : 'জরুরি পদক্ষেপ: অনিরাপদ কর্মী চিহ্নিত',
+    body: `${siteStr}: ${workerDetail}`,
+    bodyBn: isSafe
+      ? `${siteStr}: কর্মী সফলভাবে নিরাপদ হিসেবে যাচাই করা হয়েছে।`
+      : `${siteStr}: কর্মীতে সুরক্ষা ত্রুটি চিহ্নিত হয়েছে। বিবরণ দেখে পুনরায় জমা দিন।`,
+    submissionId: meta.submissionId,
+    siteName: meta.siteName,
+    workerCount: meta.workerCount,
+    workerSummary: meta.workerSummary,
+    verdict: isSafe ? 'safe' : 'unsafe',
+    unsafeReasons: meta.unsafeReasons,
+  });
+
+  // 2. Immediately create local notification for Reviewer audit & bottom sheet
+  void addNotification({
+    recipientRole: 'reviewer',
+    vendorName: meta.vendorName,
+    vendorProfileId: meta.vendorProfileId,
+    type: isSafe ? 'REVIEW_SAFE' : 'REVIEW_UNSAFE',
+    title: isSafe ? 'Review Completed: Safe' : 'Review Completed: Unsafe Logged',
+    titleBn: isSafe ? 'রিভিউ সম্পন্ন: নিরাপদ' : 'রিভিউ সম্পন্ন: অনিরাপদ চিহ্নিত',
+    body: `${siteStr}: ${workerDetail}`,
+    bodyBn: isSafe
+      ? `${siteStr}: নিরীক্ষা সম্পন্ন - কর্মী নিরাপদ হিসেবে অনুমোদিত।`
+      : `${siteStr}: নিরীক্ষা সম্পন্ন - সুরক্ষার নিয়মলঙ্ঘন লিপিবদ্ধ করা হয়েছে।`,
+    submissionId: meta.submissionId,
+    siteName: meta.siteName,
+    workerCount: meta.workerCount,
+    workerSummary: meta.workerSummary,
+    verdict: isSafe ? 'safe' : 'unsafe',
+    unsafeReasons: meta.unsafeReasons,
+  });
+
+  // 3. Realtime broadcast to remote devices/peers
   try {
     const supabase = getSupabaseClient();
     if (!supabase) return;
-    const channel = supabase.channel(NOTIFICATION_CHANNEL_NAME);
+    const channel = notificationChannel || supabase.channel(NOTIFICATION_CHANNEL_NAME);
     await channel.send({
       type: 'broadcast',
       event: 'review_verdict_notification',
@@ -442,11 +600,9 @@ export async function broadcastReviewVerdictAlert(meta: {
   }
 }
 
-let notificationChannel: any = null;
-
 export function initializeRealtimeNotifications(): () => void {
   void hydrateNotifications();
-  if (notificationChannel) {
+  if (notificationChannel && (notificationChannel as any)._hasSubscribed) {
     return () => {};
   }
 
@@ -456,9 +612,22 @@ export function initializeRealtimeNotifications(): () => void {
   }
 
   try {
+    const existing = supabase.getChannels?.().find((c: any) => c.topic === `realtime:${NOTIFICATION_CHANNEL_NAME}`);
+    if (existing) {
+      if ((existing as any)._hasSubscribed) {
+        notificationChannel = existing;
+        return () => {};
+      }
+      try {
+        supabase.removeChannel(existing);
+      } catch {}
+      notificationChannel = null;
+    }
+
     notificationChannel = supabase.channel(NOTIFICATION_CHANNEL_NAME, {
       config: { broadcast: { ack: true, self: true } },
     });
+    (notificationChannel as any)._hasSubscribed = true;
 
     notificationChannel
       // 1. Reviewer Notification: When Vendor submits new check
@@ -490,31 +659,45 @@ export function initializeRealtimeNotifications(): () => void {
           });
         }
       })
-      // 2. Vendor Notification: When Reviewer evaluates check
+      // 2. Peer Notification: When Reviewer evaluates check
       .on('broadcast', { event: 'review_verdict_notification' }, (event: any) => {
         const payload = event.payload || {};
         const isSafe = payload.verdict === 'safe' || payload.verdict === 'reviewed' || !payload.hasUnsafe;
+        const siteStr = payload.siteName || 'Site';
+        const workerDetail = payload.workerSummary || (isSafe ? `Worker verified Safe` : `Worker flagged for safety violations`);
         if (isSafe) {
           void addNotification({
             recipientRole: 'vendor',
+            vendorName: payload.vendorName,
+            vendorProfileId: payload.vendorProfileId,
             type: 'REVIEW_SAFE',
-            title: 'PPE Approved (Safe)',
-            titleBn: 'পিপিই অনুমোদন: নিরাপদ',
-            body: `Site ${payload.siteName || 'inspection'} has been verified and marked Safe.`,
-            bodyBn: `সাইট ${payload.siteName || 'এর'} পিপিই নিরীক্ষা সম্পন্ন হয়েছে এবং নিরাপদ হিসেবে অনুমোদিত হয়েছে।`,
+            title: 'PPE Verified: Safe',
+            titleBn: 'পিপিই যাচাই: নিরাপদ',
+            body: `${siteStr}: ${workerDetail}`,
+            bodyBn: `${siteStr}: কর্মী সফলভাবে নিরাপদ হিসেবে যাচাই করা হয়েছে।`,
             submissionId: payload.submissionId,
             siteName: payload.siteName,
+            workerCount: payload.workerCount,
+            workerSummary: payload.workerSummary,
+            verdict: 'safe',
+            unsafeReasons: payload.unsafeReasons,
           });
         } else {
           void addNotification({
             recipientRole: 'vendor',
+            vendorName: payload.vendorName,
+            vendorProfileId: payload.vendorProfileId,
             type: 'REVIEW_UNSAFE',
-            title: 'Action Required: Unsafe Workers',
+            title: 'Action Required: Unsafe Worker',
             titleBn: 'জরুরি পদক্ষেপ: অনিরাপদ কর্মী চিহ্নিত',
-            body: `Site ${payload.siteName || 'inspection'} has unsafe worker(s). Please review notes and resubmit.`,
-            bodyBn: `সাইট ${payload.siteName || 'এর'} কর্মীতে সুরক্ষা ত্রুটি পাওয়া গেছে। অনুগ্রহ করে নোট দেখে পুনরায় জমা দিন।`,
+            body: `${siteStr}: ${workerDetail}`,
+            bodyBn: `${siteStr}: কর্মীতে সুরক্ষা ত্রুটি চিহ্নিত হয়েছে। বিবরণ দেখে পুনরায় জমা দিন।`,
             submissionId: payload.submissionId,
             siteName: payload.siteName,
+            workerCount: payload.workerCount,
+            workerSummary: payload.workerSummary,
+            verdict: 'unsafe',
+            unsafeReasons: payload.unsafeReasons,
           });
         }
       })
@@ -568,7 +751,10 @@ export function initializeRealtimeNotifications(): () => void {
 // React Hook
 // -------------------------------------------------------------
 
-export function useNotifications(role?: NotificationRole) {
+export function useNotifications(
+  role?: NotificationRole,
+  vendorFilter?: VendorFilter
+) {
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -584,8 +770,8 @@ export function useNotifications(role?: NotificationRole) {
     };
   }, []);
 
-  const notifs = getNotifications(role);
-  const unreadCount = getUnreadCount(role);
+  const notifs = getNotifications(role, vendorFilter);
+  const unreadCount = getUnreadCount(role, vendorFilter);
   const banner = getActiveNotificationBanner();
 
   return {
@@ -596,9 +782,9 @@ export function useNotifications(role?: NotificationRole) {
     updatePreferences: setNotificationPreferences,
     requestPermission: requestNotificationPermission,
     markAsRead,
-    markAllAsRead: () => markAllAsRead(role),
+    markAllAsRead: () => markAllAsRead(role, vendorFilter),
     deleteNotification,
-    clearAll: () => clearAllNotifications(role),
+    clearAll: () => clearAllNotifications(role, vendorFilter),
     dismissBanner: dismissNotificationBanner,
   };
 }

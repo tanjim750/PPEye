@@ -75,7 +75,7 @@ export function SettingsScreen() {
 
   useEffect(() => {
     if (!activeUser?.profilePictureUrl && activeUser?.id) {
-      const dbUid = typeof activeUser.id === 'number' ? activeUser.id : null;
+      const dbUid = typeof activeUser.id === 'number' ? activeUser.id : Number(activeUser.id) || null;
       if (dbUid) {
         getProfilePictureUri(dbUid)
           .then((cachedUri) => {

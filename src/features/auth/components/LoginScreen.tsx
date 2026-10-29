@@ -20,7 +20,8 @@ import { Icon } from "@/components/ui/Icon";
 import { assets } from "@/constants/assets";
 import { isLoginTestMode } from "@/constants/devMode";
 import { login } from "@/features/auth/services/auth.service";
-import { authStore } from "@/stores/auth.store";
+import { authStore, hydrateAuthStore } from "@/stores/auth.store";
+import { useEffect } from "react";
 
 export function LoginScreen() {
   const router = useRouter();
@@ -30,6 +31,24 @@ export function LoginScreen() {
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let isCancelled = false;
+    async function checkExistingSession() {
+      const activeUser = await hydrateAuthStore();
+      if (activeUser && activeUser.id && !isCancelled) {
+        router.replace(
+          (activeUser.role === 'vendor' || activeUser.role === 'external'
+            ? '/(external)'
+            : '/(internal)') as Href
+        );
+      }
+    }
+    void checkExistingSession();
+    return () => {
+      isCancelled = true;
+    };
+  }, [router]);
 
   function performLogin(user: {
     id: string | number;
@@ -43,6 +62,7 @@ export function LoginScreen() {
     projectName?: string;
     designation?: string;
     phone?: string;
+    profilePictureUrl?: string;
   }) {
     setErrorMessage(null);
     authStore.user = {
@@ -57,6 +77,7 @@ export function LoginScreen() {
       projectName: user.projectName,
       designation: user.designation,
       phone: user.phone,
+      profilePictureUrl: user.profilePictureUrl,
     };
 
     router.replace(

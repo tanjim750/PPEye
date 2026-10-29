@@ -61,6 +61,68 @@ function getBdtTimeOfDayKey(): 'morning' | 'afternoon' | 'evening' {
   return 'evening';
 }
 
+function VendorCheckThumbnail({ check }: { check: WorkerCheck }) {
+  const directUri = check.image?.uri || check.workerReviews?.find((w) => w.frontUri || w.backUri)?.frontUri || check.workerReviews?.find((w) => w.backUri)?.backUri || null;
+  const [sourceUri, setSourceUri] = useState<string | null>(directUri);
+
+  useEffect(() => {
+    const currentDirect = check.image?.uri || check.workerReviews?.find((w) => w.frontUri || w.backUri)?.frontUri || check.workerReviews?.find((w) => w.backUri)?.backUri || null;
+    if (currentDirect) {
+      setSourceUri(currentDirect);
+      return;
+    }
+    let isCancelled = false;
+    async function resolveThumb() {
+      const subId = check.submissionId || Number(String(check.id).replace(/\D/g, ''));
+      if (subId && !isNaN(subId)) {
+        try {
+          const { getSubmissionWorkerPhotos, supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+          const photosMap: Map<string, string> = await getSubmissionWorkerPhotos(subId);
+          let photoPath: string | null = null;
+          if (photosMap && photosMap.size > 0) {
+            const first = Array.from(photosMap.values())[0];
+            photoPath = typeof first === 'string' ? first : null;
+          }
+          if (photoPath && !isCancelled) {
+            const bucket = photoPath.startsWith('users/') ? 'avatars' : 'evidence';
+            const signedRes = await supabaseStorageService.createSignedUrl(bucket, photoPath, 86400);
+            const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
+            if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http') && !isCancelled) {
+              setSourceUri(urlStr);
+              check.image = { uri: urlStr };
+            }
+          }
+        } catch {}
+      }
+    }
+    void resolveThumb();
+    return () => {
+      isCancelled = true;
+    };
+  }, [check.image?.uri, check.id, check.submissionId]);
+
+  if (sourceUri) {
+    return (
+      <Image
+        cachePolicy="memory-disk"
+        onError={() => setSourceUri(null)}
+        source={{ uri: sourceUri }}
+        style={vendorStyles.thumbnail}
+      />
+    );
+  }
+
+  return (
+    <View style={vendorStyles.pendingThumbnail}>
+      <Icon
+        color={vendorColors.outlineVariant}
+        name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+        size={24}
+      />
+    </View>
+  );
+}
+
 export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {}) {
   const navigate = useNavigate();
   const insets = useSafeAreaInsets();
@@ -160,11 +222,30 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   const isVendor = resolvedRole === 'vendor' || resolvedRole === 'external';
   const rawName = activeUser?.name?.trim();
   const userFirstName = rawName ? rawName.split(/\s+/)[0] : (isVendor ? 'Vendor' : 'Reviewer');
+  const assignedVendor =
+    activeUser?.vendorName || activeUser?.projectName || 'Vendor Organization';
+
+  // Dynamic calculations for Vendor checks and compliance
+  const todayMidnight = new Date();
+  todayMidnight.setHours(0, 0, 0, 0);
+  const todayMidnightMs = todayMidnight.getTime();
+
+  const todayChecksCount = vendorRecentChecks.filter(
+    (c) => (c.timestamp || 0) >= todayMidnightMs
+  ).length;
+
+  const reviewedChecks = vendorRecentChecks.filter(
+    (c) => c.status === 'safe' || c.status === 'unsafe'
+  );
+  const safeCount = reviewedChecks.filter((c) => c.status === 'safe').length;
+  const complianceRate =
+    vendorRecentChecks.length === 0 || reviewedChecks.length === 0
+      ? 0
+      : Math.round((safeCount / reviewedChecks.length) * 100);
 
   if (isVendor) {
     return (
       <SafeAreaView style={vendorStyles.safeArea}>
-        <RealtimeNotificationBanner role="vendor" />
         <View style={vendorStyles.shell}>
           <View style={vendorStyles.header}>
             <View style={vendorStyles.headerCopy}>
@@ -178,7 +259,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                   size={18}
                 />
                 <Text style={vendorStyles.company}>
-                  {t('external.company', { team: 'Team 07', vendor: 'ABC Telecom' })}
+                  {assignedVendor}
                 </Text>
               </View>
             </View>
@@ -239,12 +320,12 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             <View style={vendorStyles.statsGrid}>
               <View style={vendorStyles.statCard}>
                 <Text style={vendorStyles.statLabel}>{t('external.todayChecks')}</Text>
-                <Text style={vendorStyles.statValue}>12</Text>
+                <Text style={vendorStyles.statValue}>{todayChecksCount}</Text>
               </View>
               <View style={vendorStyles.statCard}>
                 <Text style={vendorStyles.statLabel}>{t('external.compliance')}</Text>
                 <View style={vendorStyles.percentRow}>
-                  <Text style={vendorStyles.statValue}>98</Text>
+                  <Text style={vendorStyles.statValue}>{complianceRate}</Text>
                   <Text style={vendorStyles.percent}>%</Text>
                 </View>
               </View>
@@ -302,17 +383,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                             index < vendorRecentChecks.length - 1 && vendorStyles.feedDivider,
                             pressed && vendorStyles.pressed,
                           ]}>
-                          {item.image ? (
-                            <Image cachePolicy="memory-disk" source={item.image} style={vendorStyles.thumbnail} />
-                          ) : (
-                            <View style={vendorStyles.pendingThumbnail}>
-                              <Icon
-                                color={vendorColors.outlineVariant}
-                                name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
-                                size={24}
-                              />
-                            </View>
-                          )}
+                          <VendorCheckThumbnail check={item} />
 
                           <View style={vendorStyles.feedCopy}>
                             <View style={vendorStyles.feedTitleRow}>
@@ -392,11 +463,9 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                                   {t('external.history.approvedByEhs')}
                                 </Text>
                               ) : null}
-                            </View>
-                          </View>
 
-                          <View style={vendorStyles.viewDetailsContainer}>
-                            <Text style={vendorStyles.viewDetailsText}>Tap to view details</Text>
+                              <Text style={vendorStyles.viewDetailsText}>Tap to view details</Text>
+                            </View>
                           </View>
                         </Pressable>
                       );
@@ -465,7 +534,6 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   // Reviewer UI
   return (
     <SafeAreaView style={reviewerStyles.safeArea}>
-      <RealtimeNotificationBanner role="reviewer" />
       <View style={reviewerStyles.shell}>
         <View style={reviewerStyles.header}>
           <View style={{ flex: 1, paddingRight: 12 }}>
@@ -950,7 +1018,7 @@ const vendorStyles = StyleSheet.create({
     minWidth: 0,
   },
   feedTitleRow: {
-    alignItems: 'baseline',
+    alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'space-between',
@@ -959,13 +1027,16 @@ const vendorStyles = StyleSheet.create({
     color: vendorColors.text,
     flex: 1,
     fontSize: 16,
+    fontWeight: '600',
     lineHeight: 24,
   },
   time: {
     color: vendorColors.textMuted,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
-    lineHeight: 14,
+    lineHeight: 16,
+    textAlign: 'right',
+    flexShrink: 0,
   },
   statusChip: {
     alignItems: 'center',
@@ -1002,6 +1073,7 @@ const vendorStyles = StyleSheet.create({
   metaRow: {
     alignItems: 'center',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   badgeHint: {

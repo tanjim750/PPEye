@@ -51,6 +51,16 @@ export type SubmissionDetailsBottomSheetProps = {
   contextTab?: 'all' | 'safe' | 'unsafe' | 'pending';
 };
 
+/**
+ * SubmissionDetailsBottomSheet:
+ * Detailed inspection bottom sheet displaying identified PPE violations,
+ * reviewer notes, worker statuses, and pre-cached FRONT / BACK inspection photos.
+ * 
+ * Features:
+ * - Fluid native slide dismissal without bouncing or double-animations
+ * - Interactive full-screen image zoom modal with pan/pinch
+ * - Responsive layout adapted for mobile phones and tablets
+ */
 export function SubmissionDetailsBottomSheet({
   visible,
   item,
@@ -87,15 +97,11 @@ export function SubmissionDetailsBottomSheet({
   function handleClose() {
     if (closingRef.current) return;
     closingRef.current = true;
-    Animated.timing(translateY, {
-      toValue: SCREEN_HEIGHT || 800,
-      duration: 160,
-      useNativeDriver: true,
-    }).start(() => {
-      onClose();
-      translateY.setValue(0);
+    onClose();
+    setTimeout(() => {
       closingRef.current = false;
-    });
+      translateY.setValue(0);
+    }, 300);
   }
 
   const panResponder = useRef(
@@ -596,6 +602,9 @@ const detailsStyles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 10,
+    maxWidth: 448,
+    width: '100%',
+    alignSelf: 'center',
   },
   dragHandleContainer: {
     alignItems: 'center',

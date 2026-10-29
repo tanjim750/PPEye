@@ -580,11 +580,11 @@ export function SubmissionReviewScreen() {
       }
     })();
 
-    // Clear pending submission context and return cleanly to camera
+    // Clear pending submission context and navigate directly to home screen
     clearPendingSubmissionReviewCaptures();
 
-    // Navigate back to the camera screen
-    router.replace('/continuous-ppe-capture' as Href);
+    // Navigate directly to the external vendor home screen
+    router.replace('/(external)' as Href);
   }
 
   function updateActiveWorker(offsetX: number) {

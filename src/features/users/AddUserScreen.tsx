@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +20,13 @@ import { Icon } from '@/components/ui/Icon';
 import { supabase } from '@/services/supabase/client';
 import { createClient } from '@supabase/supabase-js';
 import { saveUserCredential } from '@/services/auth/credentialSync.service';
+import {
+  isEmail,
+  isValidName,
+  isValidPassword,
+  isValidPhone,
+  isValidVendorName,
+} from '@/utils/validation';
 
 const colors = {
   background: '#f9f9ff',
@@ -48,7 +55,10 @@ export function AddUserScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [vendor, setVendor] = useState(vendorOptions[0]);
+  const [savedVendors, setSavedVendors] = useState<string[]>(vendorOptions);
+  const [selectedVendor, setSelectedVendor] = useState<string>(vendorOptions[0]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [vendorId, setVendorId] = useState('');
   const [role, setRole] = useState(externalRoles[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,6 +69,45 @@ export function AddUserScreen() {
     role: string;
     password: string;
   } | null>(null);
+
+  useEffect(() => {
+    async function loadSavedVendors() {
+      try {
+        const { data, error } = await supabase
+          .from('vendor_profiles')
+          .select('vendor_name')
+          .order('vendor_name', { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          const namesFromDb = data
+            .map((item: any) => item.vendor_name?.trim())
+            .filter((name: string) => Boolean(name) && name.length >= 2);
+          const merged = Array.from(new Set([...namesFromDb, ...vendorOptions]));
+          setSavedVendors(merged);
+        }
+      } catch (err) {
+        console.warn('[AddUserScreen] Error fetching vendor_profiles:', err);
+      }
+    }
+    void loadSavedVendors();
+  }, []);
+
+  function handleSelectOrAddVendor(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (!savedVendors.some((v) => v.toLowerCase() === trimmed.toLowerCase())) {
+      setSavedVendors((prev) => [trimmed, ...prev]);
+    }
+    setSelectedVendor(trimmed);
+    setSearchQuery('');
+    setIsDropdownOpen(false);
+  }
+
+  const filteredVendors = searchQuery.trim()
+    ? savedVendors.filter((v) =>
+        v.toLowerCase().includes(searchQuery.trim().toLowerCase())
+      )
+    : savedVendors;
 
   // When userType changes, reset role to appropriate default
   function handleTypeChange(type: 'internal' | 'external') {
@@ -79,36 +128,42 @@ export function AddUserScreen() {
     const rawPhone = phone.trim();
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedPassword = password.trim();
+    const trimmedVendor = (selectedVendor || searchQuery).trim();
+    if (searchQuery.trim() && !selectedVendor) {
+      handleSelectOrAddVendor(searchQuery);
+    }
 
-    if (!trimmedName) {
-      setFormError('Please enter a full name.');
-      Alert.alert('Validation Error', 'Please enter a full name.');
+    if (!trimmedName || !isValidName(trimmedName)) {
+      setFormError('Please enter a valid full name using letters only.');
+      Alert.alert('Validation Error', 'Please enter a valid full name using letters only.');
       return;
     }
-    if (!rawPhone) {
-      setFormError('Please enter a phone number.');
-      Alert.alert('Validation Error', 'Please enter a phone number.');
+    if (!rawPhone || !isValidPhone(rawPhone)) {
+      setFormError('Please enter a valid mobile number.');
+      Alert.alert('Validation Error', 'Please enter a valid mobile number.');
       return;
     }
-    if (!trimmedEmail) {
-      setFormError('Please enter an email address.');
-      Alert.alert('Validation Error', 'Please enter an email address.');
+    if (!trimmedEmail || !isEmail(trimmedEmail)) {
+      setFormError('Please enter a valid email address.');
+      Alert.alert('Validation Error', 'Please enter a valid email address.');
       return;
     }
-    if (!trimmedPassword) {
-      setFormError('Please set an initial password for this account.');
-      Alert.alert('Validation Error', 'Please set an initial password for this account.');
-      return;
-    }
-    if (trimmedPassword.length < 6) {
+    if (!trimmedPassword || !isValidPassword(trimmedPassword)) {
       setFormError('Password must be at least 6 characters.');
       Alert.alert('Validation Error', 'Password must be at least 6 characters.');
       return;
     }
+    if (userType === 'external' && (!trimmedVendor || !isValidVendorName(trimmedVendor))) {
+      setFormError('Please select or add a valid organization.');
+      Alert.alert('Validation Error', 'Please select or add a valid organization.');
+      return;
+    }
 
-    const formattedPhone = rawPhone.startsWith('+880')
+    const formattedPhone = rawPhone.startsWith('+')
       ? rawPhone
-      : `+880${rawPhone.replace(/^0+/, '')}`;
+      : rawPhone.startsWith('0')
+      ? `+88${rawPhone}`
+      : `+880${rawPhone}`;
 
     setIsSubmitting(true);
     try {
@@ -168,19 +223,39 @@ export function AddUserScreen() {
         createdUserId = insertedUser?.id;
       }
 
-      // 3. If EXTERNAL user, ensure vendor_members is populated with vendor_profile_id
+      // 3. If EXTERNAL user, ensure vendor_members is linked to custom or existing vendor_profile
       if (category === 'EXTERNAL' && createdUserId) {
-        const { data: defaultVendor } = await supabase
+        // Look up by vendor name (case-insensitive)
+        const { data: matchedVendor } = await supabase
           .from('vendor_profiles')
           .select('id')
-          .order('id', { ascending: true })
-          .limit(1)
+          .ilike('vendor_name', trimmedVendor)
           .maybeSingle();
 
-        const vendorProfileId = defaultVendor?.id || 1;
+        let vendorProfileId = matchedVendor?.id;
+
+        if (!vendorProfileId) {
+          const { data: newVendorProfile, error: createVendorErr } = await supabase
+            .from('vendor_profiles')
+            .insert({
+              vendor_name: trimmedVendor,
+              project_name: vendorId.trim() ? `Project ${vendorId.trim()}` : `${trimmedVendor} Operations`,
+              created_by: createdUserId,
+            })
+            .select('id')
+            .maybeSingle();
+
+          if (!createVendorErr && newVendorProfile?.id) {
+            vendorProfileId = newVendorProfile.id;
+          } else {
+            console.warn('[AddUserScreen] vendor_profiles insert note:', createVendorErr?.message);
+          }
+        }
+
+        const finalVendorProfileId = vendorProfileId || 1;
         await supabase.from('vendor_members').upsert(
           {
-            vendor_profile_id: vendorProfileId,
+            vendor_profile_id: finalVendorProfileId,
             user_id: createdUserId,
           },
           { onConflict: 'vendor_profile_id,user_id' }
@@ -378,7 +453,7 @@ export function AddUserScreen() {
                   <View style={styles.passwordRow}>
                     <TextInput
                       autoCapitalize="none"
-                      placeholder="Set account password (min. 6 chars)"
+                      placeholder="Set account password, minimum 6 characters"
                       placeholderTextColor="#a0a7b5"
                       secureTextEntry={!isPasswordVisible}
                       style={[styles.input, { flex: 1 }]}
@@ -412,32 +487,189 @@ export function AddUserScreen() {
                 <Text style={styles.sectionHeader}>ORGANIZATION</Text>
                 <View style={styles.card}>
                   <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Vendor</Text>
-                    <View style={styles.pillsRow}>
-                      {vendorOptions.map((opt) => (
+                    <Text style={styles.inputLabel}>Organization / Vendor</Text>
+
+                    {/* Search & Add Input Box */}
+                    <View style={styles.orgInputRow}>
+                      <View style={styles.orgSearchBox}>
+                        <Icon
+                          color="#717785"
+                          name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }}
+                          size={18}
+                        />
+                        <TextInput
+                          placeholder="Search or add organization..."
+                          placeholderTextColor="#a0a7b5"
+                          returnKeyType="done"
+                          style={styles.orgTextInput}
+                          value={searchQuery}
+                          onChangeText={(text) => {
+                            setSearchQuery(text);
+                            setIsDropdownOpen(true);
+                          }}
+                          onFocus={() => setIsDropdownOpen(true)}
+                          onSubmitEditing={() => {
+                            if (searchQuery.trim()) {
+                              handleSelectOrAddVendor(searchQuery);
+                            }
+                          }}
+                          {...(Platform.OS === 'web'
+                            ? ({
+                                onKeyDown: (e: any) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    if (searchQuery.trim()) {
+                                      handleSelectOrAddVendor(searchQuery);
+                                    }
+                                  }
+                                },
+                              } as any)
+                            : {})}
+                        />
+                        {searchQuery.trim().length > 0 ? (
+                          <Pressable
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() => setSearchQuery('')}>
+                            <Icon
+                              color="#717785"
+                              name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }}
+                              size={16}
+                            />
+                          </Pressable>
+                        ) : null}
+                      </View>
+
+                      {searchQuery.trim().length > 0 &&
+                        !savedVendors.some(
+                          (v) => v.toLowerCase() === searchQuery.trim().toLowerCase()
+                        ) && (
+                          <Pressable
+                            accessibilityLabel="Add organization"
+                            accessibilityRole="button"
+                            onPress={() => handleSelectOrAddVendor(searchQuery)}
+                            style={styles.addOrgBtn}>
+                            <Icon
+                              color="#ffffff"
+                              name={{ ios: 'plus', android: 'add', web: 'add' }}
+                              size={16}
+                            />
+                            <Text style={styles.addOrgBtnText}>Add</Text>
+                          </Pressable>
+                        )}
+                    </View>
+
+                    {/* Selected Organization Summary Card */}
+                    {selectedVendor ? (
+                      <View style={styles.selectedOrgCard}>
+                        <View style={styles.selectedOrgLeft}>
+                          <View style={styles.selectedOrgIcon}>
+                            <Icon
+                              color="#0082F0"
+                              name={{
+                                ios: 'checkmark.seal.fill',
+                                android: 'verified',
+                                web: 'verified',
+                              }}
+                              size={18}
+                            />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.selectedOrgSub}>Selected Organization</Text>
+                            <Text style={styles.selectedOrgName} numberOfLines={1}>
+                              {selectedVendor}
+                            </Text>
+                          </View>
+                        </View>
                         <Pressable
-                          key={opt}
-                          onPress={() => setVendor(opt)}
-                          style={[
-                            styles.vendorPill,
-                            vendor === opt && styles.vendorPillActive,
-                          ]}>
-                          <Text
-                            style={[
-                              styles.vendorPillText,
-                              vendor === opt && styles.vendorPillTextActive,
-                            ]}>
-                            {opt}
+                          accessibilityRole="button"
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          onPress={() => setIsDropdownOpen((prev) => !prev)}
+                          style={styles.changeOrgBtn}>
+                          <Text style={styles.changeOrgBtnText}>
+                            {isDropdownOpen ? 'Close' : 'Browse'}
                           </Text>
                         </Pressable>
-                      ))}
-                    </View>
+                      </View>
+                    ) : null}
+
+                    {/* Dropdown of Saved Organizations & Search Results */}
+                    {isDropdownOpen && (
+                      <View style={styles.orgDropdownList}>
+                        <Text style={styles.dropdownHeaderTitle}>
+                          Saved Organizations ({filteredVendors.length})
+                        </Text>
+                        <ScrollView
+                          keyboardShouldPersistTaps="handled"
+                          nestedScrollEnabled
+                          style={styles.dropdownScroll}>
+                          {filteredVendors.map((item) => {
+                            const isSelected =
+                              selectedVendor.trim().toLowerCase() === item.toLowerCase();
+                            return (
+                              <Pressable
+                                key={item}
+                                onPress={() => handleSelectOrAddVendor(item)}
+                                style={[
+                                  styles.dropdownItemRow,
+                                  isSelected && styles.dropdownItemRowActive,
+                                ]}>
+                                <Text
+                                  style={[
+                                    styles.dropdownItemName,
+                                    isSelected && styles.dropdownItemNameActive,
+                                  ]}>
+                                  {item}
+                                </Text>
+                                {isSelected ? (
+                                  <Icon
+                                    color={colors.primary}
+                                    name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                                    size={16}
+                                  />
+                                ) : null}
+                              </Pressable>
+                            );
+                          })}
+
+                          {/* Inline Add Option if Search Query is New */}
+                          {searchQuery.trim().length > 0 &&
+                            !filteredVendors.some(
+                              (v) => v.toLowerCase() === searchQuery.trim().toLowerCase()
+                            ) && (
+                              <Pressable
+                                onPress={() => handleSelectOrAddVendor(searchQuery)}
+                                style={styles.dropdownAddItemRow}>
+                                <Icon
+                                  color="#0082F0"
+                                  name={{
+                                    ios: 'plus.circle.fill',
+                                    android: 'add_circle',
+                                    web: 'add_circle',
+                                  }}
+                                  size={18}
+                                />
+                                <Text style={styles.dropdownAddItemText}>
+                                  Add "{searchQuery.trim()}"
+                                </Text>
+                              </Pressable>
+                            )}
+
+                          {filteredVendors.length === 0 && searchQuery.trim().length === 0 && (
+                            <View style={styles.emptyDropdown}>
+                              <Text style={styles.emptyDropdownText}>
+                                No saved organizations found.
+                              </Text>
+                            </View>
+                          )}
+                        </ScrollView>
+                      </View>
+                    )}
                   </View>
 
                   <View style={styles.divider} />
 
                   <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Vendor ID (Optional)</Text>
+                    <Text style={styles.inputLabel}>Vendor ID - Optional</Text>
                     <TextInput
                       placeholder="e.g. V-12345"
                       placeholderTextColor="#a0a7b5"
@@ -751,6 +983,165 @@ const styles = StyleSheet.create({
   vendorPillTextActive: {
     color: colors.white,
     fontWeight: '600',
+  },
+  orgInputRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  orgSearchBox: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: colors.outlineVariant,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    height: 48,
+    paddingHorizontal: 12,
+  },
+  orgTextInput: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 15,
+    height: '100%',
+    marginLeft: 8,
+  },
+  addOrgBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.primaryButton,
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 4,
+    height: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  addOrgBtnText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  selectedOrgCard: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 92, 173, 0.06)',
+    borderColor: 'rgba(0, 92, 173, 0.2)',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    padding: 12,
+  },
+  selectedOrgLeft: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  selectedOrgIcon: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  selectedOrgSub: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  selectedOrgName: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  changeOrgBtn: {
+    backgroundColor: '#ffffff',
+    borderColor: colors.outlineVariant,
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  changeOrgBtnText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  orgDropdownList: {
+    backgroundColor: '#ffffff',
+    borderColor: colors.outlineVariant,
+    borderRadius: 8,
+    borderWidth: 1,
+    elevation: 4,
+    marginTop: 8,
+    maxHeight: 220,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  dropdownHeaderTitle: {
+    backgroundColor: '#f1f5f9',
+    borderBottomColor: colors.outlineVariant,
+    borderBottomWidth: 1,
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    textTransform: 'uppercase',
+  },
+  dropdownScroll: {
+    maxHeight: 180,
+  },
+  dropdownItemRow: {
+    alignItems: 'center',
+    borderBottomColor: '#f1f5f9',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  dropdownItemRowActive: {
+    backgroundColor: 'rgba(0, 92, 173, 0.08)',
+  },
+  dropdownItemName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  dropdownItemNameActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  dropdownAddItemRow: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderTopColor: colors.outlineVariant,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  dropdownAddItemText: {
+    color: colors.primaryButton,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  emptyDropdown: {
+    alignItems: 'center',
+    padding: 16,
+  },
+  emptyDropdownText: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
   bottomSpacer: {
     height: 30,

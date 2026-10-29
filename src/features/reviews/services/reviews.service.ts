@@ -596,9 +596,7 @@ const reviewsRealtimeRefs = createRefCountedSubscription(() => {
     appStateSubscription?.remove();
     appStateSubscription = null;
     stopReviewsPolling();
-    if (liveSyncChannel) void supabase.removeChannel(liveSyncChannel);
-    liveSyncChannel = null;
-    realtimeSubscribed = false;
+    // Do NOT destroy liveSyncChannel on temporary screen unmounts so background realtime sync stays connected
   };
 });
 
@@ -885,14 +883,22 @@ export async function completeSubmissionReview(
           timeDisplay: formatReviewTime({ timestamp: completionTs }),
         }
       : item);
+    const workerSummary = workerVerdicts
+      .map((w) => `Worker #${w.sequenceNo}: ${w.status === 'safe' ? 'Safe' : `Unsafe (${(w.unsafeReasons || []).join(', ') || 'Violation'})`}`)
+      .join('; ');
+
     notify();
     await broadcastNewSubmission(numId);
+    const targetRev = reviews.find((r) => r.id === String(id));
     void broadcastReviewVerdictAlert({
       submissionId: numId,
-      siteName: reviews.find((r) => r.id === String(id))?.location || 'Site',
+      siteName: targetRev?.location || 'Site',
+      vendorName: targetRev?.vendor,
       verdict: verdictStatus,
       hasUnsafe,
       workerCount: workerVerdicts.length,
+      workerSummary,
+      unsafeReasons: allUnsafeReasons,
       notes: combinedNotes,
     });
     return { success: true };
@@ -905,6 +911,9 @@ export async function completeSubmissionReview(
       otherReasonText: combinedNotes,
       timestamp: completionTs,
     });
+    const workerSummary = workerVerdicts
+      .map((w) => `Worker #${w.sequenceNo}: ${w.status === 'safe' ? 'Safe' : `Unsafe (${(w.unsafeReasons || []).join(', ') || 'Violation'})`}`)
+      .join('; ');
     reviews = reviews.map((item) =>
       item.id === String(id)
         ? {
@@ -920,12 +929,16 @@ export async function completeSubmissionReview(
         : item
     );
     notify();
+    const localTargetRev = reviews.find((r) => r.id === String(id));
     void broadcastReviewVerdictAlert({
       submissionId: id,
-      siteName: reviews.find((r) => r.id === String(id))?.location || 'Site',
+      siteName: localTargetRev?.location || 'Site',
+      vendorName: localTargetRev?.vendor,
       verdict: verdictStatus,
       hasUnsafe,
       workerCount: workerVerdicts.length,
+      workerSummary,
+      unsafeReasons: allUnsafeReasons,
       notes: combinedNotes,
     });
     return { success: true };

@@ -5,8 +5,19 @@ type AuthState = {
   user: AuthUser | null;
 };
 
+// Storage keys for persisting authentication sessions and local profile overrides
 const LEGACY_AUTH_STORAGE_KEY = 'ppeye:auth:user_session_v1';
+const AUTH_SESSION_KEY = 'ppeye:auth:user_session_v2';
 const PROFILE_OVERRIDES_KEY = 'ppeye:auth:profile_overrides_v1';
+
+// Session lifetime: 7 consecutive days (7 * 24 hours)
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+type StoredSession = {
+  user: AuthUser;
+  savedAt: number;
+  expiresAt: number;
+};
 
 type ProfileOverride = Pick<
   Partial<AuthUser>,
@@ -48,8 +59,28 @@ async function saveProfileOverride(user: AuthUser) {
 }
 
 /**
- * Hydrates store metadata on cold start and purges any legacy persisted session
- * so every cold start requires explicit authentication on the Login screen.
+ * Persists user session to AsyncStorage with 7-day expiration timestamp.
+ * Allows user to remain logged in across app restarts without re-entering credentials.
+ */
+async function persistSession(user: AuthUser | null) {
+  try {
+    if (!user || !user.id) {
+      await AsyncStorage.removeItem(AUTH_SESSION_KEY);
+      return;
+    }
+    const session: StoredSession = {
+      user,
+      savedAt: Date.now(),
+      expiresAt: Date.now() + SESSION_TTL_MS,
+    };
+    await AsyncStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+  } catch {}
+}
+
+/**
+ * Hydrates authentication session on app start.
+ * If current time is within 7 days of login, session is restored automatically.
+ * Expired sessions are cleanly purged.
  */
 export async function hydrateAuthStore(): Promise<AuthUser | null> {
   if (isHydrated) {
@@ -61,14 +92,34 @@ export async function hydrateAuthStore(): Promise<AuthUser | null> {
 
   hydrationPromise = (async () => {
     try {
-      const [, rawOverrides] = await Promise.all([
-        AsyncStorage.removeItem(LEGACY_AUTH_STORAGE_KEY),
+      const [rawSession, rawOverrides] = await Promise.all([
+        AsyncStorage.getItem(AUTH_SESSION_KEY),
         AsyncStorage.getItem(PROFILE_OVERRIDES_KEY),
+        AsyncStorage.removeItem(LEGACY_AUTH_STORAGE_KEY).catch(() => {}),
       ]);
       if (rawOverrides) {
-        const parsed = JSON.parse(rawOverrides);
-        if (parsed && typeof parsed === 'object') {
-          profileOverridesCache = parsed;
+        try {
+          const parsed = JSON.parse(rawOverrides);
+          if (parsed && typeof parsed === 'object') {
+            profileOverridesCache = parsed;
+          }
+        } catch {}
+      }
+
+      if (rawSession) {
+        try {
+          const parsedSession: StoredSession = JSON.parse(rawSession);
+          if (parsedSession && parsedSession.user && typeof parsedSession.expiresAt === 'number') {
+            if (Date.now() < parsedSession.expiresAt) {
+              currentUser = parsedSession.user;
+            } else {
+              // Purge expired 7-day session
+              await AsyncStorage.removeItem(AUTH_SESSION_KEY);
+              currentUser = null;
+            }
+          }
+        } catch {
+          await AsyncStorage.removeItem(AUTH_SESSION_KEY);
         }
       }
     } catch {
@@ -108,9 +159,7 @@ export function setAuthUser(user: AuthUser | null): void {
     currentUser = null;
   }
   isHydrated = true;
-  if (!user) {
-    void AsyncStorage.removeItem(LEGACY_AUTH_STORAGE_KEY).catch(() => {});
-  }
+  void persistSession(currentUser);
   notifyListeners();
 }
 
@@ -118,6 +167,7 @@ export function updateAuthUser(patch: Partial<AuthUser>): void {
   if (!currentUser) return;
   currentUser = { ...currentUser, ...patch };
   void saveProfileOverride(currentUser);
+  void persistSession(currentUser);
   notifyListeners();
 }
 
@@ -125,11 +175,13 @@ export function updateProfilePicture(url: string): void {
   if (!currentUser) return;
   currentUser = { ...currentUser, profilePictureUrl: url };
   void saveProfileOverride(currentUser);
+  void persistSession(currentUser);
   notifyListeners();
 }
 
 export function clearAuthSession(): void {
   currentUser = null;
+  void AsyncStorage.removeItem(AUTH_SESSION_KEY).catch(() => {});
   void AsyncStorage.removeItem(LEGACY_AUTH_STORAGE_KEY).catch(() => {});
   notifyListeners();
 }
@@ -142,6 +194,7 @@ export const authStore = {
     if (nextUser && currentUser && String(nextUser.id) === String(currentUser.id)) {
       currentUser = { ...currentUser, ...nextUser };
       void saveProfileOverride(currentUser);
+      void persistSession(currentUser);
       notifyListeners();
     } else {
       setAuthUser(nextUser);

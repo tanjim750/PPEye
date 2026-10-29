@@ -13,6 +13,7 @@ import {
   getLanguagePreference,
   storeLanguagePreference,
 } from '@/services/onboarding/languagePreference';
+import { hydrateAuthStore } from '@/stores/auth.store';
 
 export function LanguageScreen() {
   const { language, setLanguage } = useLanguage();
@@ -48,6 +49,16 @@ export function LanguageScreen() {
 
       if (preferredLanguage) {
         setLanguage(preferredLanguage);
+        const authedUser = await hydrateAuthStore();
+        if (!isMounted) return;
+        if (authedUser && authedUser.id) {
+          router.replace(
+            (authedUser.role === 'vendor' || authedUser.role === 'external'
+              ? '/(external)'
+              : '/(internal)') as Href
+          );
+          return;
+        }
         router.replace('/login' as Href);
         return;
       }
@@ -69,6 +80,15 @@ export function LanguageScreen() {
   async function handleContinue() {
     setIsSavingPreference(true);
     await storeLanguagePreference(language);
+    const authedUser = await hydrateAuthStore();
+    if (authedUser && authedUser.id) {
+      router.replace(
+        (authedUser.role === 'vendor' || authedUser.role === 'external'
+          ? '/(external)'
+          : '/(internal)') as Href
+      );
+      return;
+    }
     router.replace('/login' as Href);
   }
 

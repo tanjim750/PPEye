@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import { useLanguage } from '@/hooks/useLanguage';
 import {
   AppNotification,
   useNotifications,
+  VendorFilter,
 } from '@/services/notifications/notification.service';
 import { hapticLight, hapticSelection } from '@/utils/haptics';
 
@@ -21,6 +23,7 @@ interface NotificationCenterModalProps {
   visible: boolean;
   onClose: () => void;
   role?: 'vendor' | 'reviewer';
+  vendorFilter?: VendorFilter;
 }
 
 function formatRelativeTime(ts: number, isBn: boolean): string {
@@ -51,15 +54,32 @@ export function NotificationCenterModal({
   visible,
   onClose,
   role,
+  vendorFilter,
 }: NotificationCenterModalProps) {
   const navigate = useNavigate();
   const { language } = useLanguage();
   const isBn = language === 'bn';
-  const { notifications, unreadCount, markAsRead, markAllAsRead, clearAll } =
-    useNotifications(role);
+  const {
+    notifications: hookNotifications,
+    markAsRead,
+    markAllAsRead,
+    clearAll,
+  } = useNotifications(role, vendorFilter);
+
+  // Local instant state for zero-latency UI reaction right on this page
+  const [items, setItems] = useState<AppNotification[]>(hookNotifications);
+
+  useEffect(() => {
+    setItems(hookNotifications);
+  }, [hookNotifications]);
+
+  const unreadCount = items.filter((n) => !n.read).length;
 
   function handleNotificationPress(item: AppNotification) {
     hapticSelection();
+    setItems((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, read: true } : n))
+    );
     void markAsRead(item.id);
     onClose();
 
@@ -81,11 +101,15 @@ export function NotificationCenterModal({
 
   function handleMarkAllRead() {
     hapticLight();
+    // Instant local state update right on this page!
+    setItems((prev) => prev.map((n) => ({ ...n, read: true })));
     void markAllAsRead();
   }
 
   function handleClearAll() {
     hapticLight();
+    // Instant local state update right on this page!
+    setItems([]);
     void clearAll();
   }
 
@@ -122,7 +146,9 @@ export function NotificationCenterModal({
             <Pressable
               accessibilityLabel="Close notifications"
               accessibilityRole="button"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               onPress={onClose}
+              {...(Platform.OS === 'web' ? ({ onClick: onClose, cursor: 'pointer' } as any) : {})}
               style={({ pressed }) => [styles.closeBtn, pressed && styles.pressedOpacity]}>
               <Icon
                 color="#717785"
@@ -133,40 +159,64 @@ export function NotificationCenterModal({
           </View>
 
           {/* Action Bar (Mark All as Read & Clear All) */}
-          {notifications.length > 0 && (
+          {items.length > 0 && (
             <View style={styles.actionBar}>
-              <Text style={styles.subtext}>
-                {isBn
-                  ? `সর্বমোট ${notifications.length}টি বিজ্ঞপ্তি`
-                  : `All notifications (${notifications.length})`}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                {unreadCount > 0 && (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={handleMarkAllRead}
-                    style={({ pressed }) => [styles.actionBtn, pressed && styles.pressedOpacity]}>
-                    <Icon
-                      color="#005cad"
-                      name={{ ios: 'checkmark.circle', android: 'done_all', web: 'done_all' }}
-                      size={16}
-                    />
-                    <Text style={styles.actionBtnText}>
-                      {isBn ? 'সব পড়া হয়েছে' : 'Mark all read'}
-                    </Text>
-                  </Pressable>
-                )}
+              <View style={styles.actionBarLeft}>
+                <Text style={styles.subtext}>
+                  {isBn
+                    ? `সর্বমোট ${items.length}টি বিজ্ঞপ্তি`
+                    : `All notifications (${items.length})`}
+                </Text>
+              </View>
+
+              <View style={styles.actionButtonsGroup}>
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityState={{ disabled: unreadCount === 0 }}
+                  disabled={unreadCount === 0}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  onPress={handleMarkAllRead}
+                  {...(Platform.OS === 'web' && unreadCount > 0
+                    ? ({ onClick: handleMarkAllRead } as any)
+                    : {})}
+                  style={({ pressed }) => [
+                    styles.actionBtn,
+                    unreadCount > 0 ? styles.actionBtnPrimary : styles.actionBtnDisabled,
+                    pressed && unreadCount > 0 && styles.pressedOpacity,
+                  ]}>
+                  <Icon
+                    color={unreadCount > 0 ? '#005cad' : '#94a3b8'}
+                    name={{ ios: 'checkmark.circle', android: 'done_all', web: 'done_all' }}
+                    size={14}
+                  />
+                  <Text
+                    style={[
+                      styles.actionBtnText,
+                      unreadCount > 0 ? styles.actionBtnPrimaryText : styles.actionBtnDisabledText,
+                    ]}>
+                    {unreadCount > 0
+                      ? (isBn ? 'সব পড়া হয়েছে' : 'Mark all read')
+                      : (isBn ? 'সব পড়া সম্পন্ন' : 'All read')}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   onPress={handleClearAll}
-                  style={({ pressed }) => [styles.actionBtn, pressed && styles.pressedOpacity]}>
+                  {...(Platform.OS === 'web' ? ({ onClick: handleClearAll } as any) : {})}
+                  style={({ pressed }) => [
+                    styles.actionBtn,
+                    styles.actionBtnDanger,
+                    pressed && styles.pressedOpacity,
+                  ]}>
                   <Icon
                     color="#ba1a1a"
                     name={{ ios: 'trash', android: 'delete', web: 'delete' }}
-                    size={16}
+                    size={14}
                   />
-                  <Text style={[styles.actionBtnText, { color: '#ba1a1a' }]}>
-                    {isBn ? 'সব মুছে ফেলুন' : 'Clear all'}
+                  <Text style={[styles.actionBtnText, styles.actionBtnDangerText]}>
+                    {isBn ? 'সব মুছুন' : 'Clear all'}
                   </Text>
                 </Pressable>
               </View>
@@ -178,7 +228,7 @@ export function NotificationCenterModal({
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             style={styles.scroll}>
-            {notifications.length === 0 ? (
+            {items.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <View style={styles.emptyIconCircle}>
                   <Icon
@@ -197,10 +247,10 @@ export function NotificationCenterModal({
                 </Text>
               </View>
             ) : (
-              notifications.map((item) => {
+              items.map((item) => {
                 const isUnread = !item.read;
-                const isSafe = item.type === 'REVIEW_SAFE';
-                const isUnsafe = item.type === 'REVIEW_UNSAFE';
+                const isSafe = item.verdict === 'safe' || item.type === 'REVIEW_SAFE';
+                const isUnsafe = item.verdict === 'unsafe' || item.type === 'REVIEW_UNSAFE';
                 const isNew = item.type === 'NEW_SUBMISSION';
 
                 // Standard Color Rules: Safe = Green (#16A34A), Unsafe = Red (#ba1a1a / #dc2626), Pending/New = Yellow (#CA8A04)
@@ -226,6 +276,9 @@ export function NotificationCenterModal({
                     key={item.id}
                     accessibilityRole="button"
                     onPress={() => handleNotificationPress(item)}
+                    {...(Platform.OS === 'web'
+                      ? ({ onClick: () => handleNotificationPress(item) } as any)
+                      : {})}
                     style={({ pressed }) => [
                       styles.itemCard,
                       isUnread && styles.itemCardUnread,
@@ -256,16 +309,50 @@ export function NotificationCenterModal({
                         {isBn && item.bodyBn ? item.bodyBn : item.body}
                       </Text>
 
-                      {item.siteName && (
-                        <View style={styles.siteBadge}>
-                          <Icon
-                            color="#555f71"
-                            name={{ ios: 'mappin', android: 'place', web: 'place' }}
-                            size={12}
-                          />
-                          <Text style={styles.siteBadgeText}>{item.siteName}</Text>
-                        </View>
-                      )}
+                      {/* Badges Row: Site, Verdict Pill (Safe/Unsafe), Worker */}
+                      <View style={styles.badgeRow}>
+                        {item.siteName && (
+                          <View style={styles.siteBadge}>
+                            <Icon
+                              color="#555f71"
+                              name={{ ios: 'mappin', android: 'place', web: 'place' }}
+                              size={11}
+                            />
+                            <Text style={styles.siteBadgeText}>{item.siteName}</Text>
+                          </View>
+                        )}
+                        {isSafe && (
+                          <View style={styles.safeBadge}>
+                            <Icon
+                              color="#16a34a"
+                              name={{ ios: 'checkmark.seal.fill', android: 'check_circle', web: 'check_circle' }}
+                              size={11}
+                            />
+                            <Text style={styles.safeBadgeText}>
+                              {isBn ? 'নিরাপদ' : 'Safe'}
+                            </Text>
+                          </View>
+                        )}
+                        {isUnsafe && (
+                          <View style={styles.unsafeBadge}>
+                            <Icon
+                              color="#dc2626"
+                              name={{ ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' }}
+                              size={11}
+                            />
+                            <Text style={styles.unsafeBadgeText}>
+                              {isBn ? 'অনিরাপদ' : 'Unsafe'}
+                            </Text>
+                          </View>
+                        )}
+                        {item.workerSummary && (
+                          <View style={styles.workerBadge}>
+                            <Text numberOfLines={1} style={styles.workerBadgeText}>
+                              {item.workerSummary}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </Pressable>
                 );
@@ -290,6 +377,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     maxHeight: '85%',
     minHeight: '45%',
+    maxWidth: 448,
+    width: '100%',
+    alignSelf: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
@@ -340,33 +430,73 @@ const styles = StyleSheet.create({
     height: 32,
     justifyContent: 'center',
     width: 32,
+    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : {}),
   },
   actionBar: {
     alignItems: 'center',
-    backgroundColor: '#f8f9fc',
-    borderBottomColor: '#edf0f7',
+    backgroundColor: '#f8fafc',
+    borderBottomColor: '#edf2f7',
     borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 10,
   },
+  actionBarLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
   subtext: {
-    color: '#717785',
+    color: '#64748b',
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  actionButtonsGroup: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
   },
   actionBtn: {
     alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
     flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : {}),
+  },
+  actionBtnPrimary: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+  },
+  actionBtnPrimaryText: {
+    color: '#005cad',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  actionBtnDisabled: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    opacity: 0.7,
+    ...(Platform.OS === 'web' ? ({ cursor: 'default' } as any) : {}),
+  },
+  actionBtnDisabledText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  actionBtnDanger: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+  },
+  actionBtnDangerText: {
+    color: '#dc2626',
+    fontSize: 12,
+    fontWeight: '600',
   },
   actionBtnText: {
-    color: '#005cad',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
   },
   scroll: {
     flex: 1,
@@ -387,6 +517,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     padding: 14,
     position: 'relative',
+    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : {}),
   },
   itemCardUnread: {
     backgroundColor: '#fef7f7', // Subtle soft red highlight
@@ -452,6 +583,59 @@ const styles = StyleSheet.create({
   },
   siteBadgeText: {
     color: '#404753',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  badgeRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  safeBadge: {
+    alignItems: 'center',
+    backgroundColor: '#dcfce7',
+    borderColor: '#bbf7d0',
+    borderRadius: 6,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  safeBadgeText: {
+    color: '#15803d',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  unsafeBadge: {
+    alignItems: 'center',
+    backgroundColor: '#fee2e2',
+    borderColor: '#fecaca',
+    borderRadius: 6,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  unsafeBadgeText: {
+    color: '#b91c1c',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  workerBadge: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  workerBadgeText: {
+    color: '#475569',
     fontSize: 11,
     fontWeight: '600',
   },

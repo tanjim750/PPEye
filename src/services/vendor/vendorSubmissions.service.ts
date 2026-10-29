@@ -1,4 +1,3 @@
-import { getDriveThumbnailUrl } from "@/services/google-drive/files";
 import { replacePPEImage } from "@/services/storage/ppe-images";
 import {
   StorageError,

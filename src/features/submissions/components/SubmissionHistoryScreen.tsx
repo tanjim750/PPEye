@@ -42,6 +42,68 @@ const reasonIcons: Record<string, { ios: string; android: string; web: string }>
   shoes: { ios: 'shoeprints.fill', android: 'directions_walk', web: 'directions_walk' },
 };
 
+function HistoryCheckThumbnail({ check }: { check: WorkerCheck }) {
+  const directUri = check.image?.uri || check.workerReviews?.find((w) => w.frontUri || w.backUri)?.frontUri || check.workerReviews?.find((w) => w.backUri)?.backUri || null;
+  const [sourceUri, setSourceUri] = useState<string | null>(directUri);
+
+  useEffect(() => {
+    const currentDirect = check.image?.uri || check.workerReviews?.find((w) => w.frontUri || w.backUri)?.frontUri || check.workerReviews?.find((w) => w.backUri)?.backUri || null;
+    if (currentDirect) {
+      setSourceUri(currentDirect);
+      return;
+    }
+    let isCancelled = false;
+    async function resolveThumb() {
+      const subId = check.submissionId || Number(String(check.id).replace(/\D/g, ''));
+      if (subId && !isNaN(subId)) {
+        try {
+          const { getSubmissionWorkerPhotos, supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+          const photosMap: Map<string, string> = await getSubmissionWorkerPhotos(subId);
+          let photoPath: string | null = null;
+          if (photosMap && photosMap.size > 0) {
+            const first = Array.from(photosMap.values())[0];
+            photoPath = typeof first === 'string' ? first : null;
+          }
+          if (photoPath && !isCancelled) {
+            const bucket = photoPath.startsWith('users/') ? 'avatars' : 'evidence';
+            const signedRes = await supabaseStorageService.createSignedUrl(bucket, photoPath, 86400);
+            const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
+            if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http') && !isCancelled) {
+              setSourceUri(urlStr);
+              check.image = { uri: urlStr };
+            }
+          }
+        } catch {}
+      }
+    }
+    void resolveThumb();
+    return () => {
+      isCancelled = true;
+    };
+  }, [check.image?.uri, check.id, check.submissionId]);
+
+  if (sourceUri) {
+    return (
+      <Image
+        cachePolicy="memory-disk"
+        onError={() => setSourceUri(null)}
+        source={{ uri: sourceUri }}
+        style={styles.thumbnail}
+      />
+    );
+  }
+
+  return (
+    <View style={styles.pendingThumbnail}>
+      <Icon
+        color={colors.outlineVariant}
+        name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+        size={24}
+      />
+    </View>
+  );
+}
+
 export function SubmissionHistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -275,17 +337,7 @@ export function SubmissionHistoryScreen() {
                       index < displayedList.length - 1 && styles.feedDivider,
                       pressed && styles.pressed,
                     ]}>
-                    {item.image ? (
-                      <Image cachePolicy="memory-disk" source={item.image} style={styles.thumbnail} />
-                    ) : (
-                      <View style={styles.pendingThumbnail}>
-                        <Icon
-                          color={colors.outlineVariant}
-                          name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
-                          size={24}
-                        />
-                      </View>
-                    )}
+                    <HistoryCheckThumbnail check={item} />
 
                     <View style={styles.feedCopy}>
                       <View style={styles.feedTitleRow}>
@@ -363,11 +415,9 @@ export function SubmissionHistoryScreen() {
                             {t('external.history.approvedByEhs')}
                           </Text>
                         ) : null}
-                      </View>
-                    </View>
 
-                    <View style={styles.viewDetailsContainer}>
-                      <Text style={styles.viewDetailsText}>Tap to view details</Text>
+                        <Text style={styles.viewDetailsText}>Tap to view details</Text>
+                      </View>
                     </View>
                   </Pressable>
                 );
@@ -625,7 +675,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   feedTitleRow: {
-    alignItems: 'baseline',
+    alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'space-between',
@@ -642,10 +692,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     lineHeight: 16,
+    textAlign: 'right',
+    flexShrink: 0,
   },
   metaRow: {
     alignItems: 'center',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   statusChip: {

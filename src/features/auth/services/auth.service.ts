@@ -9,7 +9,7 @@ import { saveUserCredential, verifyUserCredential } from '@/services/auth/creden
 async function resolvePpeyeUser(email: string): Promise<AuthUser> {
   const { data: appUser, error: appUserError } = await supabase
     .from('users')
-    .select('id, name, phone, email, category, external_type, designation, is_active')
+    .select('id, name, phone, email, category, external_type, designation, is_active, profile_picture_file_id')
     .ilike('email', email)
     .maybeSingle();
 
@@ -73,6 +73,27 @@ async function resolvePpeyeUser(email: string): Promise<AuthUser> {
     }
   }
 
+  let profilePictureUrl: string | undefined;
+  if (appUser.profile_picture_file_id) {
+    try {
+      const { data: fRow } = await supabase
+        .from('files')
+        .select('provider_file_id, storage_provider')
+        .eq('id', appUser.profile_picture_file_id)
+        .maybeSingle();
+      if (fRow?.provider_file_id) {
+        const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+        const signed = await supabaseStorageService.createSignedUrl('avatars', fRow.provider_file_id, 86400 * 7);
+        const signedUrl = typeof signed === 'string' ? signed : signed?.signedUrl;
+        if (signedUrl && typeof signedUrl === 'string' && signedUrl.startsWith('http')) {
+          profilePictureUrl = signedUrl;
+        }
+      }
+    } catch (e) {
+      console.warn('[auth.service] Error resolving avatar signed URL:', e);
+    }
+  }
+
   const user: AuthUser = {
     id: appUser.id,
     email,
@@ -85,6 +106,7 @@ async function resolvePpeyeUser(email: string): Promise<AuthUser> {
     vendorName,
     projectName,
     role: appUser.category === 'EXTERNAL' ? 'vendor' : 'reviewer',
+    profilePictureUrl,
   };
 
   return user;

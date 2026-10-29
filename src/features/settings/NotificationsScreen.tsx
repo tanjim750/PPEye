@@ -1,11 +1,22 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import {
+  Alert,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui/Icon';
 import { useNotifications } from '@/services/notifications/notification.service';
+import { hapticSelection } from '@/utils/haptics';
 
 export function NotificationsScreen() {
   const router = useRouter();
@@ -17,6 +28,7 @@ export function NotificationsScreen() {
     newSubmissions: preferences.newSubmissions,
     reviewUpdates: preferences.reviewUpdates,
     accountUpdates: preferences.accountUpdates,
+    batteryOptimization: preferences.batteryOptimization !== false,
   });
 
   useEffect(() => {
@@ -24,17 +36,27 @@ export function NotificationsScreen() {
       newSubmissions: preferences.newSubmissions,
       reviewUpdates: preferences.reviewUpdates,
       accountUpdates: preferences.accountUpdates,
+      batteryOptimization: preferences.batteryOptimization !== false,
     });
-  }, [preferences.newSubmissions, preferences.reviewUpdates, preferences.accountUpdates]);
+  }, [
+    preferences.newSubmissions,
+    preferences.reviewUpdates,
+    preferences.accountUpdates,
+    preferences.batteryOptimization,
+  ]);
 
-  const handleToggle = (key: 'newSubmissions' | 'reviewUpdates' | 'accountUpdates', value: boolean) => {
+  const handleToggle = (
+    key: 'newSubmissions' | 'reviewUpdates' | 'accountUpdates' | 'batteryOptimization',
+    value: boolean
+  ) => {
+    hapticSelection();
     // 1. Instant optimistic state update
     setLocalPrefs((prev) => ({ ...prev, [key]: value }));
 
     // 2. Persist & sync in background without blocking UI render
     void (async () => {
       try {
-        if (value) {
+        if (value && key !== 'batteryOptimization') {
           void requestPermission();
         }
         await updatePreferences({ [key]: value });
@@ -42,6 +64,36 @@ export function NotificationsScreen() {
         console.warn('[NotificationsScreen] Toggle update error:', err);
       }
     })();
+  };
+
+  const handleOpenBatterySettings = async () => {
+    hapticSelection();
+    if (Platform.OS === 'android') {
+      try {
+        await Linking.openSettings();
+      } catch {
+        Alert.alert(
+          'Battery Optimization',
+          'Please open Settings > Apps > PPEye > Battery and select "Unrestricted" so background notifications are never killed.'
+        );
+      }
+    } else if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        const perm = await Notification.requestPermission();
+        Alert.alert(
+          'Background Alerts',
+          perm === 'granted'
+            ? 'Web push notifications are enabled and will deliver alerts in background.'
+            : 'Please allow notification permissions in your browser address bar.'
+        );
+      } else {
+        Alert.alert('Background Alerts', 'Notifications are active for this browser session.');
+      }
+    } else {
+      try {
+        await Linking.openSettings();
+      } catch {}
+    }
   };
 
   return (
@@ -76,7 +128,14 @@ export function NotificationsScreen() {
             <Text style={styles.sectionHeader}>{t('notificationsScreen.reviewsSection')}</Text>
             <View style={styles.sectionGroup}>
               {/* Item 1 */}
-              <View style={[styles.toggleRow, styles.rowDivider]}>
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: localPrefs.newSubmissions }}
+                onPress={() => handleToggle('newSubmissions', !localPrefs.newSubmissions)}
+                {...(Platform.OS === 'web'
+                  ? ({ onClick: () => handleToggle('newSubmissions', !localPrefs.newSubmissions), cursor: 'pointer' } as any)
+                  : {})}
+                style={[styles.toggleRow, styles.rowDivider]}>
                 <View style={styles.toggleCopy}>
                   <Text style={styles.toggleTitle}>{t('notificationsScreen.newSubmissions')}</Text>
                   <Text style={styles.toggleDescription}>
@@ -91,10 +150,17 @@ export function NotificationsScreen() {
                   trackColor={{ false: '#e0e2ec', true: '#0082F0' }}
                   value={localPrefs.newSubmissions}
                 />
-              </View>
+              </Pressable>
 
               {/* Item 2 */}
-              <View style={styles.toggleRow}>
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: localPrefs.reviewUpdates }}
+                onPress={() => handleToggle('reviewUpdates', !localPrefs.reviewUpdates)}
+                {...(Platform.OS === 'web'
+                  ? ({ onClick: () => handleToggle('reviewUpdates', !localPrefs.reviewUpdates), cursor: 'pointer' } as any)
+                  : {})}
+                style={styles.toggleRow}>
                 <View style={styles.toggleCopy}>
                   <Text style={styles.toggleTitle}>{t('notificationsScreen.reviewUpdates')}</Text>
                   <Text style={styles.toggleDescription}>
@@ -109,7 +175,7 @@ export function NotificationsScreen() {
                   trackColor={{ false: '#e0e2ec', true: '#0082F0' }}
                   value={localPrefs.reviewUpdates}
                 />
-              </View>
+              </Pressable>
             </View>
           </View>
 
@@ -118,7 +184,14 @@ export function NotificationsScreen() {
             <Text style={styles.sectionHeader}>{t('notificationsScreen.accountSection')}</Text>
             <View style={styles.sectionGroup}>
               {/* Item 1 */}
-              <View style={styles.toggleRow}>
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: localPrefs.accountUpdates }}
+                onPress={() => handleToggle('accountUpdates', !localPrefs.accountUpdates)}
+                {...(Platform.OS === 'web'
+                  ? ({ onClick: () => handleToggle('accountUpdates', !localPrefs.accountUpdates), cursor: 'pointer' } as any)
+                  : {})}
+                style={styles.toggleRow}>
                 <View style={styles.toggleCopy}>
                   <Text style={styles.toggleTitle}>{t('notificationsScreen.accountUpdates')}</Text>
                   <Text style={styles.toggleDescription}>
@@ -133,7 +206,60 @@ export function NotificationsScreen() {
                   trackColor={{ false: '#e0e2ec', true: '#0082F0' }}
                   value={localPrefs.accountUpdates}
                 />
-              </View>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* BATTERY OPTIMIZATION Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionHeader}>{t('notificationsScreen.batterySection')}</Text>
+            <View style={styles.sectionGroup}>
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: localPrefs.batteryOptimization }}
+                onPress={() => handleToggle('batteryOptimization', !localPrefs.batteryOptimization)}
+                {...(Platform.OS === 'web'
+                  ? ({
+                      onClick: () =>
+                        handleToggle('batteryOptimization', !localPrefs.batteryOptimization),
+                      cursor: 'pointer',
+                    } as any)
+                  : {})}
+                style={[styles.toggleRow, styles.actionRow]}>
+                <View style={styles.toggleCopy}>
+                  <Text style={styles.toggleTitle}>
+                    {t('notificationsScreen.batteryOptimization')}
+                  </Text>
+                  <Text style={styles.toggleDescription}>
+                    {t('notificationsScreen.batteryOptimizationSub')}
+                  </Text>
+                  <View style={styles.badgeRow}>
+                    <View
+                      style={[
+                        styles.activeDot,
+                        !localPrefs.batteryOptimization && styles.inactiveDot,
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        !localPrefs.batteryOptimization && styles.inactiveBadgeText,
+                      ]}>
+                      {localPrefs.batteryOptimization
+                        ? 'Background Delivery Active'
+                        : 'Standard Battery Mode'}
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  // @ts-ignore
+                  activeThumbColor="#ffffff"
+                  onValueChange={(val) => handleToggle('batteryOptimization', val)}
+                  thumbColor="#ffffff"
+                  trackColor={{ false: '#e0e2ec', true: '#0082F0' }}
+                  value={localPrefs.batteryOptimization}
+                />
+              </Pressable>
             </View>
           </View>
         </ScrollView>
@@ -251,6 +377,37 @@ const styles = StyleSheet.create({
   },
   pressedOpacity: {
     opacity: 0.7,
+  },
+  actionRow: {
+    paddingVertical: 14,
+  },
+  badgeRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 8,
+  },
+  activeDot: {
+    backgroundColor: '#10b981',
+    borderRadius: 4,
+    height: 8,
+    width: 8,
+  },
+  badgeText: {
+    color: '#059669',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  inactiveDot: {
+    backgroundColor: '#94a3b8',
+  },
+  inactiveBadgeText: {
+    color: '#64748b',
+  },
+  openSettingsBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingLeft: 8,
   },
 });
 

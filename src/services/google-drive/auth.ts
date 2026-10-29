@@ -44,12 +44,30 @@ export function setGoogleSignInNativeModule(module: IGoogleSignInNativeModule | 
 }
 
 /**
+ * Detects if the app is running on the web or in standard Expo Go.
+ * Web platform lacks native Google Sign-In module support and warns if invoked.
+ */
+export function isWebOrPreview(): boolean {
+  try {
+    const { Platform } = require('react-native');
+    if (Platform?.OS === 'web') return true;
+  } catch {}
+  if (typeof window !== 'undefined' && typeof (window as any).document !== 'undefined') {
+    return true;
+  }
+  return isExpoPreviewOrGo();
+}
+
+/**
  * Safely resolves the native @react-native-google-signin/google-signin module.
- * Returns null if not linked, running in Expo Go, or running in a Node/test runner.
+ * Returns null if not linked, running on web, running in Expo Go, or running in a Node/test runner.
  */
 function getNativeGoogleSignIn(): IGoogleSignInNativeModule | null {
   if (injectedNativeModule) {
     return injectedNativeModule;
+  }
+  if (isWebOrPreview()) {
+    return null;
   }
   try {
     const mod = require('@react-native-google-signin/google-signin');

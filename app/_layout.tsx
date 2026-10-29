@@ -1,11 +1,14 @@
 import '@/i18n';
 
+import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LogBox, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { LanguageProvider, useLanguage } from '@/hooks/useLanguage';
+import { RealtimeNotificationBanner } from '@/components/common/RealtimeNotificationBanner';
+import { requestNotificationPermission } from '@/services/notifications/notification.service';
 
 LogBox.ignoreLogs([
   "Response.blob() is using React Native's Blob",
@@ -29,11 +32,17 @@ function RootNavigator() {
         <Stack.Screen name="settings" />
       </Stack>
       <StatusBar style="auto" />
+      <RealtimeNotificationBanner />
     </View>
   );
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    // Request system / browser notification permission on initial load for OS popup support
+    void requestNotificationPermission();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <LanguageProvider>

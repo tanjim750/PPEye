@@ -365,6 +365,16 @@ export async function getProfilePictureUri(
     return null;
   }
 
+  // Cross-device signed URL support (works seamlessly on Web, Android, iOS without native filesystem dependency)
+  try {
+    const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+    const signedRes = await supabaseStorageService.createSignedUrl('avatars', fileRec.provider_file_id, 86400 * 7);
+    const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
+    if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http')) {
+      return urlStr;
+    }
+  } catch {}
+
   // 4. Download on-demand via getImageUri into app-private cache
   try {
     const localUri = await getImageUri(fileRec.provider_file_id, {

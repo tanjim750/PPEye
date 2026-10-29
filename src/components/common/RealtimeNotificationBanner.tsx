@@ -1,9 +1,10 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui/Icon';
 import { useNavigate } from '@/hooks/useNavigate';
 import { useLanguage } from '@/hooks/useLanguage';
+import { authStore } from '@/stores/auth.store';
 import {
   AppNotification,
   useNotifications,
@@ -11,21 +12,22 @@ import {
 import { hapticSelection } from '@/utils/haptics';
 
 interface RealtimeNotificationBannerProps {
-  role: 'vendor' | 'reviewer';
+  role?: 'vendor' | 'reviewer';
 }
 
 export function RealtimeNotificationBanner({
-  role,
+  role: propRole,
 }: RealtimeNotificationBannerProps) {
   const navigate = useNavigate();
   const { language } = useLanguage();
   const isBn = language === 'bn';
-  const { banner, dismissBanner, markAsRead } = useNotifications(role);
+  const resolvedRole = propRole || (authStore.user?.category === 'INTERNAL' ? 'reviewer' : 'vendor');
+  const { banner, dismissBanner, markAsRead } = useNotifications(resolvedRole);
 
   if (!banner) return null;
 
   // Strict role check: do not show banner intended for other role
-  if (banner.recipientRole !== role) {
+  if (banner.recipientRole !== resolvedRole) {
     return null;
   }
 
@@ -34,7 +36,7 @@ export function RealtimeNotificationBanner({
     if (banner) {
       void markAsRead(banner.id);
       dismissBanner();
-      if (role === 'reviewer') {
+      if (resolvedRole === 'reviewer') {
         if (banner.submissionId) {
           navigate(`/review/${banner.submissionId}`);
         } else {
@@ -61,7 +63,11 @@ export function RealtimeNotificationBanner({
 
   return (
     <SafeAreaView edges={['top']} style={styles.bannerContainer}>
-      <Pressable onPress={handleView} style={styles.bannerCard}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={handleView}
+        {...(Platform.OS === 'web' ? ({ onClick: handleView, cursor: 'pointer' } as any) : {})}
+        style={styles.bannerCard}>
         {/* Red Glow Left Strip */}
         <View style={styles.redStrip} />
 
@@ -86,7 +92,11 @@ export function RealtimeNotificationBanner({
         </View>
 
         {/* Action Button */}
-        <Pressable onPress={handleView} style={styles.viewBtn}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={handleView}
+          {...(Platform.OS === 'web' ? ({ onClick: handleView, cursor: 'pointer' } as any) : {})}
+          style={styles.viewBtn}>
           <Text style={styles.viewBtnText}>{isBn ? 'দেখুন' : 'View'}</Text>
         </Pressable>
 
@@ -95,6 +105,7 @@ export function RealtimeNotificationBanner({
           accessibilityLabel="Dismiss banner"
           accessibilityRole="button"
           onPress={dismissBanner}
+          {...(Platform.OS === 'web' ? ({ onClick: dismissBanner, cursor: 'pointer' } as any) : {})}
           style={styles.closeBtn}>
           <Icon color="#717785" name={{ ios: 'xmark', android: 'close', web: 'close' }} size={16} />
         </Pressable>
