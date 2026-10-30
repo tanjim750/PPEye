@@ -31,7 +31,6 @@
       "output": "single",
       "favicon": "./assets/images/ppeye-logo.png"
     },
-
     "plugins": [
       "expo-router",
       [
@@ -66,6 +65,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "42b497db-9bad-461e-bd3a-f15dc51994e0"
+      }
     }
   }
 }
