@@ -882,7 +882,7 @@ export function initializeRealtimeNotifications(): () => void {
         const rev = payload.new;
         if (rev?.submission_id) {
           removeReviewedSubmissionNotification(rev.submission_id);
-          const isSafe = rev.final_status === 'reviewed';
+          const isSafe = rev.verdict === 'SAFE' || rev.verdict === 'safe' || rev.final_status === 'reviewed';
           void addNotification({
             recipientRole: 'vendor',
             type: isSafe ? 'REVIEW_SAFE' : 'REVIEW_UNSAFE',

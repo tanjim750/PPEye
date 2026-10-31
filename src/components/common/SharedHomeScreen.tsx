@@ -28,6 +28,7 @@ import {
 import { SubmissionDetailsBottomSheet } from '@/features/submissions/components/SubmissionDetailsBottomSheet';
 import { NotificationBell } from '@/components/common/NotificationBell';
 import { RealtimeNotificationBanner } from '@/components/common/RealtimeNotificationBanner';
+import { useExpoPushToken } from '@/services/notifications/useExpoPushToken';
 import { DummyUserRole } from '@/utils/dummy-users';
 import { UserRole } from '@/features/auth/types';
 
@@ -142,6 +143,9 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   const [, setHomeFocusTick] = useState(0);
 
   const activeUser = user || authStore.user;
+
+  // Registers Expo push token on device and persists to Supabase for background alerts
+  useExpoPushToken(activeUser?.id);
 
   useEffect(() => {
     // Proactively initialize Android channels and request OS notification permission once foreground UI is mounted
