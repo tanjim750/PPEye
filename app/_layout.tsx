@@ -40,7 +40,7 @@ function RootNavigator() {
         <Stack.Screen name="(internal)" />
         <Stack.Screen name="settings" />
       </Stack>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <RealtimeNotificationBanner />
     </View>
   );
