@@ -198,6 +198,10 @@ export function CaptureScreen() {
 
     return () => {
       isMounted = false;
+      if (Platform.OS === 'android') {
+        NativeStatusBar.setBackgroundColor('#FFFFFF', false);
+        NativeStatusBar.setBarStyle('dark-content', false);
+      }
     };
   }, []);
 

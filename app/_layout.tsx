@@ -3,7 +3,8 @@ import '@/i18n';
 import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { LogBox, View } from 'react-native';
+import { LogBox, Platform, StatusBar as NativeStatusBar, View } from 'react-native';
+import * as SystemUI from 'expo-system-ui';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { LanguageProvider, useLanguage } from '@/hooks/useLanguage';
@@ -25,8 +26,22 @@ export const unstable_settings = {
 function RootNavigator() {
   const { language } = useLanguage();
 
+  useEffect(() => {
+    // Forcefully set status bar to white background and black/dark content
+    if (Platform.OS === 'android') {
+      NativeStatusBar.setBackgroundColor('#FFFFFF', false);
+      NativeStatusBar.setBarStyle('dark-content', false);
+    }
+    void SystemUI.setBackgroundColorAsync('#FFFFFF');
+  }, []);
+
   return (
     <View key={language} style={{ flex: 1, backgroundColor: '#F7F9FC' }}>
+      <NativeStatusBar
+        backgroundColor="#FFFFFF"
+        barStyle="dark-content"
+        translucent={false}
+      />
       <Stack
         initialRouteName="index"
         screenOptions={{
@@ -48,6 +63,12 @@ function RootNavigator() {
 
 export default function RootLayout() {
   useEffect(() => {
+    if (Platform.OS === 'android') {
+      NativeStatusBar.setBackgroundColor('#FFFFFF', false);
+      NativeStatusBar.setBarStyle('dark-content', false);
+    }
+    void SystemUI.setBackgroundColorAsync('#FFFFFF');
+
     // Request system / browser notification permission on initial load for OS popup support
     void requestNotificationPermission();
     void initializeRealtimeNotifications();
