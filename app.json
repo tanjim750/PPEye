@@ -6,9 +6,10 @@
     "orientation": "portrait",
     "icon": "./assets/images/ppeye-logo.png",
     "scheme": "ppeye",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "ios": {
-      "icon": "./assets/images/ppeye-logo.png"
+      "icon": "./assets/images/ppeye-logo.png",
+      "userInterfaceStyle": "light"
     },
     "android": {
       "adaptiveIcon": {
@@ -18,6 +19,16 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+      "androidStatusBar": {
+        "barStyle": "dark-content",
+        "backgroundColor": "#F7F9FC",
+        "translucent": true
+      },
+      "androidNavigationBar": {
+        "barStyle": "dark-content",
+        "backgroundColor": "#FFFFFF",
+        "visible": "adaptive"
+      },
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.ACCESS_COARSE_LOCATION",

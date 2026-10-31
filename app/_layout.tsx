@@ -26,8 +26,13 @@ function RootNavigator() {
   const { language } = useLanguage();
 
   return (
-    <View key={language} style={{ flex: 1 }}>
-      <Stack initialRouteName="index" screenOptions={{ headerShown: false }}>
+    <View key={language} style={{ flex: 1, backgroundColor: '#F7F9FC' }}>
+      <Stack
+        initialRouteName="index"
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: '#F7F9FC' },
+        }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="(auth)" />
@@ -35,7 +40,7 @@ function RootNavigator() {
         <Stack.Screen name="(internal)" />
         <Stack.Screen name="settings" />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style="dark" />
       <RealtimeNotificationBanner />
     </View>
   );

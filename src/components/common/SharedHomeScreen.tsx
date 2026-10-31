@@ -261,7 +261,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
 
   if (isVendor) {
     return (
-      <SafeAreaView style={vendorStyles.safeArea}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={vendorStyles.safeArea}>
         <View style={vendorStyles.shell}>
           <View style={vendorStyles.header}>
             <View style={vendorStyles.headerCopy}>
@@ -305,7 +305,10 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
           </View>
 
           <ScrollView
-            contentContainerStyle={vendorStyles.scrollContent}
+            contentContainerStyle={[
+              vendorStyles.scrollContent,
+              { paddingBottom: 80 + Math.max(insets.bottom, 16) },
+            ]}
             showsVerticalScrollIndicator={false}
             style={vendorStyles.scroll}>
             <Pressable
@@ -549,7 +552,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
 
   // Reviewer UI
   return (
-    <SafeAreaView style={reviewerStyles.safeArea}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={reviewerStyles.safeArea}>
       <View style={reviewerStyles.shell}>
         <View style={reviewerStyles.header}>
           <View style={{ flex: 1, paddingRight: 12 }}>
@@ -584,7 +587,10 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
         </View>
 
         <ScrollView
-          contentContainerStyle={reviewerStyles.scrollContent}
+          contentContainerStyle={[
+            reviewerStyles.scrollContent,
+            { paddingBottom: 80 + Math.max(insets.bottom, 16) },
+          ]}
           showsVerticalScrollIndicator={false}
           style={reviewerStyles.scroll}
           refreshControl={
@@ -831,7 +837,7 @@ const vendorStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: 16,
     paddingHorizontal: 20,
-    paddingTop: 32,
+    paddingTop: 16,
   },
   headerCopy: {
     flex: 1,
