@@ -80,6 +80,17 @@ export function LoginScreen() {
       profilePictureUrl: user.profilePictureUrl,
     };
 
+    // Preload checks & reviews immediately in parallel so data is ready when home screen appears
+    try {
+      if (user.role === 'vendor' || user.role === 'external') {
+        const { syncWorkerChecksFromSupabase } = require('@/features/submissions/services/workerChecks.service');
+        void syncWorkerChecksFromSupabase({ force: true });
+      } else {
+        const { syncReviewsFromSupabase } = require('@/features/reviews/services/reviews.service');
+        void syncReviewsFromSupabase();
+      }
+    } catch {}
+
     router.replace(
       (user.role === "vendor" || user.role === "external" ? "/(external)" : "/(internal)") as Href,
     );

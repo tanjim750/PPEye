@@ -4,7 +4,7 @@ import { createRefCountedSubscription } from "@/services/realtime/refCountedSubs
 import { ImageSource } from "expo-image";
 import { useCallback, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import { assets } from "@/constants/assets";
 import { isDemoMode } from "@/constants/devMode";
 
@@ -54,6 +54,31 @@ const hour = 60 * minute;
 const day = 24 * hour;
 
 let workerChecks: WorkerCheck[] = [];
+
+const WORKER_CHECKS_STORAGE_KEY = 'ppeye:worker_checks:cache:v1';
+
+async function loadCachedWorkerChecks() {
+  try {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const json = await AsyncStorage.getItem(WORKER_CHECKS_STORAGE_KEY);
+    if (json) {
+      const parsed = JSON.parse(json);
+      if (Array.isArray(parsed) && parsed.length > 0 && workerChecks.length === 0) {
+        workerChecks = parsed;
+        notify();
+      }
+    }
+  } catch {}
+}
+
+async function persistWorkerChecks(data: WorkerCheck[]) {
+  try {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    await AsyncStorage.setItem(WORKER_CHECKS_STORAGE_KEY, JSON.stringify(data.slice(0, 30)));
+  } catch {}
+}
+
+void loadCachedWorkerChecks();
 
 const listeners = new Set<() => void>();
 let workerChecksChannel: any = null;
@@ -518,6 +543,7 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
             ppe_images (
               id,
               side,
+              file_id,
               created_at,
               files (
                 id,
@@ -530,7 +556,7 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
         )
         .eq('vendor_profile_id', profileId)
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(20);
       if (authStore.user?.externalType === 'WORKER' && typeof authStore.user.id === 'number') query = query.eq('submitted_by', authStore.user.id);
       const { data: subs, error } = await query;
 
@@ -538,6 +564,39 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
 
       if (error || !subs) {
         return;
+      }
+
+      // Collect any file_id that wasn't resolved by the relational join
+      const missingFileIds: number[] = [];
+      for (const sub of subs) {
+        for (const w of (sub.ppe_worker_instances as any[]) || []) {
+          for (const img of w.ppe_images || []) {
+            const raw = Array.isArray(img.files) ? img.files[0] : img.files;
+            if (!raw?.provider_file_id && img.file_id) {
+              missingFileIds.push(Number(img.file_id));
+            }
+          }
+        }
+      }
+
+      const resolvedFileMap = new Map<number, { provider_file_id: string; storage_provider: string }>();
+      if (missingFileIds.length > 0) {
+        try {
+          const { data: fileRows } = await supabase
+            .from('files')
+            .select('id, provider_file_id, storage_provider')
+            .in('id', missingFileIds);
+          if (fileRows) {
+            for (const f of fileRows) {
+              if (f.provider_file_id) {
+                resolvedFileMap.set(Number(f.id), {
+                  provider_file_id: f.provider_file_id,
+                  storage_provider: f.storage_provider || 'SUPABASE',
+                });
+              }
+            }
+          }
+        } catch {}
       }
 
       const liveChecks: WorkerCheck[] = [];
@@ -644,40 +703,44 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
           const frontRawFile = Array.isArray(frontImg?.files) ? frontImg.files[0] : frontImg?.files;
           const backRawFile = Array.isArray(backImg?.files) ? backImg.files[0] : backImg?.files;
 
-          const frontFileId = frontRawFile?.provider_file_id;
-          const backFileId = backRawFile?.provider_file_id;
+          let frontFileId = frontRawFile?.provider_file_id;
+          let frontStorageProvider = frontRawFile?.storage_provider;
+          if (!frontFileId && frontImg?.file_id) {
+            const resolved = resolvedFileMap.get(Number(frontImg.file_id));
+            if (resolved) {
+              frontFileId = resolved.provider_file_id;
+              frontStorageProvider = resolved.storage_provider;
+            }
+          }
+
+          let backFileId = backRawFile?.provider_file_id;
+          let backStorageProvider = backRawFile?.storage_provider;
+          if (!backFileId && backImg?.file_id) {
+            const resolved = resolvedFileMap.get(Number(backImg.file_id));
+            if (resolved) {
+              backFileId = resolved.provider_file_id;
+              backStorageProvider = resolved.storage_provider;
+            }
+          }
 
           let frontUri: string | null = null;
           let backUri: string | null = null;
           const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
           const { Image } = require('expo-image');
+          const { getCachedImageUriSync } = require('@/utils/image');
 
-          if (frontFileId && (frontRawFile?.storage_provider === 'SUPABASE' || frontFileId.includes('/'))) {
-            try {
-              const bucket = frontFileId.startsWith('users/') ? 'avatars' : 'evidence';
-              const signed = await supabaseStorageService.createSignedUrl(bucket, frontFileId, 86400);
-              const u = typeof signed === 'string' ? signed : signed?.signedUrl;
-              if (u && typeof u === 'string' && u.startsWith('http')) {
-                frontUri = u;
-                if (Image && typeof Image.prefetch === 'function') {
-                  Image.prefetch(u, 'memory-disk').catch(() => {});
-                }
-              }
-            } catch {}
+          if (frontFileId && (frontStorageProvider === 'SUPABASE' || frontFileId.includes('/'))) {
+            const localCached = getCachedImageUriSync(frontFileId);
+            if (localCached && (Platform.OS !== 'web' || !localCached.startsWith('file://'))) {
+              frontUri = localCached;
+            }
           }
 
-          if (backFileId && (backRawFile?.storage_provider === 'SUPABASE' || backFileId.includes('/'))) {
-            try {
-              const bucket = backFileId.startsWith('users/') ? 'avatars' : 'evidence';
-              const signed = await supabaseStorageService.createSignedUrl(bucket, backFileId, 86400);
-              const u = typeof signed === 'string' ? signed : signed?.signedUrl;
-              if (u && typeof u === 'string' && u.startsWith('http')) {
-                backUri = u;
-                if (Image && typeof Image.prefetch === 'function') {
-                  Image.prefetch(u, 'memory-disk').catch(() => {});
-                }
-              }
-            } catch {}
+          if (backFileId && (backStorageProvider === 'SUPABASE' || backFileId.includes('/'))) {
+            const localCached = getCachedImageUriSync(backFileId);
+            if (localCached && (Platform.OS !== 'web' || !localCached.startsWith('file://'))) {
+              backUri = localCached;
+            }
           }
 
           const latestReviewAt = review?.reviewed_at
@@ -692,8 +755,8 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
             status: wStatus,
             unsafeReasons,
             otherReasonText: reviewerNote,
-            frontDriveId: (frontRawFile?.storage_provider === 'SUPABASE' || frontFileId?.includes('/')) ? frontFileId : null,
-            backDriveId: (backRawFile?.storage_provider === 'SUPABASE' || backFileId?.includes('/')) ? backFileId : null,
+            frontDriveId: (frontStorageProvider === 'SUPABASE' || frontFileId?.includes('/')) ? frontFileId : null,
+            backDriveId: (backStorageProvider === 'SUPABASE' || backFileId?.includes('/')) ? backFileId : null,
             frontUri: frontUri || undefined,
             backUri: backUri || undefined,
           });
@@ -722,11 +785,16 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
           });
           if (imgs.length > 0) {
             const rawFile = Array.isArray(imgs[0]?.files) ? imgs[0].files[0] : imgs[0]?.files;
-            if (rawFile?.provider_file_id) {
-              fileId = rawFile.provider_file_id;
-              storageProvider = rawFile.storage_provider;
-              break;
+            fileId = rawFile?.provider_file_id;
+            storageProvider = rawFile?.storage_provider;
+            if (!fileId && imgs[0]?.file_id) {
+              const res = resolvedFileMap.get(Number(imgs[0].file_id));
+              if (res) {
+                fileId = res.provider_file_id;
+                storageProvider = res.storage_provider;
+              }
             }
+            if (fileId) break;
           }
         }
 
@@ -739,21 +807,6 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
         if (fileId && isSupabase) {
           const { getCachedImageUriSync } = require("@/utils/image");
           imageUrl = getCachedImageUriSync(fileId) ?? undefined;
-          if (!imageUrl) {
-            try {
-              const { supabaseStorageService } = require("@/services/storage/supabase-storage.client");
-              const bucket = fileId.startsWith("users/") ? "avatars" : "evidence";
-              const signedRes = await supabaseStorageService.createSignedUrl(bucket, fileId, 86400);
-              const urlStr = typeof signedRes === "string" ? signedRes : signedRes?.signedUrl;
-              if (urlStr && typeof urlStr === "string" && urlStr.startsWith("http")) {
-                imageUrl = urlStr;
-                const { Image } = require("expo-image");
-                if (Image && typeof Image.prefetch === 'function') {
-                  Image.prefetch(urlStr, 'memory-disk').catch(() => {});
-                }
-              }
-            } catch {}
-          }
         }
 
         if (!imageUrl) {
@@ -794,7 +847,49 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
       if (nextSignature !== lastWorkerChecksSignature) {
         lastWorkerChecksSignature = nextSignature;
         workerChecks = nextChecks;
+        void persistWorkerChecks(nextChecks);
         notify();
+      }
+
+      // Sync reviewed checks to vendor notifications so badges and history stay accurate
+      try {
+        const { syncWorkerChecksToNotifications } = require('@/services/notifications/notification.service');
+        syncWorkerChecksToNotifications(nextChecks);
+      } catch {}
+
+      // Non-blocking parallel prefetch in background so images warm up without delaying UI
+      const missingPhotos: string[] = [];
+      for (const check of nextChecks) {
+        if (!check.image?.uri) {
+          const fid = check.workerReviews?.[0]?.frontDriveId;
+          if (fid && !missingPhotos.includes(fid)) missingPhotos.push(fid);
+        }
+      }
+      if (missingPhotos.length > 0) {
+        setTimeout(async () => {
+          try {
+            const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+            const { Image } = require('expo-image');
+            await Promise.all(
+              missingPhotos.slice(0, 10).map(async (photoPath) => {
+                const bucket = photoPath.startsWith('users/') ? 'avatars' : 'evidence';
+                const signed = await supabaseStorageService.createSignedUrl(bucket, photoPath, 86400 * 7);
+                const u = typeof signed === 'string' ? signed : signed?.signedUrl;
+                if (u && typeof u === 'string' && u.startsWith('http')) {
+                  for (const c of workerChecks) {
+                    if (!c.image?.uri && c.workerReviews?.[0]?.frontDriveId === photoPath) {
+                      c.image = { uri: u };
+                    }
+                  }
+                  if (Image && typeof Image.prefetch === 'function') {
+                    Image.prefetch(u, 'memory-disk').catch(() => {});
+                  }
+                }
+              })
+            );
+            notify();
+          } catch {}
+        }, 60);
       }
     } catch (err) {
       console.warn("[WorkerChecks] syncWorkerChecksFromSupabase caught:", err);

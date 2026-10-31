@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   BackHandler,
   Dimensions,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -65,8 +66,15 @@ function HistoryCheckThumbnail({ check }: { check: WorkerCheck }) {
             photoPath = typeof first === 'string' ? first : null;
           }
           if (photoPath && !isCancelled) {
+            const { getCachedImageUriSync } = require('@/utils/image');
+            const localCached = getCachedImageUriSync(photoPath);
+            if (localCached && (Platform.OS !== 'web' || !localCached.startsWith('file://'))) {
+              setSourceUri(localCached);
+              check.image = { uri: localCached };
+              return;
+            }
             const bucket = photoPath.startsWith('users/') ? 'avatars' : 'evidence';
-            const signedRes = await supabaseStorageService.createSignedUrl(bucket, photoPath, 86400);
+            const signedRes = await supabaseStorageService.createSignedUrl(bucket, photoPath, 86400 * 7);
             const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
             if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http') && !isCancelled) {
               setSourceUri(urlStr);
@@ -86,7 +94,6 @@ function HistoryCheckThumbnail({ check }: { check: WorkerCheck }) {
     return (
       <Image
         cachePolicy="memory-disk"
-        onError={() => setSourceUri(null)}
         source={{ uri: sourceUri }}
         style={styles.thumbnail}
       />

@@ -8,10 +8,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { LanguageProvider, useLanguage } from '@/hooks/useLanguage';
 import { RealtimeNotificationBanner } from '@/components/common/RealtimeNotificationBanner';
-import { requestNotificationPermission } from '@/services/notifications/notification.service';
+import {
+  initializeRealtimeNotifications,
+  requestNotificationPermission,
+} from '@/services/notifications/notification.service';
 
 LogBox.ignoreLogs([
   "Response.blob() is using React Native's Blob",
+  "[expo-notifications] Push notifications (remote notifications) are unavailable in Expo Go",
 ]);
 
 export const unstable_settings = {
@@ -41,6 +45,7 @@ export default function RootLayout() {
   useEffect(() => {
     // Request system / browser notification permission on initial load for OS popup support
     void requestNotificationPermission();
+    void initializeRealtimeNotifications();
   }, []);
 
   return (

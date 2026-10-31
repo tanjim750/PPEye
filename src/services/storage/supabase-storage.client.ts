@@ -923,12 +923,15 @@ export async function getSubmissionWorkerPhotos(submissionId: number | string): 
           sequence_no,
           ppe_images (
             side,
+            file_id,
             files ( provider_file_id, storage_provider )
           )
         `)
         .eq('submission_id', subIdNumber);
 
       const map = new Map<string, string>();
+      const missingFileIds: number[] = [];
+
       if (!error && instances) {
         for (const inst of instances) {
           const seq = Number(inst.sequence_no) || 1;
@@ -943,9 +946,41 @@ export async function getSubmissionWorkerPhotos(submissionId: number | string): 
               if (!map.has(String(seq))) {
                 map.set(String(seq), fileId);
               }
+            } else if (img.file_id) {
+              missingFileIds.push(Number(img.file_id));
             }
           }
         }
+      }
+
+      if (missingFileIds.length > 0) {
+        try {
+          const { data: fileRows } = await supabase
+            .from('files')
+            .select('id, provider_file_id, storage_provider')
+            .in('id', missingFileIds);
+          if (fileRows) {
+            const fileMap = new Map<number, string>();
+            for (const f of fileRows) {
+              if (f.provider_file_id) fileMap.set(Number(f.id), f.provider_file_id);
+            }
+            for (const inst of instances || []) {
+              const seq = Number(inst.sequence_no) || 1;
+              for (const img of inst.ppe_images || []) {
+                const fileId = fileMap.get(Number(img.file_id));
+                if (fileId) {
+                  const sideUpper = String(img.side || 'FRONT').toUpperCase();
+                  const sideLower = sideUpper.toLowerCase();
+                  map.set(`${seq}:${sideUpper}`, fileId);
+                  map.set(`${seq}:${sideLower}`, fileId);
+                  if (!map.has(String(seq))) {
+                    map.set(String(seq), fileId);
+                  }
+                }
+              }
+            }
+          }
+        } catch {}
       }
 
       // Fallback: If no worker photos found, check general other/hazard evidence

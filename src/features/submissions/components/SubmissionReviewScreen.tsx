@@ -451,7 +451,11 @@ export function SubmissionReviewScreen() {
             }
           }
           clearPendingSubmissionReviewCaptures();
-          broadcastNewSubmission(resubmissionCtx.submissionId);
+          void broadcastNewSubmission(resubmissionCtx.submissionId, {
+            siteName: finalSite,
+            workerCount: resubmissionCtx.unsafeWorkers?.length || 1,
+            vendorName: user?.vendorName || 'ABC Telecom Ltd',
+          });
           void broadcastNewSubmissionAlert({
             submissionId: resubmissionCtx.submissionId,
             siteName: finalSite,
@@ -484,6 +488,19 @@ export function SubmissionReviewScreen() {
 
         const currentSubId = subHeader.submissionId;
         const submittedBy = subHeader.submittedBy || 1;
+
+        // Broadcast immediately upon header registration so Reviewers and Vendors get realtime alerts without waiting for storage uploads
+        void broadcastNewSubmission(currentSubId, {
+          siteName: finalSite,
+          workerCount: workerPhotos.length,
+          vendorName: user?.vendorName || 'ABC Telecom Ltd',
+        });
+        void broadcastNewSubmissionAlert({
+          submissionId: currentSubId,
+          siteName: finalSite,
+          workerCount: workerPhotos.length,
+          vendorName: user?.vendorName || 'ABC Telecom Ltd',
+        });
 
         // Process all workers under this single submission
         for (let i = 0; i < workerPhotos.length; i++) {

@@ -1,10 +1,11 @@
 import React from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui/Icon';
 import { useNavigate } from '@/hooks/useNavigate';
 import { useLanguage } from '@/hooks/useLanguage';
 import { authStore } from '@/stores/auth.store';
+import { useAuth } from '@/hooks/useAuth';
 import {
   AppNotification,
   useNotifications,
@@ -19,17 +20,19 @@ export function RealtimeNotificationBanner({
   role: propRole,
 }: RealtimeNotificationBannerProps) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { language } = useLanguage();
   const isBn = language === 'bn';
-  const resolvedRole = propRole || (authStore.user?.category === 'INTERNAL' ? 'reviewer' : 'vendor');
+  const activeUser = user || authStore.user;
+  const isInternal =
+    activeUser?.category === 'INTERNAL' ||
+    activeUser?.role === 'reviewer' ||
+    activeUser?.role === 'internal';
+  const resolvedRole = propRole || (isInternal ? 'reviewer' : 'vendor');
   const { banner, dismissBanner, markAsRead } = useNotifications(resolvedRole);
 
-  if (!banner) return null;
-
-  // Strict role check: do not show banner intended for other role
-  if (banner.recipientRole !== resolvedRole) {
-    return null;
-  }
+  const isVisible = Boolean(banner && banner.recipientRole === resolvedRole);
+  if (!isVisible || !banner) return null;
 
   function handleView() {
     hapticSelection();
@@ -62,66 +65,73 @@ export function RealtimeNotificationBanner({
       : { ios: 'clock.fill', android: 'schedule', web: 'schedule' };
 
   return (
-    <SafeAreaView edges={['top']} style={styles.bannerContainer}>
-      <Pressable
-        accessibilityRole="button"
-        onPress={handleView}
-        {...(Platform.OS === 'web' ? ({ onClick: handleView, cursor: 'pointer' } as any) : {})}
-        style={styles.bannerCard}>
-        {/* Red Glow Left Strip */}
-        <View style={styles.redStrip} />
-
-        {/* Icon */}
-        <View style={styles.iconCircle}>
-          <Icon color={iconColor} name={iconName as any} size={20} />
-        </View>
-
-        {/* Body Copy */}
-        <View style={styles.copyContainer}>
-          <View style={styles.topRow}>
-            <View style={styles.redBadge}>
-              <Text style={styles.redBadgeText}>{isBn ? 'নতুন' : 'NEW'}</Text>
-            </View>
-            <Text numberOfLines={1} style={styles.title}>
-              {isBn && banner.titleBn ? banner.titleBn : banner.title}
-            </Text>
-          </View>
-          <Text numberOfLines={2} style={styles.body}>
-            {isBn && banner.bodyBn ? banner.bodyBn : banner.body}
-          </Text>
-        </View>
-
-        {/* Action Button */}
+    <View pointerEvents="box-none" style={styles.bannerContainer}>
+      <SafeAreaView edges={['top']} pointerEvents="box-none">
         <Pressable
           accessibilityRole="button"
           onPress={handleView}
           {...(Platform.OS === 'web' ? ({ onClick: handleView, cursor: 'pointer' } as any) : {})}
-          style={styles.viewBtn}>
-          <Text style={styles.viewBtnText}>{isBn ? 'দেখুন' : 'View'}</Text>
-        </Pressable>
+          style={styles.bannerCard}>
+          {/* Red / Green Glow Left Strip */}
+          <View style={[styles.redStrip, isSafe && styles.greenStrip]} />
 
-        {/* Close Button */}
-        <Pressable
-          accessibilityLabel="Dismiss banner"
-          accessibilityRole="button"
-          onPress={dismissBanner}
-          {...(Platform.OS === 'web' ? ({ onClick: dismissBanner, cursor: 'pointer' } as any) : {})}
-          style={styles.closeBtn}>
-          <Icon color="#717785" name={{ ios: 'xmark', android: 'close', web: 'close' }} size={16} />
+          {/* Icon */}
+          <View style={[styles.iconCircle, isSafe && styles.greenIconCircle]}>
+            <Icon color={iconColor} name={iconName as any} size={20} />
+          </View>
+
+          {/* Body Copy */}
+          <View style={styles.copyContainer}>
+            <View style={styles.topRow}>
+              <View style={[styles.redBadge, isSafe && styles.greenBadge]}>
+                <Text style={styles.redBadgeText}>{isBn ? 'নতুন' : 'NEW'}</Text>
+              </View>
+              <Text numberOfLines={1} style={styles.title}>
+                {isBn && banner.titleBn ? banner.titleBn : banner.title}
+              </Text>
+            </View>
+            <Text numberOfLines={2} style={styles.body}>
+              {isBn && banner.bodyBn ? banner.bodyBn : banner.body}
+            </Text>
+          </View>
+
+          {/* Action Button */}
+          <Pressable
+            accessibilityRole="button"
+            onPress={handleView}
+            {...(Platform.OS === 'web' ? ({ onClick: handleView, cursor: 'pointer' } as any) : {})}
+            style={styles.viewBtn}>
+            <Text style={styles.viewBtnText}>{isBn ? 'দেখুন' : 'View'}</Text>
+          </Pressable>
+
+          {/* Close Button */}
+          <Pressable
+            accessibilityLabel="Dismiss banner"
+            accessibilityRole="button"
+            onPress={dismissBanner}
+            {...(Platform.OS === 'web' ? ({ onClick: dismissBanner, cursor: 'pointer' } as any) : {})}
+            style={styles.closeBtn}>
+            <Icon color="#717785" name={{ ios: 'xmark', android: 'close', web: 'close' }} size={16} />
+          </Pressable>
         </Pressable>
-      </Pressable>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  modalBackdrop: {
+    flex: 1,
+    pointerEvents: 'box-none',
+  },
   bannerContainer: {
+    elevation: 9999,
     left: 0,
     pointerEvents: 'box-none',
     position: 'absolute',
     right: 0,
     top: 0,
-    zIndex: 9999,
+    zIndex: 99999,
   },
   bannerCard: {
     alignItems: 'center',
@@ -153,6 +163,9 @@ const styles = StyleSheet.create({
     top: 0,
     width: 4,
   },
+  greenStrip: {
+    backgroundColor: '#16a34a',
+  },
   iconCircle: {
     alignItems: 'center',
     backgroundColor: '#fff5f5',
@@ -161,6 +174,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: 4,
     width: 36,
+  },
+  greenIconCircle: {
+    backgroundColor: '#f0fdf4',
   },
   copyContainer: {
     flex: 1,
@@ -177,6 +193,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 1,
+  },
+  greenBadge: {
+    backgroundColor: '#16a34a',
   },
   redBadgeText: {
     color: '#FFFFFF',

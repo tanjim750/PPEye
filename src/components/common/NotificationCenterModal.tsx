@@ -14,6 +14,8 @@ import { useNavigate } from '@/hooks/useNavigate';
 import { useLanguage } from '@/hooks/useLanguage';
 import {
   AppNotification,
+  getNotifications,
+  subscribeNotifications,
   useNotifications,
   VendorFilter,
 } from '@/services/notifications/notification.service';
@@ -59,27 +61,31 @@ export function NotificationCenterModal({
   const navigate = useNavigate();
   const { language } = useLanguage();
   const isBn = language === 'bn';
-  const {
-    notifications: hookNotifications,
-    markAsRead,
-    markAllAsRead,
-    clearAll,
-  } = useNotifications(role, vendorFilter);
+  const { markAsRead, markAllAsRead, clearAll } = useNotifications(role, vendorFilter);
 
-  // Local instant state for zero-latency UI reaction right on this page
-  const [items, setItems] = useState<AppNotification[]>(hookNotifications);
+  // Maintain local reactive items state so bottom sheet reflects actions with 0ms latency
+  const [items, setItems] = useState<AppNotification[]>(() => getNotifications(role, vendorFilter));
 
+  // Sync state whenever modal opens or filter props change
   useEffect(() => {
-    setItems(hookNotifications);
-  }, [hookNotifications]);
+    if (visible) {
+      setItems(getNotifications(role, vendorFilter));
+    }
+  }, [visible, role, vendorFilter?.vendorName, vendorFilter?.vendorProfileId]);
+
+  // Subscribe to notification event bus for real-time reactivity
+  useEffect(() => {
+    const unsubscribe = subscribeNotifications(() => {
+      setItems(getNotifications(role, vendorFilter));
+    });
+    return unsubscribe;
+  }, [role, vendorFilter?.vendorName, vendorFilter?.vendorProfileId]);
 
   const unreadCount = items.filter((n) => !n.read).length;
 
   function handleNotificationPress(item: AppNotification) {
     hapticSelection();
-    setItems((prev) =>
-      prev.map((n) => (n.id === item.id ? { ...n, read: true } : n))
-    );
+    setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)));
     void markAsRead(item.id);
     onClose();
 
@@ -101,14 +107,12 @@ export function NotificationCenterModal({
 
   function handleMarkAllRead() {
     hapticLight();
-    // Instant local state update right on this page!
     setItems((prev) => prev.map((n) => ({ ...n, read: true })));
     void markAllAsRead();
   }
 
   function handleClearAll() {
     hapticLight();
-    // Instant local state update right on this page!
     setItems([]);
     void clearAll();
   }

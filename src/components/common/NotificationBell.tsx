@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Icon } from '@/components/ui/Icon';
 import {
+  getUnreadCount,
   subscribeNotifications,
   useNotifications,
 } from '@/services/notifications/notification.service';
@@ -21,35 +22,44 @@ export function NotificationBell({
   color = '#717785',
   size = 22,
 }: NotificationBellProps) {
-  const [, setTick] = useState(0);
   const { user } = useAuth();
   const activeUser = user || authStore.user;
   const vendorFilter =
     role === 'vendor'
       ? {
           vendorProfileId: activeUser?.vendorProfileId,
-          vendorName: activeUser?.vendorName || activeUser?.projectName,
+          vendorName: activeUser?.vendorName,
         }
       : undefined;
 
-  // Directly subscribe to notification bus for instant re-render across any screen/modal event
-  useEffect(() => {
-    const unsubscribe = subscribeNotifications(() => {
-      setTick((prev) => prev + 1);
-    });
-    return unsubscribe;
-  }, []);
-
   const { unreadCount } = useNotifications(role, vendorFilter);
   const [modalVisible, setModalVisible] = useState(false);
+  const [localCount, setLocalCount] = useState(unreadCount);
 
-  // The bell badge reflects actual unread notifications in real-time
-  const displayCount = unreadCount;
+  // Synchronize local badge count with notification store
+  useEffect(() => {
+    setLocalCount(unreadCount);
+  }, [unreadCount]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeNotifications(() => {
+      const fresh = getUnreadCount(role, vendorFilter);
+      setLocalCount(fresh);
+    });
+    return unsubscribe;
+  }, [role, vendorFilter?.vendorName, vendorFilter?.vendorProfileId]);
+
+  const displayCount = localCount;
   const isUnread = displayCount > 0;
 
   function handlePress() {
     hapticSelection();
     setModalVisible(true);
+  }
+
+  function handleModalClose() {
+    setModalVisible(false);
+    setLocalCount(getUnreadCount(role, vendorFilter));
   }
 
   return (
@@ -81,7 +91,7 @@ export function NotificationBell({
       </Pressable>
 
       <NotificationCenterModal
-        onClose={() => setModalVisible(false)}
+        onClose={handleModalClose}
         role={role}
         vendorFilter={vendorFilter}
         visible={modalVisible}

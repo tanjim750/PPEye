@@ -1,4 +1,15 @@
 import { useEffect, useState } from 'react';
+import {
+  initNativeNotifications,
+  requestNativeNotificationPermission,
+  scheduleNativeNotification,
+  setupAndroidChannel,
+} from './native-notifications';
+
+// Configure top-level notifications handler for foreground display
+initNativeNotifications();
+
+const ANDROID_CHANNEL_ID = 'ppeye_alerts';
 
 function getSupabaseClient() {
   try {
@@ -80,8 +91,9 @@ export interface NotificationPreferences {
   batteryOptimization: boolean;
 }
 
-const STORAGE_KEY = 'ppeye:notifications:v3';
-const PREFS_KEY = 'ppeye:notification_preferences_v3';
+const STORAGE_KEY = 'ppeye:notifications:v4';
+const PREFS_KEY = 'ppeye:notification_preferences_v4';
+const DISMISSED_SUBS_KEY = 'ppeye:notifications_dismissed_subs_v4';
 const NOTIFICATION_CHANNEL_NAME = 'ppeye_realtime_notifications';
 
 // In-memory preferences
@@ -92,64 +104,9 @@ let preferences: NotificationPreferences = {
   batteryOptimization: true,
 };
 
-// Initial demo notifications strictly partitioned by role
-const INITIAL_DEMO_NOTIFICATIONS: AppNotification[] = [
-  // Reviewer ONLY notification
-  {
-    id: 'demo-rev-1',
-    recipientRole: 'reviewer',
-    type: 'NEW_SUBMISSION',
-    title: 'New PPE Submission',
-    titleBn: 'নতুন পিপিই সাবমিশন',
-    body: 'ABC Telecom Ltd submitted Site-01 (1 worker) for compliance review.',
-    bodyBn: 'এবিসি টেলিকম লিমিটেড সাইট-০১ এর পিপিই নিরীক্ষার জন্য জমা দিয়েছে।',
-    submissionId: 1,
-    siteName: 'Site-01',
-    workerCount: 1,
-    workerSummary: 'Worker #1 (Pending)',
-    read: false,
-    createdAt: Date.now() - 1000 * 60 * 10,
-  },
-  // Vendor ONLY notifications
-  {
-    id: 'demo-ven-1',
-    recipientRole: 'vendor',
-    vendorName: 'ABC Telecom',
-    type: 'REVIEW_UNSAFE',
-    title: 'Safety Action Required',
-    titleBn: 'নিরাপত্তা ব্যবস্থা প্রয়োজন',
-    body: 'Worker #1 was flagged for missing safety helmet. Please check notes and resubmit.',
-    bodyBn: 'কর্মী #১ এর হেলমেট অনুপস্থিত চিহ্নিত হয়েছে। নোট দেখে পুনরায় ছবি জমা দিন।',
-    submissionId: 3,
-    siteName: 'Site-03',
-    workerCount: 1,
-    verdict: 'unsafe',
-    workerSummary: 'Worker #1: Unsafe (Missing Helmet)',
-    unsafeReasons: ['Missing Helmet'],
-    read: false,
-    createdAt: Date.now() - 1000 * 60 * 35,
-  },
-  {
-    id: 'demo-ven-2',
-    recipientRole: 'vendor',
-    vendorName: 'ABC Telecom',
-    type: 'REVIEW_SAFE',
-    title: 'Submission Verified Safe',
-    titleBn: 'সাবমিশন অনুমোদিত (নিরাপদ)',
-    body: 'Lead EHS Safety Officer approved your recent worker submission.',
-    bodyBn: 'লিড ইএইচএস সেফটি অফিসার আপনার সাম্প্রতিক কর্মী সাবমিশন অনুমোদন করেছেন।',
-    submissionId: 2,
-    siteName: 'Site-02',
-    workerCount: 2,
-    verdict: 'safe',
-    workerSummary: 'Worker #1, #2: Safe',
-    read: true,
-    createdAt: Date.now() - 1000 * 60 * 120,
-  },
-];
-
-// Initialize synchronously so home page has zero loading delay
-let notifications: AppNotification[] = [...INITIAL_DEMO_NOTIFICATIONS];
+// Initialize empty — only genuine submissions and reviews are displayed
+let notifications: AppNotification[] = [];
+const dismissedOrReadSubmissions = new Set<string>();
 let isHydrated = false;
 let activeBanner: AppNotification | null = null;
 let bannerTimer: ReturnType<typeof setTimeout> | null = null;
@@ -166,7 +123,10 @@ function notify() {
 
 async function persist() {
   try {
-    await storageSet(STORAGE_KEY, JSON.stringify(notifications));
+    await Promise.all([
+      storageSet(STORAGE_KEY, JSON.stringify(notifications)),
+      storageSet(DISMISSED_SUBS_KEY, JSON.stringify(Array.from(dismissedOrReadSubmissions))),
+    ]);
   } catch (err) {
     console.warn('[notification.service] Failed to persist notifications:', err);
   }
@@ -175,10 +135,20 @@ async function persist() {
 export async function hydrateNotifications(): Promise<void> {
   if (isHydrated) return;
   try {
-    const [rawNotifs, rawPrefs] = await Promise.all([
+    const [rawNotifs, rawPrefs, rawDismissed] = await Promise.all([
       storageGet(STORAGE_KEY),
       storageGet(PREFS_KEY),
+      storageGet(DISMISSED_SUBS_KEY),
     ]);
+
+    if (rawDismissed) {
+      try {
+        const parsedDismissed = JSON.parse(rawDismissed);
+        if (Array.isArray(parsedDismissed)) {
+          parsedDismissed.forEach((id) => dismissedOrReadSubmissions.add(String(id)));
+        }
+      } catch {}
+    }
 
     if (rawPrefs) {
       try {
@@ -193,7 +163,7 @@ export async function hydrateNotifications(): Promise<void> {
       try {
         const parsed = JSON.parse(rawNotifs);
         if (Array.isArray(parsed)) {
-          notifications = parsed;
+          notifications = parsed.filter((n) => !n.id?.startsWith('demo-'));
         }
       } catch {}
     }
@@ -228,15 +198,12 @@ export async function setNotificationPreferences(
 
 export async function requestNotificationPermission(): Promise<boolean> {
   try {
+    await setupAndroidChannel(ANDROID_CHANNEL_ID);
     if (typeof window !== 'undefined' && 'Notification' in window) {
       const permission = await Notification.requestPermission();
       return permission === 'granted';
     }
-    const Notifications = require('expo-notifications');
-    if (Notifications?.requestPermissionsAsync) {
-      const { status } = await Notifications.requestPermissionsAsync();
-      return status === 'granted';
-    }
+    return await requestNativeNotificationPermission();
   } catch {}
   return true;
 }
@@ -256,20 +223,35 @@ export function getNotifications(
     list = list.filter((n) => n.recipientRole === role);
   }
 
-  // STRICT vendor filtering: vendor sees only notifications belonging to their vendor
-  if (role === 'vendor' && vendorFilter?.vendorName) {
-    const filterName = vendorFilter.vendorName.trim().toLowerCase();
+  // Vendor filtering: only filter if notification explicitly specifies a different vendor profile ID
+  if (role === 'vendor') {
+    const filterName = vendorFilter?.vendorName?.trim().toLowerCase();
+    const filterProfileId =
+      vendorFilter?.vendorProfileId !== undefined && vendorFilter?.vendorProfileId !== null
+        ? Number(vendorFilter.vendorProfileId)
+        : undefined;
+
     list = list.filter((n) => {
-      if (n.vendorName) {
-        return (
-          n.vendorName.trim().toLowerCase().includes(filterName) ||
-          filterName.includes(n.vendorName.trim().toLowerCase())
-        );
+      const notifProfileId =
+        n.vendorProfileId !== undefined && n.vendorProfileId !== null
+          ? Number(n.vendorProfileId)
+          : undefined;
+
+      // If both have profile IDs, strictly match by profile ID (handles number vs string)
+      if (filterProfileId && notifProfileId) {
+        return notifProfileId === filterProfileId;
       }
-      if (n.vendorProfileId && vendorFilter.vendorProfileId) {
-        return n.vendorProfileId === vendorFilter.vendorProfileId;
+
+      // If vendor names are present on both, check for match or substring
+      if (filterName && n.vendorName) {
+        const notifVendor = n.vendorName.trim().toLowerCase();
+        if (notifVendor.includes(filterName) || filterName.includes(notifVendor)) {
+          return true;
+        }
       }
-      return false;
+
+      // General or unscoped vendor notifications remain visible to the vendor
+      return true;
     });
   }
 
@@ -339,20 +321,9 @@ function dispatchSystemNotification(title: string, body: string, id: string) {
     }
   } catch {}
 
-  // 2. React Native / Mobile expo-notifications (if present)
+  // 2. React Native / Mobile expo-notifications (on native devices)
   try {
-    const Notifications = require('expo-notifications');
-    if (Notifications?.scheduleNotificationAsync) {
-      void Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          sound: true,
-          vibrate: [0, 250, 150, 250],
-        },
-        trigger: null,
-      });
-    }
+    void scheduleNativeNotification(title, body, ANDROID_CHANNEL_ID);
   } catch {}
 
   // 3. Physical phone vibration feedback for mobile devices
@@ -398,6 +369,8 @@ export async function addNotification(
   const newNotif: AppNotification = {
     id: input.id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     recipientRole: input.recipientRole,
+    vendorName: input.vendorName,
+    vendorProfileId: input.vendorProfileId,
     type: input.type,
     title: input.title,
     titleBn: input.titleBn,
@@ -441,6 +414,7 @@ export async function addNotification(
 export async function markAsRead(id: string): Promise<void> {
   notifications = notifications.map((n) => {
     if (n.id === id) {
+      if (n.submissionId) dismissedOrReadSubmissions.add(String(n.submissionId));
       return { ...n, read: true };
     }
     return n;
@@ -453,15 +427,11 @@ export async function markAllAsRead(
   role?: NotificationRole,
   vendorFilter?: VendorFilter
 ): Promise<void> {
-  const filterName = vendorFilter?.vendorName?.trim().toLowerCase();
   notifications = notifications.map((n) => {
     const roleMatches = !role || n.recipientRole === role;
     if (!roleMatches) return n;
-    if (role === 'vendor' && filterName) {
-      const vendorMatches =
-        n.vendorName?.trim().toLowerCase().includes(filterName) ||
-        filterName.includes(n.vendorName?.trim().toLowerCase() || '');
-      return vendorMatches ? { ...n, read: true } : n;
+    if (n.submissionId) {
+      dismissedOrReadSubmissions.add(String(n.submissionId));
     }
     return { ...n, read: true };
   });
@@ -470,6 +440,10 @@ export async function markAllAsRead(
 }
 
 export async function deleteNotification(id: string): Promise<void> {
+  const target = notifications.find((n) => n.id === id);
+  if (target?.submissionId) {
+    dismissedOrReadSubmissions.add(String(target.submissionId));
+  }
   notifications = notifications.filter((n) => n.id !== id);
   notify();
   void persist();
@@ -479,22 +453,169 @@ export async function clearAllNotifications(
   role?: NotificationRole,
   vendorFilter?: VendorFilter
 ): Promise<void> {
-  const filterName = vendorFilter?.vendorName?.trim().toLowerCase();
+  notifications.forEach((n) => {
+    if (!role || n.recipientRole === role) {
+      if (n.submissionId) {
+        dismissedOrReadSubmissions.add(String(n.submissionId));
+      }
+    }
+  });
   if (!role) {
     notifications = [];
-  } else if (role === 'vendor' && filterName) {
-    notifications = notifications.filter((n) => {
-      if (n.recipientRole !== 'vendor') return true;
-      const vendorMatches =
-        n.vendorName?.trim().toLowerCase().includes(filterName) ||
-        filterName.includes(n.vendorName?.trim().toLowerCase() || '');
-      return !vendorMatches;
-    });
   } else {
     notifications = notifications.filter((n) => n.recipientRole !== role);
   }
   notify();
   void persist();
+}
+
+/**
+ * Removes a pending submission notification from the Reviewer's panel and bell count
+ * once it has been completed/reviewed from Recent or elsewhere.
+ */
+export function removeReviewedSubmissionNotification(submissionId: number | string): void {
+  const strId = String(submissionId);
+  const beforeCount = notifications.length;
+  notifications = notifications.filter(
+    (n) => !(n.recipientRole === 'reviewer' && String(n.submissionId) === strId)
+  );
+  dismissedOrReadSubmissions.add(strId);
+  if (notifications.length !== beforeCount) {
+    if (activeBanner && String(activeBanner.submissionId) === strId) {
+      activeBanner = null;
+    }
+    notify();
+    void persist();
+  }
+}
+
+/**
+ * Ensures pending submissions in the database have a corresponding notification for Reviewers.
+ * Runs on initial load and sync so Reviewers never miss submissions even if they were offline during submission.
+ */
+export function syncPendingReviewsToNotifications(
+  waitingItems: {
+    id: string | number;
+    vendor?: string;
+    location?: string;
+    workers?: number;
+    timestamp?: number;
+  }[]
+): void {
+  const waitingIds = new Set(waitingItems.map((item) => String(item.id)));
+  let changed = false;
+
+  // Prune any reviewer pending notification whose submission has already been reviewed
+  const beforeCount = notifications.length;
+  notifications = notifications.filter((n) => {
+    if (n.recipientRole === 'reviewer' && (n.type === 'NEW_SUBMISSION' || n.type === 'RESUBMISSION')) {
+      if (n.submissionId && !waitingIds.has(String(n.submissionId))) {
+        dismissedOrReadSubmissions.add(String(n.submissionId));
+        return false;
+      }
+    }
+    return true;
+  });
+  if (notifications.length !== beforeCount) {
+    changed = true;
+  }
+
+  for (const item of waitingItems) {
+    const subId = item.id;
+    if (dismissedOrReadSubmissions.has(String(subId))) {
+      continue;
+    }
+    const exists = notifications.some(
+      (n) => n.recipientRole === 'reviewer' && String(n.submissionId) === String(subId)
+    );
+    if (!exists) {
+      const newNotif: AppNotification = {
+        id: `notif_pending_${subId}`,
+        recipientRole: 'reviewer',
+        type: 'NEW_SUBMISSION',
+        title: 'New PPE Submission',
+        titleBn: 'নতুন পিপিই সাবমিশন',
+        body: `${item.vendor || 'Vendor'} submitted ${item.location || 'Site'} (${item.workers || 1} workers) for review.`,
+        bodyBn: `${item.vendor || 'ভেন্ডর'} ${item.location || 'সাইট'}-এর ${item.workers || 1} জন কর্মীর পিপিই নিরীক্ষার জন্য জমা দিয়েছেন।`,
+        submissionId: subId,
+        siteName: item.location,
+        workerCount: item.workers,
+        read: false,
+        createdAt: item.timestamp || Date.now(),
+      };
+      notifications.unshift(newNotif);
+      changed = true;
+      if (!activeBanner) {
+        activeBanner = newNotif;
+        if (bannerTimer) clearTimeout(bannerTimer);
+        bannerTimer = setTimeout(() => {
+          activeBanner = null;
+          notify();
+        }, 6000);
+      }
+    }
+  }
+  if (changed) {
+    notifications = notifications.slice(0, 50);
+    notify();
+    void persist();
+  }
+}
+
+/**
+ * Ensures reviewed checks in the database have a corresponding notification for Vendors.
+ */
+export function syncWorkerChecksToNotifications(
+  checks: {
+    submissionId?: number;
+    id: number | string;
+    vendorName?: string;
+    vendorProfileId?: number;
+    siteName?: string;
+    status: 'safe' | 'unsafe' | 'review';
+    timestamp?: number;
+  }[]
+): void {
+  let changed = false;
+  for (const check of checks) {
+    if (check.status !== 'safe' && check.status !== 'unsafe') continue;
+    const subId = check.submissionId || check.id;
+    if (dismissedOrReadSubmissions.has(String(subId))) {
+      continue;
+    }
+    const exists = notifications.some(
+      (n) =>
+        n.recipientRole === 'vendor' &&
+        String(n.submissionId) === String(subId) &&
+        (n.type === 'REVIEW_SAFE' || n.type === 'REVIEW_UNSAFE')
+    );
+    if (!exists) {
+      const isSafe = check.status === 'safe';
+      notifications.unshift({
+        id: `notif_verdict_${subId}`,
+        recipientRole: 'vendor',
+        vendorName: check.vendorName,
+        vendorProfileId: check.vendorProfileId,
+        type: isSafe ? 'REVIEW_SAFE' : 'REVIEW_UNSAFE',
+        title: isSafe ? 'PPE Verified: Safe' : 'Action Required: Unsafe Worker',
+        titleBn: isSafe ? 'পিপিই যাচাই: নিরাপদ' : 'জরুরি পদক্ষেপ: অনিরাপদ কর্মী চিহ্নিত',
+        body: `${check.siteName || 'Site'}: ${isSafe ? 'Worker verified Safe' : 'Worker flagged for safety violations'}`,
+        bodyBn: isSafe
+          ? `${check.siteName || 'সাইট'}: কর্মী সফলভাবে নিরাপদ হিসেবে যাচাই করা হয়েছে।`
+          : `${check.siteName || 'সাইট'}: কর্মীতে সুরক্ষা ত্রুটি চিহ্নিত হয়েছে। বিবরণ দেখে পুনরায় জমা দিন।`,
+        submissionId: subId,
+        siteName: check.siteName,
+        read: false,
+        createdAt: check.timestamp || Date.now(),
+      });
+      changed = true;
+    }
+  }
+  if (changed) {
+    notifications = notifications.slice(0, 50);
+    notify();
+    void persist();
+  }
 }
 
 // -------------------------------------------------------------
@@ -509,18 +630,61 @@ export async function broadcastNewSubmissionAlert(meta: {
   workerCount?: number;
   vendorName?: string;
 }): Promise<void> {
+  const subId = meta.submissionId;
+  if (subId) {
+    dismissedOrReadSubmissions.delete(String(subId));
+  }
+
+  // 1. Immediately register Reviewer notification so Reviewer bell and popup banner activate instantly
+  void addNotification({
+    recipientRole: 'reviewer',
+    type: 'NEW_SUBMISSION',
+    title: 'New PPE Submission',
+    titleBn: 'নতুন পিপিই সাবমিশন',
+    body: `${meta.vendorName || 'Vendor'} submitted ${meta.siteName || 'Site'} (${meta.workerCount || 1} workers) for review.`,
+    bodyBn: `${meta.vendorName || 'ভেন্ডর'} ${meta.siteName || 'সাইট'}-এর ${meta.workerCount || 1} জন কর্মীর পিপিই নিরীক্ষার জন্য জমা দিয়েছেন।`,
+    submissionId: subId,
+    siteName: meta.siteName,
+    workerCount: meta.workerCount,
+  });
+
+  // 2. Immediately register Vendor submission confirmation so Vendor bell also receives submission receipt
+  void addNotification({
+    recipientRole: 'vendor',
+    vendorName: meta.vendorName,
+    type: 'NEW_SUBMISSION',
+    title: 'Submission Sent Successfully',
+    titleBn: 'সাবমিশন সফলভাবে পাঠানো হয়েছে',
+    body: `${meta.siteName || 'Site'}: ${meta.workerCount || 1} worker(s) submitted for compliance review.`,
+    bodyBn: `${meta.siteName || 'সাইট'}: ${meta.workerCount || 1} জন কর্মীর পিপিই নিরীক্ষার জন্য জমা দেওয়া হয়েছে।`,
+    submissionId: subId,
+    siteName: meta.siteName,
+    workerCount: meta.workerCount,
+  });
+
+  // 3. Realtime broadcast to remote devices/peers across channels
   try {
     const supabase = getSupabaseClient();
     if (!supabase) return;
+    const payload = {
+      ...meta,
+      timestamp: Date.now(),
+    };
+
     const channel = notificationChannel || supabase.channel(NOTIFICATION_CHANNEL_NAME);
     await channel.send({
       type: 'broadcast',
       event: 'new_submission_notification',
-      payload: {
-        ...meta,
-        timestamp: Date.now(),
-      },
-    });
+      payload,
+    }).catch(() => {});
+
+    // Also broadcast to live sync channel so all reviewers update immediately
+    const liveChan = supabase.channel('ppe_live_sync');
+    await liveChan.send({
+      type: 'broadcast',
+      event: 'new_submission',
+      payload,
+    }).catch(() => {});
   } catch (err) {
     console.warn('[notification.service] Failed to broadcast new_submission_notification:', err);
   }
@@ -542,7 +706,13 @@ export async function broadcastReviewVerdictAlert(meta: {
   const siteStr = meta.siteName || 'Site';
   const workerDetail = meta.workerSummary || (isSafe ? `Worker verified Safe` : `Worker flagged for safety violations`);
 
-  // 1. Immediately create local notification for Vendor
+  // Reviewer does NOT receive notification for their own review verdict.
+  // Purge this submission from Reviewer's pending notifications immediately!
+  if (meta.submissionId) {
+    removeReviewedSubmissionNotification(meta.submissionId);
+  }
+
+  // Only the Vendor receives safe/unsafe notification.
   void addNotification({
     recipientRole: 'vendor',
     vendorName: meta.vendorName,
@@ -562,27 +732,7 @@ export async function broadcastReviewVerdictAlert(meta: {
     unsafeReasons: meta.unsafeReasons,
   });
 
-  // 2. Immediately create local notification for Reviewer audit & bottom sheet
-  void addNotification({
-    recipientRole: 'reviewer',
-    vendorName: meta.vendorName,
-    vendorProfileId: meta.vendorProfileId,
-    type: isSafe ? 'REVIEW_SAFE' : 'REVIEW_UNSAFE',
-    title: isSafe ? 'Review Completed: Safe' : 'Review Completed: Unsafe Logged',
-    titleBn: isSafe ? 'রিভিউ সম্পন্ন: নিরাপদ' : 'রিভিউ সম্পন্ন: অনিরাপদ চিহ্নিত',
-    body: `${siteStr}: ${workerDetail}`,
-    bodyBn: isSafe
-      ? `${siteStr}: নিরীক্ষা সম্পন্ন - কর্মী নিরাপদ হিসেবে অনুমোদিত।`
-      : `${siteStr}: নিরীক্ষা সম্পন্ন - সুরক্ষার নিয়মলঙ্ঘন লিপিবদ্ধ করা হয়েছে।`,
-    submissionId: meta.submissionId,
-    siteName: meta.siteName,
-    workerCount: meta.workerCount,
-    workerSummary: meta.workerSummary,
-    verdict: isSafe ? 'safe' : 'unsafe',
-    unsafeReasons: meta.unsafeReasons,
-  });
-
-  // 3. Realtime broadcast to remote devices/peers
+  // Realtime broadcast to remote devices/peers
   try {
     const supabase = getSupabaseClient();
     if (!supabase) return;
@@ -633,6 +783,9 @@ export function initializeRealtimeNotifications(): () => void {
       // 1. Reviewer Notification: When Vendor submits new check
       .on('broadcast', { event: 'new_submission_notification' }, (event: any) => {
         const payload = event.payload || {};
+        if (payload.submissionId) {
+          dismissedOrReadSubmissions.delete(String(payload.submissionId));
+        }
         void addNotification({
           recipientRole: 'reviewer',
           type: 'NEW_SUBMISSION',
@@ -648,20 +801,26 @@ export function initializeRealtimeNotifications(): () => void {
       .on('broadcast', { event: 'new_submission' }, (event: any) => {
         const payload = event.payload || {};
         if (payload.submissionId) {
+          dismissedOrReadSubmissions.delete(String(payload.submissionId));
           void addNotification({
             recipientRole: 'reviewer',
             type: 'NEW_SUBMISSION',
             title: 'New PPE Submission',
             titleBn: 'নতুন পিপিই সাবমিশন',
-            body: `A new PPE inspection was submitted for review.`,
-            bodyBn: `পর্যালোচনার জন্য একটি নতুন পিপিই নিরীক্ষা জমা পড়েছে।`,
+            body: `${payload.vendorName || 'Vendor'} submitted ${payload.siteName || 'Site'} (${payload.workerCount || 1} workers) for review.`,
+            bodyBn: `${payload.vendorName || 'ভেন্ডর'} ${payload.siteName || 'সাইট'}-এর ${payload.workerCount || 1} জন কর্মীর পিপিই নিরীক্ষার জন্য জমা দিয়েছেন।`,
             submissionId: payload.submissionId,
+            siteName: payload.siteName,
+            workerCount: payload.workerCount,
           });
         }
       })
       // 2. Peer Notification: When Reviewer evaluates check
       .on('broadcast', { event: 'review_verdict_notification' }, (event: any) => {
         const payload = event.payload || {};
+        if (payload.submissionId) {
+          removeReviewedSubmissionNotification(payload.submissionId);
+        }
         const isSafe = payload.verdict === 'safe' || payload.verdict === 'reviewed' || !payload.hasUnsafe;
         const siteStr = payload.siteName || 'Site';
         const workerDetail = payload.workerSummary || (isSafe ? `Worker verified Safe` : `Worker flagged for safety violations`);
@@ -701,10 +860,10 @@ export function initializeRealtimeNotifications(): () => void {
           });
         }
       })
-      // 3. Fallback to Supabase Postgres Changes
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ppe_submissions' }, (payload: any) => {
+      // 3. Fallback to Supabase Postgres Changes (Realtime DB triggers)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ppe_submissions' }, (payload: any) => {
         const sub = payload.new;
-        if (sub?.id) {
+        if (sub?.id && payload.eventType === 'INSERT') {
           void addNotification({
             recipientRole: 'reviewer',
             type: 'NEW_SUBMISSION',
@@ -715,11 +874,14 @@ export function initializeRealtimeNotifications(): () => void {
             submissionId: sub.id,
             siteName: sub.site_name,
           });
+        } else if (sub?.id && sub.status && sub.status !== 'waiting' && sub.status !== 'UNDER_REVIEW') {
+          removeReviewedSubmissionNotification(sub.id);
         }
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'submission_reviews' }, (payload: any) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submission_reviews' }, (payload: any) => {
         const rev = payload.new;
         if (rev?.submission_id) {
+          removeReviewedSubmissionNotification(rev.submission_id);
           const isSafe = rev.final_status === 'reviewed';
           void addNotification({
             recipientRole: 'vendor',
@@ -733,6 +895,24 @@ export function initializeRealtimeNotifications(): () => void {
               ? 'আপনার পিপিই সাবমিশন পর্যালোচনা শেষে নিরাপদ হিসেবে অনুমোদিত হয়েছে।'
               : 'আপনার সাবমিশনে সুরক্ষা ত্রুটি চিহ্নিত হয়েছে। অনুগ্রহ করে নোট দেখে পুনরায় জমা দিন।',
             submissionId: rev.submission_id,
+          });
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ppe_reviews' }, (payload: any) => {
+        const rev = payload.new;
+        if (rev?.id) {
+          const isSafe = rev.verdict === 'SAFE';
+          void addNotification({
+            recipientRole: 'vendor',
+            type: isSafe ? 'REVIEW_SAFE' : 'REVIEW_UNSAFE',
+            title: isSafe ? 'Worker Verified: Safe' : 'Safety Violation: Unsafe Worker',
+            titleBn: isSafe ? 'কর্মী যাচাই: নিরাপদ' : 'সুরক্ষা ত্রুটি: অনিরাপদ কর্মী',
+            body: isSafe
+              ? 'A worker inspection was verified and approved by EHS.'
+              : 'A worker was flagged for PPE safety violations.',
+            bodyBn: isSafe
+              ? 'কর্মীর পিপিই নিরীক্ষা ইএইচএস কর্তৃক নিরাপদ হিসেবে অনুমোদিত হয়েছে।'
+              : 'কর্মীতে পিপিই সুরক্ষা ত্রুটি চিহ্নিত করা হয়েছে।',
           });
         }
       })

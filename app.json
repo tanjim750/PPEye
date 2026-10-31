@@ -23,7 +23,8 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "com.tanjim.abubokor.PPEye"
     },
@@ -55,6 +56,13 @@
         }
       ],
       "expo-localization",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/ppeye-logo.png",
+          "color": "#208AEF"
+        }
+      ],
       [
         "@react-native-google-signin/google-signin",
         {

@@ -1,5 +1,5 @@
 import { supabase } from "@/services/supabase/client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { AppState } from "react-native";
 import { authStore } from "@/stores/auth.store";
@@ -37,6 +37,7 @@ export type ReviewItem = {
   timestamp: number;
   unsafeReasons?: string[];
   vendor: string;
+  vendorProfileId?: number;
   workers: number;
   workerReviews?: WorkerReviewVerdict[];
   isDraft?: boolean;
@@ -422,6 +423,7 @@ export async function syncReviewsFromSupabase(options?: { force?: boolean }) {
         timeDisplay: formatReviewTime({ timestamp: finalTimestamp }),
         timestamp: finalTimestamp,
         vendor: vendorName,
+        vendorProfileId: sub.vendor_profile_id ? Number(sub.vendor_profile_id) : undefined,
         workers: workerCount,
         workerReviews: localCompleted?.workerReviews || localDraft?.workerReviews || (liveWorkerReviews.length ? liveWorkerReviews : currentMetadataReviews.length ? currentMetadataReviews : (isDraft ? meta.reviewDraft?.workerReviews : undefined)),
         draftReviewerId: Number(meta.reviewDraft?.reviewerId) || undefined,
@@ -446,6 +448,15 @@ export async function syncReviewsFromSupabase(options?: { force?: boolean }) {
       reviews = nextReviews;
       notify();
     }
+
+    // For Reviewers, sync any waiting submissions into notifications so they show up on reload or initial load
+    try {
+      const waitingItems = mappedItems.filter((item) => item.status === "waiting");
+      if (waitingItems.length > 0) {
+        const { syncPendingReviewsToNotifications } = require("@/services/notifications/notification.service");
+        syncPendingReviewsToNotifications(waitingItems);
+      }
+    } catch {}
   } catch (err) {
     console.warn(
       "[reviews.service] Failed to sync reviews from Supabase:",
@@ -496,7 +507,7 @@ export function getLiveSyncChannel() {
     // Attach listeners BEFORE subscribing so incoming broadcasts and DB events are never missed.
     // Realtime events are debounced so multiple table inserts coalesce into a single sync call!
     liveSyncChannel
-      .on("broadcast", { event: "new_submission" }, (payload) => {
+      .on("broadcast", { event: "new_submission" }, () => {
         debouncedSyncReviews();
       })
       .on(
@@ -526,11 +537,24 @@ export function getLiveSyncChannel() {
   return liveSyncChannel;
 }
 
-export async function broadcastNewSubmission(submissionId?: number | string) {
+export async function broadcastNewSubmission(
+  submissionId?: number | string,
+  meta?: {
+    siteName?: string;
+    workerCount?: number;
+    vendorName?: string;
+  }
+) {
   try {
     const channel = getLiveSyncChannel();
     if (!channel) return;
-    const payload = { submissionId, timestamp: Date.now() };
+    const payload = {
+      submissionId,
+      siteName: meta?.siteName,
+      workerCount: meta?.workerCount,
+      vendorName: meta?.vendorName,
+      timestamp: Date.now(),
+    };
 
     const canPush =
       typeof (channel as any).canPush === "function"
@@ -894,6 +918,7 @@ export async function completeSubmissionReview(
       submissionId: numId,
       siteName: targetRev?.location || 'Site',
       vendorName: targetRev?.vendor,
+      vendorProfileId: targetRev?.vendorProfileId,
       verdict: verdictStatus,
       hasUnsafe,
       workerCount: workerVerdicts.length,
@@ -934,6 +959,7 @@ export async function completeSubmissionReview(
       submissionId: id,
       siteName: localTargetRev?.location || 'Site',
       vendorName: localTargetRev?.vendor,
+      vendorProfileId: localTargetRev?.vendorProfileId,
       verdict: verdictStatus,
       hasUnsafe,
       workerCount: workerVerdicts.length,
@@ -969,6 +995,15 @@ export function useReviews(enabled = true) {
   const unsafe = getUnsafeReviews();
   const recentPending = getRecentPendingReviews(5);
   const inProgress = getInProgressReviews();
+
+  useEffect(() => {
+    if (enabled && pending.length > 0) {
+      try {
+        const { syncPendingReviewsToNotifications } = require("@/services/notifications/notification.service");
+        syncPendingReviewsToNotifications(pending);
+      } catch {}
+    }
+  }, [enabled, pending]);
 
   return {
     allReviews: enabled ? getAllReviews() : [],

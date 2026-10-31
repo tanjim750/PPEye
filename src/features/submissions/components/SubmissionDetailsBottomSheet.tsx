@@ -496,7 +496,7 @@ export function SubmissionDetailsBottomSheet({
       <Modal
         animationType="fade"
         onRequestClose={closeZoomModal}
-        transparent={false}
+        transparent={true}
         visible={zoomModalVisible}>
         <SafeAreaView style={zoomModalStyles.safeModal}>
           <View style={zoomModalStyles.zoomHeader}>
@@ -506,6 +506,7 @@ export function SubmissionDetailsBottomSheet({
             <Pressable
               accessibilityLabel="Close full screen photo"
               accessibilityRole="button"
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               onPress={closeZoomModal}
               style={zoomModalStyles.zoomCloseButton}>
               <Icon
@@ -527,6 +528,7 @@ export function SubmissionDetailsBottomSheet({
             style={zoomModalStyles.scrollArea}>
             {zoomedImage && (
               <Image
+                cachePolicy="memory-disk"
                 contentFit="contain"
                 source={zoomedImage.source}
                 style={[

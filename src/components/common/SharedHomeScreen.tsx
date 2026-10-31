@@ -84,8 +84,15 @@ function VendorCheckThumbnail({ check }: { check: WorkerCheck }) {
             photoPath = typeof first === 'string' ? first : null;
           }
           if (photoPath && !isCancelled) {
+            const { getCachedImageUriSync } = require('@/utils/image');
+            const localCached = getCachedImageUriSync(photoPath);
+            if (localCached) {
+              setSourceUri(localCached);
+              check.image = { uri: localCached };
+              return;
+            }
             const bucket = photoPath.startsWith('users/') ? 'avatars' : 'evidence';
-            const signedRes = await supabaseStorageService.createSignedUrl(bucket, photoPath, 86400);
+            const signedRes = await supabaseStorageService.createSignedUrl(bucket, photoPath, 86400 * 7);
             const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
             if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http') && !isCancelled) {
               setSourceUri(urlStr);
@@ -105,7 +112,6 @@ function VendorCheckThumbnail({ check }: { check: WorkerCheck }) {
     return (
       <Image
         cachePolicy="memory-disk"
-        onError={() => setSourceUri(null)}
         source={{ uri: sourceUri }}
         style={vendorStyles.thumbnail}
       />
@@ -136,6 +142,12 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   const [, setHomeFocusTick] = useState(0);
 
   const activeUser = user || authStore.user;
+
+  useEffect(() => {
+    // Proactively initialize Android channels and request OS notification permission once foreground UI is mounted
+    const { requestNotificationPermission } = require('@/services/notifications/notification.service');
+    void requestNotificationPermission();
+  }, []);
 
   useEffect(() => {
     if (!activeUser?.profilePictureUrl && activeUser?.id) {

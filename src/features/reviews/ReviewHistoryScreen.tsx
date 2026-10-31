@@ -7,6 +7,7 @@ import {
   Dimensions,
   Modal,
   PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -171,14 +172,6 @@ export function HistoryInspectionPhoto({
           resolvedDriveId.startsWith('users/') ||
           (resolvedDriveId.includes('/') && !resolvedDriveId.startsWith('http://') && !resolvedDriveId.startsWith('https://'));
 
-        // Check disk cache first
-        const cached = await getCachedImageUri(resolvedDriveId).catch(() => null);
-        if (cached && !isCancelled) {
-          setPhotoSource({ uri: cached });
-          setIsLoading(false);
-          return;
-        }
-
         if (isSupabase) {
           try {
             const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
@@ -189,17 +182,20 @@ export function HistoryInspectionPhoto({
               setPhotoSource({ uri: urlStr });
               setIsLoading(false);
               Image.prefetch(urlStr, 'memory-disk').catch(() => {});
-              getImageUri(resolvedDriveId, { storageProvider: 'SUPABASE' })
-                .then((localPath) => {
-                  if (!isCancelled && localPath) {
-                    setPhotoSource({ uri: localPath });
-                  }
-                })
-                .catch(() => {});
               return;
             }
           } catch (supErr) {
             console.warn('[ReviewHistory] Error creating signed URL for:', resolvedDriveId, supErr);
+          }
+        }
+
+        // On native platforms, check disk cache for legacy or local files
+        if (Platform.OS !== 'web') {
+          const cached = await getCachedImageUri(resolvedDriveId).catch(() => null);
+          if (cached && !isCancelled) {
+            setPhotoSource({ uri: cached });
+            setIsLoading(false);
+            return;
           }
         }
 
@@ -247,12 +243,12 @@ export function HistoryInspectionPhoto({
           setRetryTick((c) => c + 1);
           return;
         }
-        if (photoSource && !hasError && onPressZoom) {
+        if (photoSource && onPressZoom) {
           onPressZoom(photoSource, `${workerTitle} • ${badgeLabel} VIEW`);
         }
       }}
       style={detailsStyles.photoCard}>
-      <View style={detailsStyles.photoBadge}>
+      <View pointerEvents="none" style={detailsStyles.photoBadge}>
         <Text style={detailsStyles.photoBadgeText}>{badgeLabel}</Text>
       </View>
 
@@ -287,13 +283,13 @@ export function HistoryInspectionPhoto({
       ) : null}
 
       {isLoading && (
-        <View style={detailsStyles.photoLoadingOverlay}>
+        <View pointerEvents="none" style={detailsStyles.photoLoadingOverlay}>
           <ActivityIndicator color={reviewerColors.primary} size="small" />
         </View>
       )}
 
       {Boolean(photoSource && !hasError && !isLoading) && (
-        <View style={detailsStyles.photoZoomBadge}>
+        <View pointerEvents="none" style={detailsStyles.photoZoomBadge}>
           <Icon
             color="#ffffff"
             name={{ ios: 'arrow.up.left.and.arrow.down.right', android: 'zoom_in', web: 'zoom_in' }}
