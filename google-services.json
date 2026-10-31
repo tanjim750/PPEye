@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "479964895186",
+    "project_id": "ppeye-de6d2",
+    "storage_bucket": "ppeye-de6d2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:479964895186:android:5c07c0dcb6553b7358da0b",
+        "android_client_info": {
+          "package_name": "com.tanjim.abubokor.PPEye"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6Bi-rZY_t2u8eEclGdi-rajmGqY-eEAY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,16 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { supabase } from '@/services/supabase/client';
+
+// Remote push notifications require native modules not bundled inside Expo Go
+const isExpoGo =
+  Constants?.executionEnvironment === ExecutionEnvironment.StoreClient ||
+  (Constants as any)?.appOwnership === 'expo';
+
+function getNotificationsModule(): any {
+  if (isExpoGo || Platform.OS === 'web') return null;
+  try {
+    return require('expo-notifications');
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Isolated helper to register the device for Expo Push Notifications
  * and retrieve a valid ExpoPushToken.
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
-  // Push notifications are only supported on physical devices
-  if (Platform.OS === 'web') {
+  const Notifications = getNotificationsModule();
+  if (!Notifications || Platform.OS === 'web') {
     return null;
   }
 

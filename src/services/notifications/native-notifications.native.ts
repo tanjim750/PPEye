@@ -1,9 +1,17 @@
 import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+
+// Expo Go lacks remote push native modules in SDK 52+; avoid requiring it there
+const isExpoGo =
+  Constants?.executionEnvironment === ExecutionEnvironment.StoreClient ||
+  (Constants as any)?.appOwnership === 'expo';
 
 let Notifications: any = null;
-try {
-  Notifications = require('expo-notifications');
-} catch {}
+if (!isExpoGo) {
+  try {
+    Notifications = require('expo-notifications');
+  } catch {}
+}
 
 export function initNativeNotifications(): void {
   try {

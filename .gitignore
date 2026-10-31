@@ -37,6 +37,7 @@ yarn-error.*
 .env*.local
 .env
 service-account*.json
+firebase-service-account.json
 *credentials*.json
 
 # typescript

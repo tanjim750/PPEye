@@ -26,7 +26,8 @@
         "android.permission.WAKE_LOCK",
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "package": "com.tanjim.abubokor.PPEye"
+      "package": "com.tanjim.abubokor.PPEye",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "single",
