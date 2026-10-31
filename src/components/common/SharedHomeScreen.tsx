@@ -29,6 +29,7 @@ import { SubmissionDetailsBottomSheet } from '@/features/submissions/components/
 import { NotificationBell } from '@/components/common/NotificationBell';
 import { RealtimeNotificationBanner } from '@/components/common/RealtimeNotificationBanner';
 import { useExpoPushToken } from '@/services/notifications/useExpoPushToken';
+import { useWindowSizeClass } from '@/hooks/useWindowSizeClass';
 import { DummyUserRole } from '@/utils/dummy-users';
 import { UserRole } from '@/features/auth/types';
 
@@ -133,6 +134,7 @@ function VendorCheckThumbnail({ check }: { check: WorkerCheck }) {
 export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {}) {
   const navigate = useNavigate();
   const insets = useSafeAreaInsets();
+  const { contentMaxWidth } = useWindowSizeClass();
   const { user } = useAuth();
   const segments = useSegments();
   const { t, i18n } = useTranslation('home');
@@ -262,7 +264,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   if (isVendor) {
     return (
       <SafeAreaView edges={['top', 'left', 'right']} style={vendorStyles.safeArea}>
-        <View style={vendorStyles.shell}>
+        <View style={[vendorStyles.shell, { maxWidth: contentMaxWidth }]}>
           <View style={vendorStyles.header}>
             <View style={vendorStyles.headerCopy}>
               <Text style={vendorStyles.greeting}>
@@ -498,6 +500,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
             style={[
               vendorStyles.bottomNav,
               {
+                maxWidth: contentMaxWidth,
                 paddingBottom: Math.max(insets.bottom, 12),
                 height: 60 + Math.max(insets.bottom, 12),
               },
@@ -553,7 +556,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   // Reviewer UI
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={reviewerStyles.safeArea}>
-      <View style={reviewerStyles.shell}>
+      <View style={[reviewerStyles.shell, { maxWidth: contentMaxWidth }]}>
         <View style={reviewerStyles.header}>
           <View style={{ flex: 1, paddingRight: 12 }}>
             <Text numberOfLines={1} style={reviewerStyles.greeting}>
@@ -730,6 +733,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
           style={[
             reviewerStyles.bottomNav,
             {
+              maxWidth: contentMaxWidth,
               paddingBottom: Math.max(insets.bottom, 10),
               height: 56 + Math.max(insets.bottom, 10),
             },
