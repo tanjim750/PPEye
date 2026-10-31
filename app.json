@@ -20,8 +20,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "androidStatusBar": {
-        "barStyle": "light-content",
-        "backgroundColor": "#208AEF",
+        "barStyle": "dark-content",
+        "backgroundColor": "#FFFFFF",
         "translucent": true
       },
       "androidNavigationBar": {
