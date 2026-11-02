@@ -18,6 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
+import { FullscreenImageViewer } from '@/components/common/FullscreenImageViewer';
 import { assets } from '@/constants/assets';
 import {
   formatReviewDateTime,
@@ -910,121 +911,12 @@ export function ReviewHistoryScreen() {
         </Modal>
 
         {/* Full-Screen Image Zoom Inspection Modal */}
-        <Modal
-          animationType="fade"
-          onRequestClose={closeZoomModal}
-          transparent={true}
-          visible={zoomModalVisible}>
-          <View style={zoomModalStyles.overlay}>
-            {/* Safe Header */}
-            <SafeAreaView edges={['top']} style={zoomModalStyles.safeHeader}>
-              <View style={zoomModalStyles.header}>
-                <View style={zoomModalStyles.headerTitleContainer}>
-                  <Text numberOfLines={1} style={zoomModalStyles.headerTitle}>
-                    {zoomedImage?.title || 'Inspect Image'}
-                  </Text>
-                  <Text style={zoomModalStyles.headerSubtitle}>
-                    Pinch or use buttons below to zoom
-                  </Text>
-                </View>
-                <Pressable
-                  accessibilityLabel="Close image view"
-                  accessibilityRole="button"
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  onPress={closeZoomModal}
-                  style={({ pressed }) => [
-                    zoomModalStyles.closeButton,
-                    pressed && styles.pressedOpacity,
-                  ]}>
-                  <Icon
-                    color="#ffffff"
-                    name={{ ios: 'xmark', android: 'close', web: 'close' }}
-                    size={20}
-                    weight="bold"
-                  />
-                </Pressable>
-              </View>
-            </SafeAreaView>
-
-            {/* Zoomable Image View */}
-            <ScrollView
-              bounces={false}
-              contentContainerStyle={zoomModalStyles.scrollContent}
-              maximumZoomScale={4}
-              minimumZoomScale={1}
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-              style={zoomModalStyles.scrollArea}>
-              {zoomedImage?.source && (
-                <Animated.View
-                  style={{
-                    transform: [{ scale: zoomScale }],
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                  <Image
-                    cachePolicy="memory-disk"
-                    contentFit="contain"
-                    source={zoomedImage.source}
-                    style={zoomModalStyles.zoomedImage}
-                  />
-                </Animated.View>
-              )}
-            </ScrollView>
-
-            {/* Bottom Controls Bar */}
-            <SafeAreaView edges={['bottom']} style={zoomModalStyles.safeFooter}>
-              <View style={zoomModalStyles.zoomControlsBar}>
-                <Pressable
-                  accessibilityLabel="Zoom Out"
-                  accessibilityRole="button"
-                  disabled={zoomScale <= 1}
-                  onPress={handleZoomOut}
-                  style={({ pressed }) => [
-                    zoomModalStyles.controlBtn,
-                    zoomScale <= 1 && zoomModalStyles.controlBtnDisabled,
-                    pressed && styles.pressedOpacity,
-                  ]}>
-                  <Icon
-                    color="#ffffff"
-                    name={{ ios: 'minus.magnifyingglass', android: 'zoom_out', web: 'zoom_out' }}
-                    size={20}
-                  />
-                </Pressable>
-
-                <Pressable
-                  accessibilityLabel="Reset Zoom"
-                  accessibilityRole="button"
-                  onPress={handleResetZoom}
-                  style={({ pressed }) => [
-                    zoomModalStyles.resetBtn,
-                    pressed && styles.pressedOpacity,
-                  ]}>
-                  <Text style={zoomModalStyles.resetText}>
-                    {Math.round(zoomScale * 100)}%
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  accessibilityLabel="Zoom In"
-                  accessibilityRole="button"
-                  disabled={zoomScale >= 4}
-                  onPress={handleZoomIn}
-                  style={({ pressed }) => [
-                    zoomModalStyles.controlBtn,
-                    zoomScale >= 4 && zoomModalStyles.controlBtnDisabled,
-                    pressed && styles.pressedOpacity,
-                  ]}>
-                  <Icon
-                    color="#ffffff"
-                    name={{ ios: 'plus.magnifyingglass', android: 'zoom_in', web: 'zoom_in' }}
-                    size={20}
-                  />
-                </Pressable>
-              </View>
-            </SafeAreaView>
-          </View>
-        </Modal>
+        <FullscreenImageViewer
+          onClose={closeZoomModal}
+          source={zoomedImage?.source ?? null}
+          title={zoomedImage?.title}
+          visible={zoomModalVisible}
+        />
       </View>
     </SafeAreaView>
   );

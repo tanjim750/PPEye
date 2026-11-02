@@ -20,6 +20,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui/Icon';
+import { FullscreenImageViewer } from '@/components/common/FullscreenImageViewer';
 import { assets } from '@/constants/assets';
 import {
   completeSubmissionReview,
@@ -939,7 +940,15 @@ async function buildImageSourceCandidates(
                   <Text style={styles.noPhotoSubtitle}>Worker submitted without front photo</Text>
                 </View>
               ) : frontSource ? (
-                <>
+                <Pressable
+                  accessibilityLabel="Zoom Front Image"
+                  accessibilityRole="button"
+                  onPress={() => {
+                    if (frontSource) {
+                      openZoomModal(frontSource, `Worker ${currentWorkerIndex} • FRONT VIEW`);
+                    }
+                  }}
+                  style={{ flex: 1, width: '100%', height: '100%' }}>
                   <Image
                     cachePolicy="memory-disk"
                     contentFit="cover"
@@ -954,7 +963,7 @@ async function buildImageSourceCandidates(
                       <ActivityIndicator color={colors.primary} size="large" />
                     </View>
                   )}
-                </>
+                </Pressable>
               ) : (isLoadingImages || isFrontLoading) ? (
                 <View style={styles.loadingPhotoContainer}>
                   <ActivityIndicator color={colors.primary} size="large" />
@@ -1035,7 +1044,15 @@ async function buildImageSourceCandidates(
                   <Text style={styles.noPhotoSubtitle}>Worker submitted without back photo</Text>
                 </View>
               ) : backSource ? (
-                <>
+                <Pressable
+                  accessibilityLabel="Zoom Back Image"
+                  accessibilityRole="button"
+                  onPress={() => {
+                    if (backSource) {
+                      openZoomModal(backSource, `Worker ${currentWorkerIndex} • BACK VIEW`);
+                    }
+                  }}
+                  style={{ flex: 1, width: '100%', height: '100%' }}>
                   <Image
                     cachePolicy="memory-disk"
                     contentFit="cover"
@@ -1050,7 +1067,7 @@ async function buildImageSourceCandidates(
                       <ActivityIndicator color={colors.primary} size="large" />
                     </View>
                   )}
-                </>
+                </Pressable>
               ) : (isLoadingImages || isBackLoading) ? (
                 <View style={styles.loadingPhotoContainer}>
                   <ActivityIndicator color={colors.primary} size="large" />
@@ -1444,123 +1461,12 @@ async function buildImageSourceCandidates(
         </Modal>
 
         {/* Full-Screen Image Zoom Inspection Modal */}
-        <Modal
-          animationType="fade"
-          onRequestClose={closeZoomModal}
-          transparent={true}
-          visible={zoomModalVisible}>
-          <View style={zoomModalStyles.overlay}>
-            {/* Safe Header */}
-            <SafeAreaView edges={['top']} style={zoomModalStyles.safeHeader}>
-              <View style={zoomModalStyles.header}>
-                <View style={zoomModalStyles.headerTitleContainer}>
-                  <Text numberOfLines={1} style={zoomModalStyles.headerTitle}>
-                    {zoomedImage?.title || 'Inspect Image'}
-                  </Text>
-                  <Text style={zoomModalStyles.headerSubtitle}>
-                    Pinch or use buttons below to zoom
-                  </Text>
-                </View>
-                <Pressable
-                  accessibilityLabel="Close image view"
-                  accessibilityRole="button"
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  onPress={closeZoomModal}
-                  style={({ pressed }) => [
-                    zoomModalStyles.closeButton,
-                    pressed && styles.pressedOpacity,
-                  ]}>
-                  <Icon
-                    color="#ffffff"
-                    name={{ ios: 'xmark', android: 'close', web: 'close' }}
-                    size={20}
-                    weight="bold"
-                  />
-                </Pressable>
-              </View>
-            </SafeAreaView>
-
-            {/* Zoomable Image View */}
-            <ScrollView
-              centerContent
-              contentContainerStyle={zoomModalStyles.scrollContent}
-              maximumZoomScale={4.0}
-              minimumZoomScale={1.0}
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-              style={zoomModalStyles.scrollArea}>
-              {zoomedImage?.source && (
-                <Animated.View
-                  style={{
-                    transform: [{ scale: zoomScale }],
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                  <Image
-                    cachePolicy="memory-disk"
-                    contentFit="contain"
-                    source={zoomedImage.source}
-                    style={zoomModalStyles.zoomedImage}
-                  />
-                </Animated.View>
-              )}
-            </ScrollView>
-
-            {/* Bottom Floating Zoom Controls */}
-            <SafeAreaView edges={['bottom']} style={zoomModalStyles.safeFooter}>
-              <View style={zoomModalStyles.zoomControlsBar}>
-                <Pressable
-                  accessibilityLabel="Zoom out"
-                  accessibilityRole="button"
-                  disabled={zoomScale <= 1}
-                  onPress={handleZoomOut}
-                  style={({ pressed }) => [
-                    zoomModalStyles.controlBtn,
-                    zoomScale <= 1 && zoomModalStyles.controlBtnDisabled,
-                    pressed && styles.pressedOpacity,
-                  ]}>
-                  <Icon
-                    color={zoomScale <= 1 ? 'rgba(255,255,255,0.4)' : '#ffffff'}
-                    name={{ ios: 'minus', android: 'remove', web: 'remove' }}
-                    size={20}
-                    weight="bold"
-                  />
-                </Pressable>
-
-                <Pressable
-                  accessibilityLabel="Reset zoom"
-                  accessibilityRole="button"
-                  onPress={handleResetZoom}
-                  style={({ pressed }) => [
-                    zoomModalStyles.resetBtn,
-                    pressed && styles.pressedOpacity,
-                  ]}>
-                  <Text style={zoomModalStyles.resetText}>
-                    {zoomScale.toFixed(1)}x • Reset
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  accessibilityLabel="Zoom in"
-                  accessibilityRole="button"
-                  disabled={zoomScale >= 4}
-                  onPress={handleZoomIn}
-                  style={({ pressed }) => [
-                    zoomModalStyles.controlBtn,
-                    zoomScale >= 4 && zoomModalStyles.controlBtnDisabled,
-                    pressed && styles.pressedOpacity,
-                  ]}>
-                  <Icon
-                    color={zoomScale >= 4 ? 'rgba(255,255,255,0.4)' : '#ffffff'}
-                    name={{ ios: 'plus', android: 'add', web: 'add' }}
-                    size={20}
-                    weight="bold"
-                  />
-                </Pressable>
-              </View>
-            </SafeAreaView>
-          </View>
-        </Modal>
+        <FullscreenImageViewer
+          onClose={closeZoomModal}
+          source={zoomedImage?.source ?? null}
+          title={zoomedImage?.title}
+          visible={zoomModalVisible}
+        />
       </View>
     </SafeAreaView>
   );

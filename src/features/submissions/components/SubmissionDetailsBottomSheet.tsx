@@ -21,6 +21,7 @@ import {
   WorkerCheck,
 } from '@/features/submissions/services/workerChecks.service';
 import { HistoryInspectionPhoto } from '@/features/reviews/ReviewHistoryScreen';
+import { FullscreenImageViewer } from '@/components/common/FullscreenImageViewer';
 import { preloadSubmissionSignedUrls } from '@/services/storage/supabase-storage.client';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -493,92 +494,12 @@ export function SubmissionDetailsBottomSheet({
       </Modal>
 
       {/* Full-screen Photo Zoom Modal */}
-      <Modal
-        animationType="fade"
-        onRequestClose={closeZoomModal}
-        transparent={true}
-        visible={zoomModalVisible}>
-        <SafeAreaView style={zoomModalStyles.safeModal}>
-          <View style={zoomModalStyles.zoomHeader}>
-            <Text numberOfLines={1} style={zoomModalStyles.zoomHeaderTitle}>
-              {zoomedImage?.title || 'Inspection Photo'}
-            </Text>
-            <Pressable
-              accessibilityLabel="Close full screen photo"
-              accessibilityRole="button"
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              onPress={closeZoomModal}
-              style={zoomModalStyles.zoomCloseButton}>
-              <Icon
-                color="#ffffff"
-                name={{ ios: 'xmark', android: 'close', web: 'close' }}
-                size={20}
-                weight="bold"
-              />
-            </Pressable>
-          </View>
-
-          <ScrollView
-            centerContent
-            contentContainerStyle={zoomModalStyles.scrollContent}
-            maximumZoomScale={3}
-            minimumZoomScale={1}
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-            style={zoomModalStyles.scrollArea}>
-            {zoomedImage && (
-              <Image
-                cachePolicy="memory-disk"
-                contentFit="contain"
-                source={zoomedImage.source}
-                style={[
-                  zoomModalStyles.zoomedImage,
-                  { transform: [{ scale: zoomScale }] },
-                ]}
-              />
-            )}
-          </ScrollView>
-
-          <SafeAreaView edges={['bottom']} style={zoomModalStyles.safeFooter}>
-            <View style={zoomModalStyles.zoomControlsBar}>
-              <Pressable
-                accessibilityLabel="Zoom out"
-                accessibilityRole="button"
-                onPress={() => setZoomScale((s) => Math.max(1, s - 0.5))}
-                style={zoomModalStyles.controlButton}>
-                <Icon
-                  color="#ffffff"
-                  name={{ ios: 'minus', android: 'remove', web: 'remove' }}
-                  size={20}
-                  weight="bold"
-                />
-              </Pressable>
-              <Text style={zoomModalStyles.scaleIndicatorText}>
-                {Math.round(zoomScale * 100)}%
-              </Text>
-              <Pressable
-                accessibilityLabel="Zoom in"
-                accessibilityRole="button"
-                onPress={() => setZoomScale((s) => Math.min(3, s + 0.5))}
-                style={zoomModalStyles.controlButton}>
-                <Icon
-                  color="#ffffff"
-                  name={{ ios: 'plus', android: 'add', web: 'add' }}
-                  size={20}
-                  weight="bold"
-                />
-              </Pressable>
-              <Pressable
-                accessibilityLabel="Reset Zoom"
-                accessibilityRole="button"
-                onPress={() => setZoomScale(1)}
-                style={zoomModalStyles.resetZoomButton}>
-                <Text style={zoomModalStyles.resetZoomText}>Reset</Text>
-              </Pressable>
-            </View>
-          </SafeAreaView>
-        </SafeAreaView>
-      </Modal>
+      <FullscreenImageViewer
+        onClose={closeZoomModal}
+        source={zoomedImage?.source ?? null}
+        title={zoomedImage?.title}
+        visible={zoomModalVisible}
+      />
     </>
   );
 }

@@ -14,6 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/ui/Icon';
+import { FullscreenImageViewer } from '@/components/common/FullscreenImageViewer';
 import { assets } from '@/constants/assets';
 import {
   reasonIcons,
@@ -546,42 +547,12 @@ export function SubmissionDetailsActionRequiredScreen() {
         </View>
 
         {/* Fullscreen Photo Modal */}
-        <Modal
-          animationType="fade"
-          onRequestClose={() => setSelectedPhoto(null)}
-          transparent={true}
-          visible={selectedPhoto !== null}>
-          <View style={styles.photoModalOverlay}>
-            <Pressable
-              onPress={() => setSelectedPhoto(null)}
-              style={styles.photoModalBackdrop}
-            />
-            <View style={styles.photoModalContent}>
-              <View style={styles.photoModalHeader}>
-                <Text style={styles.photoModalTitle}>{selectedPhoto?.label}</Text>
-                <Pressable
-                  accessibilityLabel="Close photo"
-                  accessibilityRole="button"
-                  onPress={() => setSelectedPhoto(null)}
-                  style={styles.photoModalCloseButton}>
-                  <Icon
-                    color={colors.white}
-                    name={{ ios: 'xmark', android: 'close', web: 'close' }}
-                    size={22}
-                  />
-                </Pressable>
-              </View>
-              {selectedPhoto ? (
-                <Image
-                  cachePolicy="memory-disk"
-                  contentFit="contain"
-                  source={{ uri: selectedPhoto.uri }}
-                  style={styles.modalFullImage}
-                />
-              ) : null}
-            </View>
-          </View>
-        </Modal>
+        <FullscreenImageViewer
+          onClose={() => setSelectedPhoto(null)}
+          source={selectedPhoto ? { uri: selectedPhoto.uri } : null}
+          title={selectedPhoto?.label}
+          visible={selectedPhoto !== null}
+        />
       </View>
     </SafeAreaView>
   );
