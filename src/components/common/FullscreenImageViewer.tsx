@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import {
+  ActivityIndicator,
+  Dimensions,
   Modal,
   PanResponder,
   Platform,
@@ -12,6 +14,8 @@ import {
 import { Image, ImageSource } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui/Icon';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export interface FullscreenImageViewerProps {
   visible: boolean;
@@ -36,17 +40,23 @@ export function FullscreenImageViewer({
   const panStart = useRef({ x: 0, y: 0 });
   const lastPan = useRef({ x: 0, y: 0 });
 
-  // Reset zoom state whenever modal opens or closes
+  // Track image load state
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+
+  // Reset zoom & load state whenever modal opens or closes
   useEffect(() => {
     if (visible) {
       setScale(1);
       setPan({ x: 0, y: 0 });
+      setIsLoading(true);
+      setHasError(false);
       baseScale.current = 1;
       currentScale.current = 1;
       initialTouchDistance.current = null;
       lastPan.current = { x: 0, y: 0 };
     }
-  }, [visible]);
+  }, [visible, source]);
 
   function getDistance(touches: any[]): number {
     const [t1, t2] = touches;
@@ -190,9 +200,30 @@ export function FullscreenImageViewer({
               <Image
                 cachePolicy="memory-disk"
                 contentFit="contain"
+                onError={() => {
+                  setIsLoading(false);
+                  setHasError(true);
+                }}
+                onLoadEnd={() => setIsLoading(false)}
+                onLoadStart={() => setIsLoading(true)}
                 source={imageSource}
                 style={styles.image}
               />
+              {isLoading && (
+                <View style={styles.centerOverlay}>
+                  <ActivityIndicator color="#38bdf8" size="large" />
+                </View>
+              )}
+              {hasError && (
+                <View style={styles.centerOverlay}>
+                  <Icon
+                    color="#ef4444"
+                    name={{ ios: 'exclamationmark.circle', android: 'error_outline', web: 'error_outline' }}
+                    size={36}
+                  />
+                  <Text style={styles.errorText}>Failed to display image</Text>
+                </View>
+              )}
             </View>
           </ScrollView>
         </View>
@@ -299,13 +330,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexGrow: 1,
     justifyContent: 'center',
+    minHeight: SCREEN_HEIGHT * 0.75,
   },
   image: {
-    height: '100%',
-    maxHeight: 700,
-    maxWidth: 500,
-    minHeight: 320,
-    width: '100%',
+    height: SCREEN_HEIGHT * 0.72,
+    width: SCREEN_WIDTH,
   },
   safeFooter: {
     backgroundColor: 'rgba(10, 13, 20, 0.85)',
@@ -347,5 +376,19 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.7,
+  },
+  centerOverlay: {
+    alignItems: 'center',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 13,
+    marginTop: 8,
   },
 });
