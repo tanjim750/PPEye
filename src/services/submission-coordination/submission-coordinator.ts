@@ -59,7 +59,7 @@ export class SubmissionCoordinator {
     this.storage = deps?.storageService ?? new SupabaseStorageService();
     this.compress =
       deps?.compressImageFn ??
-      ((uri: string) => prepareImageForUpload(uri, { maxLongEdge: 1920, quality: 0.8 }));
+      ((uri: string) => prepareImageForUpload(uri, { maxLongEdge: 2560, quality: 0.92 }));
   }
 
   /**

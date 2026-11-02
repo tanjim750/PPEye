@@ -65,14 +65,17 @@ export function FullscreenImageViewer({
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  // Cross-platform PanResponder for both 2-finger Pinch-to-zoom and Pan dragging
+  // Cross-platform PanResponder for instant 2-finger Pinch-to-zoom and 1-finger panning
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) =>
         gestureState.numberActiveTouches === 2 || currentScale.current > 1,
+      onMoveShouldSetPanResponderCapture: (_, gestureState) =>
+        gestureState.numberActiveTouches === 2 || currentScale.current > 1,
       onPanResponderGrant: (evt, gestureState) => {
-        if (evt.nativeEvent.touches.length === 2) {
+        if (evt.nativeEvent.touches.length >= 2) {
           initialTouchDistance.current = getDistance(evt.nativeEvent.touches);
           baseScale.current = currentScale.current;
         } else {
@@ -81,8 +84,8 @@ export function FullscreenImageViewer({
       },
       onPanResponderMove: (evt, gestureState) => {
         const touches = evt.nativeEvent.touches;
-        if (touches.length === 2) {
-          // Pinch gesture (2 fingers)
+        if (touches.length >= 2) {
+          // Instant Pinch gesture (2 fingers)
           const dist = getDistance(touches);
           if (initialTouchDistance.current && initialTouchDistance.current > 0) {
             const rawScale = (dist / initialTouchDistance.current) * baseScale.current;
@@ -92,13 +95,14 @@ export function FullscreenImageViewer({
           }
         } else if (touches.length === 1 && currentScale.current > 1) {
           // Pan drag when zoomed in (1 finger)
-          const maxPan = (currentScale.current - 1) * 160;
+          const maxPan = (currentScale.current - 1) * 200;
           const nextX = Math.min(Math.max(panStart.current.x + gestureState.dx, -maxPan), maxPan);
           const nextY = Math.min(Math.max(panStart.current.y + gestureState.dy, -maxPan), maxPan);
           lastPan.current = { x: nextX, y: nextY };
           setPan({ x: nextX, y: nextY });
         }
       },
+      onPanResponderTerminationRequest: () => false,
       onPanResponderRelease: (evt) => {
         if (evt.nativeEvent.touches.length < 2) {
           initialTouchDistance.current = null;
@@ -175,18 +179,9 @@ export function FullscreenImageViewer({
           </View>
         </SafeAreaView>
 
-        {/* Zoom Area */}
+        {/* Zoom Area with Direct Multi-Touch Gesture Handling */}
         <View style={styles.zoomContainer} {...panResponder.panHandlers}>
-          <ScrollView
-            bounces={false}
-            centerContent
-            contentContainerStyle={styles.scrollContent}
-            maximumZoomScale={4}
-            minimumZoomScale={1}
-            scrollEnabled={scale === 1}
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-            style={styles.scrollArea}>
+          <View style={styles.scrollContent}>
             <View
               style={{
                 alignItems: 'center',
@@ -225,7 +220,7 @@ export function FullscreenImageViewer({
                 </View>
               )}
             </View>
-          </ScrollView>
+          </View>
         </View>
 
         {/* Floating Zoom Controls Bar */}

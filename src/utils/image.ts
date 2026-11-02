@@ -1,8 +1,8 @@
 import { StorageError, StorageErrorCode } from '../services/storage/storage.errors';
 
 export const DEFAULT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-export const DEFAULT_UPLOAD_MAX_LONG_EDGE = 1920; // Target within 1600-2048px for sharp PPE inspection detail
-export const DEFAULT_UPLOAD_JPEG_QUALITY = 0.8; // Favors PPE detail while staying within the requested range
+export const DEFAULT_UPLOAD_MAX_LONG_EDGE = 2560; // 2K QHD resolution for ultra-sharp inspection clarity
+export const DEFAULT_UPLOAD_JPEG_QUALITY = 0.92; // 92% high-fidelity JPEG to avoid blocky artifacts on zoom
 const UPLOAD_STAGING_SUBDIR = 'ppeye_upload_staging/';
 
 export interface PrepareImageForUploadOptions {

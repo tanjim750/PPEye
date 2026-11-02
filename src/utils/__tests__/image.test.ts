@@ -573,11 +573,11 @@ export async function runImageTests(): Promise<{ passed: number; failed: number;
   // =========================================================================
   console.log('\n• Suite: Pre-Upload Compression & Retry Idempotency');
 
-  await test('computeTargetDimensions scales 12MP photos down to 1920px long edge while preserving aspect ratio', () => {
+  await test('computeTargetDimensions scales 12MP photos down to 2560px long edge while preserving aspect ratio', () => {
     const portrait = computeTargetDimensions(3024, 4032, DEFAULT_UPLOAD_MAX_LONG_EDGE);
     assert(portrait.needsResize === true, '12MP portrait should need resize');
-    assert(portrait.height === 1920, `Expected height 1920, got ${portrait.height}`);
-    assert(portrait.width === 1440, `Expected width 1440, got ${portrait.width}`);
+    assert(portrait.height === 2560, `Expected height 2560, got ${portrait.height}`);
+    assert(portrait.width === 1920, `Expected width 1920, got ${portrait.width}`);
 
     const small = computeTargetDimensions(1200, 1600, DEFAULT_UPLOAD_MAX_LONG_EDGE);
     assert(small.needsResize === false, '1600px long edge should not be upscaled');
