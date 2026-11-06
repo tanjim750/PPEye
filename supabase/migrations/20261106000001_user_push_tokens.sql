@@ -37,7 +37,7 @@ DROP POLICY IF EXISTS "User push tokens delete policy" ON public.user_push_token
 CREATE POLICY "User push tokens select policy"
 ON public.user_push_tokens
 FOR SELECT
-TO authenticated
+TO authenticated, anon
 USING (
   auth.role() = 'service_role'
   OR public.is_internal_user()
@@ -47,7 +47,7 @@ USING (
 CREATE POLICY "User push tokens insert policy"
 ON public.user_push_tokens
 FOR INSERT
-TO authenticated
+TO authenticated, anon
 WITH CHECK (
   auth.role() = 'service_role'
   OR user_id = public.current_app_user_id()
@@ -56,7 +56,7 @@ WITH CHECK (
 CREATE POLICY "User push tokens update policy"
 ON public.user_push_tokens
 FOR UPDATE
-TO authenticated
+TO authenticated, anon
 USING (
   auth.role() = 'service_role'
   OR user_id = public.current_app_user_id()
@@ -69,7 +69,7 @@ WITH CHECK (
 CREATE POLICY "User push tokens delete policy"
 ON public.user_push_tokens
 FOR DELETE
-TO authenticated
+TO authenticated, anon
 USING (
   auth.role() = 'service_role'
   OR user_id = public.current_app_user_id()
