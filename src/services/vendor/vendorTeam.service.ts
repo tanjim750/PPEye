@@ -1,3 +1,4 @@
+import { authStore } from '@/stores/auth.store';
 import { StorageError, StorageErrorCode } from '@/services/storage/storage.errors';
 import type { ExternalUserType } from '@/types/database.types';
 
@@ -41,7 +42,17 @@ export async function getVendorTeamMembers(
   vendorProfileId: number
 ): Promise<VendorTeamMemberItem[]> {
   try {
-    const { data, error } = await getDb()
+    const activeUser = authStore.user;
+    const isExternalSession =
+      activeUser?.category === 'EXTERNAL' ||
+      activeUser?.role === 'vendor' ||
+      activeUser?.role === 'external';
+    const currentExternalUserId = isExternalSession ? Number(activeUser?.id) : undefined;
+    if (isExternalSession && (!currentExternalUserId || !Number.isFinite(currentExternalUserId))) {
+      return [];
+    }
+
+    let query = getDb()
       .from('vendor_members')
       .select(`
         id,
@@ -59,13 +70,19 @@ export async function getVendorTeamMembers(
       .eq('vendor_profile_id', vendorProfileId)
       .order('created_at', { ascending: true });
 
+    if (currentExternalUserId) {
+      query = query.eq('user_id', currentExternalUserId);
+    }
+
+    const { data, error } = await query;
+
     if (error || !data) {
       console.warn('[VendorTeam] Error fetching team members:', error?.message);
       return [];
     }
 
     return data
-      .filter((row: any) => row.users !== null)
+      .filter((row: any) => row.users !== null && (!currentExternalUserId || Number(row.users.id) === currentExternalUserId))
       .map((row: any) => ({
         id: row.id,
         userId: row.users.id,

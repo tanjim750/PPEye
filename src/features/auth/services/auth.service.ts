@@ -95,8 +95,8 @@ async function resolvePpeyeUser(email: string): Promise<AuthUser> {
   }
 
   const user: AuthUser = {
-    id: appUser.id,
-    email,
+    id: Number(appUser.id),
+    email: appUser.email || email,
     name: appUser.name,
     phone: appUser.phone,
     category: appUser.category,
@@ -116,46 +116,54 @@ export async function login(credentials: LoginCredentials) {
   const email = credentials.email.trim().toLowerCase();
   const cleanPassword = credentials.password.trim();
 
-  // 1. Check if user credentials match the database credential store (works across Phone & Web)
-  const isCredentialValid = await verifyUserCredential(email, cleanPassword);
-  if (isCredentialValid) {
-    const user = await resolvePpeyeUser(email);
-    // Also attempt Supabase Auth in background if possible
-    signInWithPassword({ email, password: cleanPassword }).catch(() => {});
-    return { user, session: null };
-  }
-
-  // 2. Fall back to standard Supabase Auth
+  // 1. Attempt standard Supabase Auth first so session.user (auth.uid()) is active for RLS
   const { data: authData, error: authError } = await signInWithPassword({
     email,
     password: cleanPassword,
   });
 
-  if (authError) throw authError;
-  if (!authData.user?.email) {
-    await signOut();
-    throw new Error('Supabase Auth did not return an email for this account.');
+  if (!authError && authData.user?.email) {
+    const user = await resolvePpeyeUser(authData.user.email);
+    saveUserCredential(email, cleanPassword, user.id).catch(() => {});
+    return { user, session: authData.session };
   }
 
-  const user = await resolvePpeyeUser(authData.user.email);
-  saveUserCredential(email, cleanPassword, user.id).catch(() => {});
-  return { user, session: authData.session };
+  // 2. Fallback to credential store when password was updated or pending Auth sync
+  const isCredentialValid = await verifyUserCredential(email, cleanPassword);
+  if (isCredentialValid) {
+    // Ensure previous account's Supabase Auth JWT cannot linger across account switches
+    await signOut().catch(() => {});
+    const user = await resolvePpeyeUser(email);
+    return { user, session: null };
+  }
+
+  if (authError) throw authError;
+  throw new Error('Invalid login credentials.');
 }
 
 export async function restoreLoginSession() {
   const { data, error } = await getCurrentSession();
   if (error) throw error;
-  const email = data.session?.user.email;
-  if (!email) return null;
+  const email = data.session?.user?.email;
+  if (!data.session?.user?.id || !email) return null;
 
   const user = await resolvePpeyeUser(email);
   return { user, session: data.session };
 }
 
-import { clearAuthSession } from '@/stores/auth.store';
+import { authStore, clearAuthSession } from '@/stores/auth.store';
+import { invalidateVendorSubmissionDetailsCache } from '@/services/vendor/vendorSubmissions.service';
+import { unlinkPushTokenForUser } from '@/services/notifications/pushNotification.service';
 
 export async function logout() {
+  const departingUserId = authStore.user?.id;
+  try {
+    await unlinkPushTokenForUser(departingUserId);
+  } catch (err) {
+    console.warn('[AuthService] Error unlinking push token on logout:', err);
+  }
   clearAuthSession();
+  invalidateVendorSubmissionDetailsCache();
   try {
     await clearImageCache({ onlySensitive: true });
   } catch (err) {

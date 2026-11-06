@@ -1066,6 +1066,76 @@ export async function runVendorTests(): Promise<{ passed: number; failed: number
     assert(details?.status === 'SUBMITTED', 'Submission transitioned back to SUBMITTED for reviewer re-evaluation');
   });
 
+  await test('Strict Per-User External Isolation: External User B in same vendor company cannot view or mutate External User A data or profile', async () => {
+    const { authStore } = require('../../../stores/auth.store');
+    resetState();
+    setVendorSubmissionsSupabaseOverride(createMockSupabase());
+    setVendorTeamSupabaseOverride(createMockSupabase());
+
+    try {
+      // Log in as External User B (Kabir, id=11, PROJECT_MANAGER in same vendor_profile_id=1 as Tariq id=10)
+      authStore.user = {
+        id: 11,
+        email: 'kabir@vendor.com',
+        name: 'Kabir Lead',
+        phone: '+8801700000002',
+        role: 'vendor',
+        category: 'EXTERNAL',
+        externalType: 'PROJECT_MANAGER',
+        vendorProfileId: 1,
+        vendorName: 'ABC Telecom',
+      };
+
+      // 1. Dashboard stats & recent checks must return 0 of User A's (id=10) submissions
+      const bStats = await getVendorDashboardStats(1, 11, 'PROJECT_MANAGER');
+      assert(bStats.stats.totalSubmissions === 0, `User B must see 0 of User A submissions, got ${bStats.stats.totalSubmissions}`);
+      assert(bStats.recentChecks.length === 0, 'User B recentChecks must not leak User A items');
+
+      // 2. listVendorSubmissions & getVendorSubmissionDetails must block cross-user reads
+      const bSubs = await listVendorSubmissions({ vendorProfileId: 1, statusFilter: 'ALL' });
+      assert(bSubs.length === 0, `User B listVendorSubmissions must be 0, got ${bSubs.length}`);
+
+      const leakedDetail = await getVendorSubmissionDetails(2);
+      assert(leakedDetail === null, 'User B must NOT read User A submission details');
+
+      // 3. Cross-user draft edit, submit, delete, and resubmit must all be denied
+      const editAttempt = await saveDraftSubmission({ vendorProfileId: 1, submittedBy: 11, siteName: 'Hijack' }, 3);
+      assert(editAttempt.success === false, 'User B cannot edit User A draft');
+
+      const deleteAttempt = await deleteDraftSubmission(3);
+      assert(deleteAttempt.success === false, 'User B cannot delete User A draft');
+
+      const submitAttempt = await submitDraftForReview(3);
+      assert(submitAttempt.success === false, 'User B cannot submit User A draft');
+
+      const resubmitAttempt = await resubmitUnsafeWorker(2, 12, 'FRONT', 'file:///cache/hack.jpg');
+      assert(resubmitAttempt.success === false, 'User B cannot resubmit User A unsafe check');
+
+      // 4. External user cannot fetch other vendor users' phone/email via getVendorTeamMembers
+      const visibleMembers = await getVendorTeamMembers(1);
+      assert(
+        visibleMembers.every((m) => m.userId === 11),
+        'External User B can only see their own member record, never other vendors contact info'
+      );
+
+      // 5. Internal Reviewer (id=99) retains full visibility
+      authStore.user = {
+        id: 99,
+        email: 'mahmud@internal.com',
+        name: 'Mahmud Reviewer',
+        phone: '+8801700000099',
+        role: 'reviewer',
+        category: 'INTERNAL',
+      };
+      const internalMembers = await getVendorTeamMembers(1);
+      assert(internalMembers.length === 3, 'Internal reviewer can view all vendor profiles');
+      const internalDetail = await getVendorSubmissionDetails(2);
+      assert(internalDetail !== null && internalDetail.id === 2, 'Internal reviewer can view external submission details');
+    } finally {
+      authStore.user = null;
+    }
+  });
+
 
   // Summary
   console.log('\n========================================');

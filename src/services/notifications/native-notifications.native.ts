@@ -13,48 +13,72 @@ if (!isExpoGo) {
   } catch {}
 }
 
+let foregroundPushDeduplicator: ((notification: any) => boolean) | null = null;
+
+export function registerForegroundPushDeduplicator(
+  fn: ((notification: any) => boolean) | null
+): void {
+  foregroundPushDeduplicator = fn;
+}
+
 export function initNativeNotifications(): void {
   try {
     if (Notifications?.setNotificationHandler) {
       Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: true,
-          shouldShowBanner: true,
-          shouldShowList: true,
-          shouldPlaySound: true,
-          shouldSetBadge: true,
-          priority: Notifications.AndroidNotificationPriority?.MAX ?? 'max',
-        }),
+        handleNotification: async (notification: any) => {
+          const triggerType = notification?.request?.trigger?.type;
+          const isDuplicateRemotePush =
+            triggerType === 'push' &&
+            typeof foregroundPushDeduplicator === 'function' &&
+            foregroundPushDeduplicator(notification);
+
+          if (isDuplicateRemotePush) {
+            return {
+              shouldShowAlert: false,
+              shouldShowBanner: false,
+              shouldShowList: false,
+              shouldPlaySound: false,
+              shouldSetBadge: false,
+            };
+          }
+
+          return {
+            shouldShowAlert: true,
+            shouldShowBanner: true,
+            shouldShowList: true,
+            shouldPlaySound: true,
+            shouldSetBadge: true,
+            priority: Notifications.AndroidNotificationPriority?.MAX ?? 'max',
+          };
+        },
       });
     }
     // Eagerly initialize Android MAX priority channels on startup (Android 8.0+)
-    void setupAndroidChannel('ppeye_alerts');
+    void setupAndroidChannel('default').catch(() => {});
   } catch {}
 }
 
-export async function setupAndroidChannel(channelId: string): Promise<void> {
+export async function setupAndroidChannel(channelId = 'default'): Promise<void> {
   try {
     if (Platform.OS === 'android' && Notifications?.setNotificationChannelAsync) {
       const channelConfig = {
-        name: 'PPEye Alerts',
+        name: 'PPEye Safety Alerts',
         importance: Notifications.AndroidImportance?.MAX ?? 5,
-        vibrationPattern: [0, 250, 150, 250],
-        lightColor: '#208AEF',
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#1E40AF',
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility?.PUBLIC ?? 1,
+        bypassDnd: false,
         sound: 'default',
         enableVibrate: true,
         showBadge: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility?.PUBLIC ?? 1,
       };
 
-      // Set up primary alert channel (Android 8.0+)
-      await Notifications.setNotificationChannelAsync(channelId, channelConfig);
+      await Notifications.setNotificationChannelAsync('default', channelConfig);
 
-      // Also set up default fallback channel
-      if (channelId !== 'default') {
-        await Notifications.setNotificationChannelAsync('default', {
-          ...channelConfig,
-          name: 'Default',
-        });
+      if (channelId && channelId !== 'default') {
+        await Notifications.setNotificationChannelAsync(channelId, channelConfig);
+      } else {
+        await Notifications.setNotificationChannelAsync('ppeye_alerts', channelConfig);
       }
     }
   } catch {}
@@ -78,7 +102,8 @@ export async function requestNativeNotificationPermission(): Promise<boolean> {
 export async function scheduleNativeNotification(
   title: string,
   body: string,
-  channelId: string
+  channelId = 'default',
+  data?: Record<string, any>
 ): Promise<void> {
   try {
     if (Notifications?.scheduleNotificationAsync) {
@@ -89,10 +114,11 @@ export async function scheduleNativeNotification(
         content: {
           title,
           body,
+          data: data ?? {},
           sound: 'default',
           channelId,
           priority: Notifications.AndroidNotificationPriority?.MAX ?? 'max',
-          vibrate: [0, 250, 150, 250],
+          vibrate: [0, 250, 250, 250],
         },
         trigger: null,
       });

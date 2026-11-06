@@ -1,9 +1,5 @@
-import * as Device from 'expo-device';
+import { registerDevicePushToken } from './pushNotification.service';
 
-export async function getExpoPushToken() {
-  if (!Device.isDevice) {
-    return null;
-  }
-
-  throw new Error('Expo push notification registration is not configured yet.');
+export async function getExpoPushToken(): Promise<string | null> {
+  return registerDevicePushToken();
 }

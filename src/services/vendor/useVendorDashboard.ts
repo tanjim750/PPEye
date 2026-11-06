@@ -31,10 +31,12 @@ export function useVendorDashboard() {
       setError(null);
 
       const vendorProfileId = user?.vendorProfileId;
-      if (typeof vendorProfileId !== 'number' || !Number.isFinite(vendorProfileId)) {
+      const parsedUserId = Number(user?.id);
+      const userId = Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : undefined;
+      if (typeof vendorProfileId !== 'number' || !Number.isFinite(vendorProfileId) || !userId) {
+        setRecentChecks([]);
         throw new Error('Your account is not linked to a vendor profile.');
       }
-      const userId = typeof user?.id === 'number' ? user.id : undefined;
 
       const result = await getVendorDashboardStats(
         vendorProfileId,

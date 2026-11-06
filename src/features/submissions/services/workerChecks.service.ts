@@ -1,4 +1,4 @@
-import { authStore } from "@/stores/auth.store";
+import { authStore, subscribeAuthStore } from "@/stores/auth.store";
 import { latestCurrentReview } from "@/services/vendor/vendorSubmissions.service";
 import { createRefCountedSubscription } from "@/services/realtime/refCountedSubscription";
 import { ImageSource } from "expo-image";
@@ -32,7 +32,13 @@ export type WorkerReviewSummary = {
 export type WorkerCheck = {
   id: string;
   submissionId?: number;
+  submittedBy?: number;
+  workerId?: number;
+  workerInstanceId?: number;
+  workerName?: string;
+  isResubmissionRequired?: boolean;
   workerCount?: number;
+  totalSubmissionWorkers?: number;
   workerReviews?: WorkerReviewSummary[];
   image?: ImageSource;
   issues?: WorkerIssue[];
@@ -55,28 +61,70 @@ const day = 24 * hour;
 
 let workerChecks: WorkerCheck[] = [];
 
-const WORKER_CHECKS_STORAGE_KEY = 'ppeye:worker_checks:cache:v1';
+const LEGACY_WORKER_CHECKS_STORAGE_KEY = 'ppeye:worker_checks:cache:v1';
 
-async function loadCachedWorkerChecks() {
+function getCurrentExternalUserId(): number | null {
+  const user = authStore.user;
+  if (!user || (user.category !== 'EXTERNAL' && user.role !== 'vendor' && user.role !== 'external')) {
+    return null;
+  }
+  const parsed = Number(user.id);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getWorkerChecksStorageKey(userId: number | null): string | null {
+  return userId ? `ppeye:worker_checks:cache:v2:user_${userId}` : null;
+}
+
+async function loadCachedWorkerChecks(expectedUserId: number | null = getCurrentExternalUserId()) {
   try {
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const json = await AsyncStorage.getItem(WORKER_CHECKS_STORAGE_KEY);
+    void AsyncStorage.removeItem(LEGACY_WORKER_CHECKS_STORAGE_KEY).catch(() => {});
+    const storageKey = getWorkerChecksStorageKey(expectedUserId);
+    if (!expectedUserId || !storageKey) return;
+    const json = await AsyncStorage.getItem(storageKey);
+    if (getCurrentExternalUserId() !== expectedUserId) return;
     if (json) {
       const parsed = JSON.parse(json);
       if (Array.isArray(parsed) && parsed.length > 0 && workerChecks.length === 0) {
-        workerChecks = parsed;
+        workerChecks = parsed.filter(
+          (item: WorkerCheck) => !item.submittedBy || Number(item.submittedBy) === expectedUserId
+        );
         notify();
       }
     }
   } catch {}
 }
 
-async function persistWorkerChecks(data: WorkerCheck[]) {
+async function persistWorkerChecks(data: WorkerCheck[], ownerUserId: number | null = getCurrentExternalUserId()) {
   try {
+    const storageKey = getWorkerChecksStorageKey(ownerUserId);
+    if (!storageKey) return;
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    await AsyncStorage.setItem(WORKER_CHECKS_STORAGE_KEY, JSON.stringify(data.slice(0, 30)));
+    await AsyncStorage.setItem(storageKey, JSON.stringify(data.slice(0, 30)));
   } catch {}
 }
+
+export function resetWorkerChecksCache(): void {
+  workerChecks = [];
+  lastWorkerChecksSignature = "";
+  lastWorkerChecksSyncTimestamp = 0;
+  notify();
+}
+
+let trackedAuthUserKey = `${authStore.user?.id ?? ''}:${authStore.user?.category ?? authStore.user?.role ?? ''}`;
+subscribeAuthStore(() => {
+  const nextKey = `${authStore.user?.id ?? ''}:${authStore.user?.category ?? authStore.user?.role ?? ''}`;
+  if (nextKey === trackedAuthUserKey) return;
+  trackedAuthUserKey = nextKey;
+  resetWorkerChecksCache();
+  const extUid = getCurrentExternalUserId();
+  if (extUid) {
+    void loadCachedWorkerChecks(extUid).then(() => {
+      void syncWorkerChecksFromSupabase({ force: true });
+    });
+  }
+});
 
 void loadCachedWorkerChecks();
 
@@ -226,7 +274,14 @@ export function getRecentTodayChecks(limit = 10): WorkerCheck[] {
  */
 export function getWorkerCheckById(id: string): WorkerCheck | undefined {
   return workerChecks.find(
-    (item) => item.id === id || String(item.workerNumber) === String(id),
+    (item) =>
+      item.id === id ||
+      item.id === `sub_${id}_unsafe` ||
+      item.id === `sub_${id}_safe` ||
+      item.id === `sub_${id}_review` ||
+      item.id === `sub_${id}` ||
+      String(item.submissionId) === String(id) ||
+      String(item.workerNumber) === String(id),
   );
 }
 
@@ -348,13 +403,18 @@ export function extractSiteCode(siteName?: string): string {
  * Displays site name directly (Worker prefix removed as per user request).
  */
 export function formatWorkerCheckTitle(
-  item: { siteName?: string; workerNumber?: number; workerCount?: number; titleKey?: string },
+  item: { siteName?: string; workerNumber?: number; workerCount?: number; titleKey?: string; workerName?: string },
   t?: (key: string, options?: any) => string,
   language?: string,
 ): string {
-  let name = item.siteName?.trim() || extractSiteCode(item.siteName) || "Site";
-  name = name.replace(/^(Worker|কর্মী)\s*[-–—:]\s*/i, "");
-  return name.trim() || "Site";
+  let site = item.siteName?.trim() || extractSiteCode(item.siteName) || "Site";
+  site = site.replace(/^(Worker|কর্মী)\s*[-–—:]\s*/i, "").trim() || "Site";
+  if (item.workerNumber) {
+    const isBn = language === "bn";
+    const workerLabel = isBn ? `কর্মী ${item.workerNumber}` : `Worker ${item.workerNumber}`;
+    return `${workerLabel} • ${site}`;
+  }
+  return site;
 }
 
 /**
@@ -490,6 +550,7 @@ export function markWorkerUnsafe(
 }
 
 let syncWorkerChecksInFlight: Promise<void> | null = null;
+let hasPendingWorkerChecksForceSync = false;
 let lastWorkerChecksSignature = "";
 
 /**
@@ -500,7 +561,13 @@ let lastWorkerChecksSignature = "";
  * - Zero-delay instant display when tapping "Tap to view details"
  */
 export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }): Promise<void> {
-  if (authStore.user?.category !== "EXTERNAL") return;
+  const u = authStore.user;
+  const cat = String(u?.category || "").trim().toUpperCase();
+  const role = String(u?.role || "").trim().toLowerCase();
+  const isExternalVendor = cat === "EXTERNAL" || role === "vendor" || role === "external";
+  if (!isExternalVendor) return;
+  const currentUserId = Number(u?.id);
+  if (!Number.isFinite(currentUserId) || currentUserId <= 0) return;
 
   const now = Date.now();
   if (!options?.force && now - lastWorkerChecksSyncTimestamp < WORKER_CHECKS_SYNC_COOLDOWN_MS) {
@@ -508,6 +575,9 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
   }
 
   if (syncWorkerChecksInFlight) {
+    if (options?.force) {
+      hasPendingWorkerChecksForceSync = true;
+    }
     return syncWorkerChecksInFlight;
   }
   lastWorkerChecksSyncTimestamp = now;
@@ -516,15 +586,16 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
     try {
       const supabase = require("@/services/supabase/client").supabase;
       if (!supabase) return;
-      const accountKey = `${authStore.user?.id}:${authStore.user?.vendorProfileId}`;
+      const accountKey = `${currentUserId}:${authStore.user?.vendorProfileId}`;
       const profileId = authStore.user?.vendorProfileId;
       if (typeof profileId !== 'number') return;
 
-      let query = supabase
+      const { data: subs, error } = await supabase
         .from("ppe_submissions")
         .select(
           `
           id,
+          submitted_by,
           site_name,
           metadata,
           created_at,
@@ -555,12 +626,11 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
         `,
         )
         .eq('vendor_profile_id', profileId)
+        .eq('submitted_by', currentUserId)
         .order("created_at", { ascending: false })
         .limit(20);
-      if (authStore.user?.externalType === 'WORKER' && typeof authStore.user.id === 'number') query = query.eq('submitted_by', authStore.user.id);
-      const { data: subs, error } = await query;
 
-      if (accountKey !== `${authStore.user?.id}:${authStore.user?.vendorProfileId}`) return;
+      if (accountKey !== `${Number(authStore.user?.id)}:${authStore.user?.vendorProfileId}`) return;
 
       if (error || !subs) {
         return;
@@ -602,6 +672,9 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
       const liveChecks: WorkerCheck[] = [];
 
       for (const sub of subs) {
+        if ((sub as any).submitted_by !== undefined && Number((sub as any).submitted_by) !== currentUserId) {
+          continue;
+        }
         const workers = (sub.ppe_worker_instances as any[]) || [];
         if (workers.length === 0) continue;
 
@@ -762,73 +835,99 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
           });
         }
 
-        let overallStatus: "safe" | "unsafe" | "review" = "review";
-        if (anyUnsafe) {
-          overallStatus = "unsafe";
-        } else if (
-          workerReviews.length > 0 &&
-          workerReviews.every((w) => w.status === "safe")
-        ) {
-          overallStatus = "safe";
+        // Group workers by verdict status so mixed submissions produce clean separate cards:
+        // - Safe workers group -> sub_${sub.id}_safe
+        // - Unsafe workers group -> sub_${sub.id}_unsafe
+        // - Pending review workers group -> sub_${sub.id}_review
+        const safeWorkerReviews = workerReviews.filter((w) => w.status === "safe");
+        const unsafeWorkerReviews = workerReviews.filter((w) => w.status === "unsafe");
+        const pendingWorkerReviews = workerReviews.filter((w) => w.status === "review");
+
+        const statusGroups: Array<{
+          status: "safe" | "unsafe" | "review";
+          workersList: WorkerReviewSummary[];
+        }> = [];
+
+        if (unsafeWorkerReviews.length > 0) {
+          statusGroups.push({ status: "unsafe", workersList: unsafeWorkerReviews });
+        }
+        if (safeWorkerReviews.length > 0) {
+          statusGroups.push({ status: "safe", workersList: safeWorkerReviews });
+        }
+        if (pendingWorkerReviews.length > 0) {
+          statusGroups.push({ status: "review", workersList: pendingWorkerReviews });
         }
 
-        let fileId: string | undefined;
-        let storageProvider: string | undefined;
-
-        for (const w of workers) {
-          const imgs = (w?.ppe_images || []).slice().sort((a: any, b: any) => {
-            const aSide = String(a.side || '').toUpperCase();
-            const bSide = String(b.side || '').toUpperCase();
-            if (aSide === 'FRONT' && bSide !== 'FRONT') return -1;
-            if (bSide === 'FRONT' && aSide !== 'FRONT') return 1;
-            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-          });
-          if (imgs.length > 0) {
-            const rawFile = Array.isArray(imgs[0]?.files) ? imgs[0].files[0] : imgs[0]?.files;
-            fileId = rawFile?.provider_file_id;
-            storageProvider = rawFile?.storage_provider;
-            if (!fileId && imgs[0]?.file_id) {
-              const res = resolvedFileMap.get(Number(imgs[0].file_id));
-              if (res) {
-                fileId = res.provider_file_id;
-                storageProvider = res.storage_provider;
+        // Helper to resolve preview image for a group
+        const resolveGroupImage = (groupWorkers: WorkerReviewSummary[]): string | undefined => {
+          const primary = groupWorkers[0];
+          let imgUrl: string | undefined = primary?.frontUri || primary?.backUri || undefined;
+          if (!imgUrl && primary) {
+            const wInstance = workers.find(
+              (w) =>
+                Number(w.sequence_no) === Number(primary.sequenceNo) ||
+                w.id === primary.workerInstanceId
+            );
+            if (wInstance?.ppe_images) {
+              const wImgs = (wInstance.ppe_images || []).slice().sort((a: any, b: any) => {
+                const aSide = String(a.side || '').toUpperCase();
+                const bSide = String(b.side || '').toUpperCase();
+                if (aSide === 'FRONT' && bSide !== 'FRONT') return -1;
+                if (bSide === 'FRONT' && aSide !== 'FRONT') return 1;
+                return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+              });
+              if (wImgs.length > 0) {
+                const rawFile = Array.isArray(wImgs[0]?.files) ? wImgs[0].files[0] : wImgs[0]?.files;
+                let fId = rawFile?.provider_file_id;
+                if (!fId && wImgs[0]?.file_id) {
+                  const res = resolvedFileMap.get(Number(wImgs[0].file_id));
+                  if (res) fId = res.provider_file_id;
+                }
+                if (fId) {
+                  const { getCachedImageUriSync } = require("@/utils/image");
+                  imgUrl = getCachedImageUriSync(fId) ?? undefined;
+                }
               }
             }
-            if (fileId) break;
           }
+          return imgUrl;
+        };
+
+        for (const grp of statusGroups) {
+          const grpStatus = grp.status;
+          const grpWorkers = grp.workersList;
+          const primaryWorker = grpWorkers[0];
+          const grpImageUrl = resolveGroupImage(grpWorkers);
+
+          const groupUnsafeReasons = Array.from(
+            new Set(grpWorkers.flatMap((w) => w.unsafeReasons || []))
+          );
+          const groupNotes = grpWorkers
+            .map((w) => w.otherReasonText)
+            .filter(Boolean) as string[];
+
+          liveChecks.push({
+            id: `sub_${sub.id}_${grpStatus}`,
+            submissionId: sub.id,
+            submittedBy: currentUserId,
+            workerId: primaryWorker?.workerInstanceId,
+            workerInstanceId: primaryWorker?.workerInstanceId,
+            workerName: primaryWorker?.workerName,
+            isResubmissionRequired: grpStatus === "unsafe",
+            workerCount: grpWorkers.length,
+            totalSubmissionWorkers: workers.length,
+            workerReviews: grpWorkers, // Contains ONLY workers belonging to this status group
+            image: grpImageUrl ? ({ uri: grpImageUrl } as any) : undefined,
+            siteName: sub.site_name,
+            status: grpStatus,
+            timeKey: "today",
+            timestamp: maxTimestamp,
+            titleKey: `sub_${sub.id}_${grpStatus}`,
+            workerNumber: undefined as any, // undefined so title displays site name directly
+            unsafeReasons: groupUnsafeReasons,
+            reviewerNote: groupNotes.join("; ") || (grpStatus === "unsafe" ? sub.metadata?.otherReasonText : undefined),
+          });
         }
-
-        const isSupabase =
-          storageProvider === "SUPABASE" ||
-          fileId?.startsWith("submissions/") ||
-          fileId?.includes("/");
-
-        let imageUrl: string | undefined;
-        if (fileId && isSupabase) {
-          const { getCachedImageUriSync } = require("@/utils/image");
-          imageUrl = getCachedImageUriSync(fileId) ?? undefined;
-        }
-
-        if (!imageUrl) {
-          const firstWithPhoto = workerReviews.find((r) => r.frontUri || r.backUri);
-          imageUrl = firstWithPhoto?.frontUri || firstWithPhoto?.backUri || undefined;
-        }
-
-        liveChecks.push({
-          id: `sub_${sub.id}`,
-          submissionId: sub.id,
-          workerCount: workers.length,
-          workerReviews,
-          image: imageUrl ? ({ uri: imageUrl } as any) : undefined,
-          siteName: sub.site_name,
-          status: overallStatus,
-          timeKey: "today",
-          timestamp: maxTimestamp,
-          titleKey: `sub_${sub.id}`,
-          workerNumber: workers.length,
-          unsafeReasons: Array.from(new Set(allUnsafeReasons)),
-          reviewerNote: allNotes.filter(Boolean).join("; ") || sub.metadata?.otherReasonText || sub.metadata?.combinedNotes || undefined,
-        });
       }
 
       const nextChecks = [...liveChecks].sort(
@@ -847,7 +946,7 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
       if (nextSignature !== lastWorkerChecksSignature) {
         lastWorkerChecksSignature = nextSignature;
         workerChecks = nextChecks;
-        void persistWorkerChecks(nextChecks);
+        void persistWorkerChecks(nextChecks, currentUserId);
         notify();
       }
 
@@ -895,6 +994,12 @@ export async function syncWorkerChecksFromSupabase(options?: { force?: boolean }
       console.warn("[WorkerChecks] syncWorkerChecksFromSupabase caught:", err);
     } finally {
       syncWorkerChecksInFlight = null;
+      if (hasPendingWorkerChecksForceSync) {
+        hasPendingWorkerChecksForceSync = false;
+        setTimeout(() => {
+          void syncWorkerChecksFromSupabase({ force: true });
+        }, 100);
+      }
     }
   })();
 

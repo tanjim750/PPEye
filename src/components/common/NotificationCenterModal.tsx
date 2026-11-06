@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
+  Dimensions,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -52,6 +55,9 @@ function formatRelativeTime(ts: number, isBn: boolean): string {
   });
 }
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const SNAP_OFFSET = Math.round(SCREEN_HEIGHT * 0.32); // collapsed offset: translateY = SNAP_OFFSET
+
 export function NotificationCenterModal({
   visible,
   onClose,
@@ -66,12 +72,162 @@ export function NotificationCenterModal({
   // Maintain local reactive items state so bottom sheet reflects actions with 0ms latency
   const [items, setItems] = useState<AppNotification[]>(() => getNotifications(role, vendorFilter));
 
-  // Sync state whenever modal opens or filter props change
+  // Snap & continuous gesture coordination
+  const translateY = useRef(new Animated.Value(SNAP_OFFSET)).current;
+  const isExpandedRef = useRef(false);
+  const scrollOffsetRef = useRef(0);
+  const scrollViewRef = useRef<any>(null);
+  const [scrollEnabled, setScrollEnabled] = useState(false);
+  const dragStartOffsetRef = useRef(0);
+  const closingRef = useRef(false);
+
+  // Sync state whenever modal opens or filter props change, and subscribe to live updates while open
   useEffect(() => {
-    if (visible) {
+    if (!visible) return;
+    setItems(getNotifications(role, vendorFilter));
+    // Reset sheet to initial partial snap point
+    translateY.setValue(SNAP_OFFSET);
+    isExpandedRef.current = false;
+    scrollOffsetRef.current = 0;
+    setScrollEnabled(false);
+    closingRef.current = false;
+
+    const unsubscribe = subscribeNotifications(() => {
       setItems(getNotifications(role, vendorFilter));
+    });
+    return unsubscribe;
+  }, [visible, role, vendorFilter?.userId, vendorFilter?.vendorName, vendorFilter?.vendorProfileId]);
+
+  function animateToExpanded() {
+    isExpandedRef.current = true;
+    setScrollEnabled(true);
+    Animated.spring(translateY, {
+      toValue: 0,
+      damping: 24,
+      stiffness: 220,
+      useNativeDriver: true,
+    }).start();
+  }
+
+  function animateToCollapsed() {
+    isExpandedRef.current = false;
+    setScrollEnabled(false);
+    Animated.spring(translateY, {
+      toValue: SNAP_OFFSET,
+      damping: 24,
+      stiffness: 220,
+      useNativeDriver: true,
+    }).start();
+  }
+
+  function handleDismiss() {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    Animated.timing(translateY, {
+      toValue: SCREEN_HEIGHT,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      onClose();
+    });
+  }
+
+  function handleWheel(e: any) {
+    if (Platform.OS !== 'web') return;
+    const deltaY = e?.deltaY ?? e?.nativeEvent?.deltaY ?? 0;
+    if (!isExpandedRef.current && deltaY > 2) {
+      animateToExpanded();
+    } else if (isExpandedRef.current && scrollOffsetRef.current <= 0 && deltaY < -15) {
+      animateToCollapsed();
     }
-  }, [visible, role, vendorFilter?.vendorName, vendorFilter?.vendorProfileId]);
+  }
+
+  // PanResponder for seamless continuous hand-off between expanding/collapsing sheet & scrolling list
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Intercept touch if sheet is collapsed or if user is pulling down at top of list
+        const isDragging = Math.abs(gestureState.dy) > 4;
+        if (!isDragging) return false;
+
+        if (!isExpandedRef.current) {
+          return true; // Sheet must expand or collapse first
+        }
+        // When expanded, only capture downward pulls if list is scrolled to the top
+        return gestureState.dy > 0 && scrollOffsetRef.current <= 0;
+      },
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+        const isDragging = Math.abs(gestureState.dy) > 4;
+        if (!isDragging) return false;
+
+        if (!isExpandedRef.current) {
+          return true;
+        }
+        return gestureState.dy > 0 && scrollOffsetRef.current <= 0;
+      },
+      onPanResponderGrant: () => {
+        dragStartOffsetRef.current = isExpandedRef.current ? 0 : SNAP_OFFSET;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        const currentTargetY = dragStartOffsetRef.current + gestureState.dy;
+
+        if (!isExpandedRef.current) {
+          if (currentTargetY <= 0) {
+            // Reached full expansion during this continuous upward drag stroke:
+            // Clamp sheet to top snap point and hand off excess drag delta to the ScrollView
+            translateY.setValue(0);
+            const overflowScroll = -currentTargetY;
+            scrollViewRef.current?.scrollTo({ y: overflowScroll, animated: false });
+            scrollOffsetRef.current = overflowScroll;
+            if (!scrollEnabled) {
+              setScrollEnabled(true);
+            }
+          } else {
+            // Sheet is between collapsed and expanded
+            translateY.setValue(currentTargetY);
+          }
+        } else {
+          // Expanded: pulling downward at the top of the list collapses or closes the sheet
+          if (currentTargetY > 0) {
+            translateY.setValue(currentTargetY);
+          }
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const currentTargetY = dragStartOffsetRef.current + gestureState.dy;
+
+        if (!isExpandedRef.current) {
+          // Fast upward flick or dragged significantly upward -> expand
+          if (gestureState.dy < -10 || gestureState.vy < -0.1 || currentTargetY < SNAP_OFFSET * 0.85) {
+            animateToExpanded();
+          } else if (gestureState.vy > 0.5 || currentTargetY > SNAP_OFFSET + 70) {
+            // Pulled down significantly while collapsed -> dismiss
+            handleDismiss();
+          } else {
+            animateToCollapsed();
+          }
+        } else {
+          // Was expanded and pulled down:
+          if (gestureState.vy > 0.6 || gestureState.dy > SNAP_OFFSET * 0.75) {
+            handleDismiss();
+          } else if (gestureState.dy > 30) {
+            animateToCollapsed();
+          } else {
+            animateToExpanded();
+          }
+        }
+      },
+      onPanResponderTerminate: () => {
+        if (isExpandedRef.current) {
+          animateToExpanded();
+        } else {
+          animateToCollapsed();
+        }
+      },
+    })
+  ).current;
 
   // Subscribe to notification event bus for real-time reactivity
   useEffect(() => {
@@ -99,9 +255,13 @@ export function NotificationCenterModal({
       // Vendor
       const isUnsafe = item.type === 'REVIEW_UNSAFE';
       const isSafe = item.type === 'REVIEW_SAFE';
-      const filter = isUnsafe ? 'unsafe' : isSafe ? 'all' : 'pending';
-      const subIdQuery = item.submissionId ? `&submissionId=${item.submissionId}` : '';
-      navigate(`/history?filter=${filter}${subIdQuery}`);
+      if (isUnsafe && item.submissionId) {
+        navigate(`/submission-details?id=${item.submissionId}`);
+      } else {
+        const filter = isUnsafe ? 'unsafe' : isSafe ? 'all' : 'pending';
+        const subIdQuery = item.submissionId ? `&submissionId=${item.submissionId}` : '';
+        navigate(`/history?filter=${filter}${subIdQuery}`);
+      }
     }
   }
 
@@ -119,48 +279,77 @@ export function NotificationCenterModal({
 
   return (
     <Modal
-      animationType="slide"
-      onRequestClose={onClose}
+      animationType="none"
+      onRequestClose={handleDismiss}
       transparent
       visible={visible}>
       <View style={styles.backdrop}>
-        <SafeAreaView style={styles.sheetContainer}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.titleRow}>
-              <View style={styles.headerIconCircle}>
-                <Icon
-                  color="#005cad"
-                  name={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
-                  size={20}
-                />
-              </View>
-              <Text style={styles.headerTitle}>
-                {isBn ? 'বিজ্ঞপ্তি ও নোটিফিকেশন' : 'Notifications'}
-              </Text>
-              {unreadCount > 0 && (
-                <View style={styles.unreadPill}>
-                  <Text style={styles.unreadPillText}>
-                    {unreadCount} {isBn ? 'নতুন' : 'new'}
-                  </Text>
-                </View>
-              )}
-            </View>
-
+        <Pressable
+          accessibilityLabel="Dismiss background"
+          onPress={handleDismiss}
+          style={StyleSheet.absoluteFill}
+        />
+        <Animated.View
+          {...panResponder.panHandlers}
+          {...(Platform.OS === 'web' ? ({ onWheel: handleWheel } as any) : {})}
+          style={[
+            styles.sheetContainer,
+            {
+              transform: [{ translateY }],
+            },
+          ]}>
+          <SafeAreaView edges={['bottom']} style={styles.safeArea}>
+            {/* Drag Handle Bar */}
             <Pressable
-              accessibilityLabel="Close notifications"
               accessibilityRole="button"
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              onPress={onClose}
-              {...(Platform.OS === 'web' ? ({ onClick: onClose, cursor: 'pointer' } as any) : {})}
-              style={({ pressed }) => [styles.closeBtn, pressed && styles.pressedOpacity]}>
-              <Icon
-                color="#717785"
-                name={{ ios: 'xmark', android: 'close', web: 'close' }}
-                size={22}
-              />
+              accessibilityLabel="Expand or collapse notifications"
+              onPress={() => {
+                if (isExpandedRef.current) {
+                  animateToCollapsed();
+                } else {
+                  animateToExpanded();
+                }
+              }}
+              style={styles.dragHandleContainer}>
+              <View style={styles.dragHandle} />
             </Pressable>
-          </View>
+
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={styles.titleRow}>
+                <View style={styles.headerIconCircle}>
+                  <Icon
+                    color="#005cad"
+                    name={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
+                    size={20}
+                  />
+                </View>
+                <Text style={styles.headerTitle}>
+                  {isBn ? 'বিজ্ঞপ্তি ও নোটিফিকেশন' : 'Notifications'}
+                </Text>
+                {unreadCount > 0 && (
+                  <View style={styles.unreadPill}>
+                    <Text style={styles.unreadPillText}>
+                      {unreadCount} {isBn ? 'নতুন' : 'new'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <Pressable
+                accessibilityLabel="Close notifications"
+                accessibilityRole="button"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={handleDismiss}
+                {...(Platform.OS === 'web' ? ({ onClick: handleDismiss, cursor: 'pointer' } as any) : {})}
+                style={({ pressed }) => [styles.closeBtn, pressed && styles.pressedOpacity]}>
+                <Icon
+                  color="#717785"
+                  name={{ ios: 'xmark', android: 'close', web: 'close' }}
+                  size={22}
+                />
+              </Pressable>
+            </View>
 
           {/* Action Bar (Mark All as Read & Clear All) */}
           {items.length > 0 && (
@@ -229,7 +418,17 @@ export function NotificationCenterModal({
 
           {/* List of Notifications */}
           <ScrollView
+            ref={scrollViewRef}
             contentContainerStyle={styles.listContent}
+            onScroll={(e) => {
+              const y = e.nativeEvent.contentOffset.y;
+              scrollOffsetRef.current = y;
+              if (!isExpandedRef.current && y > 2) {
+                animateToExpanded();
+              }
+            }}
+            scrollEnabled={scrollEnabled}
+            scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}
             style={styles.scroll}>
             {items.length === 0 ? (
@@ -285,11 +484,19 @@ export function NotificationCenterModal({
                       : {})}
                     style={({ pressed }) => [
                       styles.itemCard,
-                      isUnread && styles.itemCardUnread,
+                      isUnread && (isSafe ? styles.itemCardUnreadSafe : isNew ? styles.itemCardUnreadReview : styles.itemCardUnread),
                       pressed && styles.pressedOpacity,
                     ]}>
-                    {/* Red Indicator Dot for unread */}
-                    {isUnread && <View style={styles.redDot} />}
+                    {/* Unread indicator dot matched to notification category */}
+                    {isUnread && (
+                      <View
+                        style={[
+                          styles.redDot,
+                          isSafe && styles.greenDot,
+                          isNew && styles.yellowDot,
+                        ]}
+                      />
+                    )}
 
                     {/* Category Icon */}
                     <View style={[styles.itemIconCircle, { backgroundColor: iconBg }]}>
@@ -301,7 +508,10 @@ export function NotificationCenterModal({
                       <View style={styles.itemHeaderRow}>
                         <Text
                           numberOfLines={1}
-                          style={[styles.itemTitle, isUnread && styles.itemTitleUnread]}>
+                          style={[
+                            styles.itemTitle,
+                            isUnread && (isSafe ? styles.itemTitleUnreadSafe : isNew ? styles.itemTitleUnreadReview : styles.itemTitleUnread),
+                          ]}>
                           {isBn && item.titleBn ? item.titleBn : item.title}
                         </Text>
                         <Text style={styles.itemTime}>
@@ -363,7 +573,8 @@ export function NotificationCenterModal({
               })
             )}
           </ScrollView>
-        </SafeAreaView>
+          </SafeAreaView>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -379,8 +590,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '85%',
-    minHeight: '45%',
+    height: '85%',
     maxWidth: 448,
     width: '100%',
     alignSelf: 'center',
@@ -388,6 +598,23 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
+    elevation: 16,
+    overflow: 'hidden',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  dragHandleContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    width: '100%',
+  },
+  dragHandle: {
+    backgroundColor: '#cbd5e1',
+    borderRadius: 3,
+    height: 5,
+    width: 44,
   },
   header: {
     alignItems: 'center',
@@ -524,8 +751,16 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : {}),
   },
   itemCardUnread: {
-    backgroundColor: '#fef7f7', // Subtle soft red highlight
+    backgroundColor: '#fef7f7', // Subtle soft red highlight for unsafe
     borderColor: '#fecaca',
+  },
+  itemCardUnreadSafe: {
+    backgroundColor: '#f0fdf4', // Soft green highlight for safe
+    borderColor: '#bbf7d0',
+  },
+  itemCardUnreadReview: {
+    backgroundColor: '#fefce8', // Soft yellow highlight for reviewer new submission
+    borderColor: '#fef08a',
   },
   redDot: {
     backgroundColor: '#DC2626', // Vibrant Red dot
@@ -535,6 +770,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     width: 8,
+  },
+  greenDot: {
+    backgroundColor: '#16A34A', // Vibrant Green dot for safe
+  },
+  yellowDot: {
+    backgroundColor: '#CA8A04', // Vibrant Yellow dot for reviewer pending submissions
   },
   itemIconCircle: {
     alignItems: 'center',
@@ -561,7 +802,15 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   itemTitleUnread: {
-    color: '#991b1b', // Deeper red title for unread
+    color: '#991b1b', // Deeper red title for unread unsafe
+    fontWeight: '700',
+  },
+  itemTitleUnreadSafe: {
+    color: '#166534', // Deeper green title for unread safe
+    fontWeight: '700',
+  },
+  itemTitleUnreadReview: {
+    color: '#854d0e', // Deeper yellow/amber title for unread reviewer submission
     fontWeight: '700',
   },
   itemTime: {

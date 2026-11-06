@@ -17,39 +17,36 @@ import { cacheImage } from '@/utils/image';
 
 type EditableField = 'fullName' | 'phoneNumber' | 'email';
 
-async function resolveDatabaseUserId(currentUser: any): Promise<number> {
-  if (typeof currentUser?.id === 'number' && currentUser.id > 0) {
-    return currentUser.id;
+async function resolveDatabaseUserId(currentUser: any): Promise<number | null> {
+  const parsedId = Number(currentUser?.id);
+  if (Number.isInteger(parsedId) && parsedId > 0) {
+    return parsedId;
   }
   try {
     const { supabase } = require('@/services/supabase/client');
     if (supabase) {
-      if (currentUser?.phone) {
-        const { data: byPhone } = await supabase.from('users').select('id').eq('phone', currentUser.phone).maybeSingle();
-        if (byPhone?.id) return Number(byPhone.id);
-      }
-      if (currentUser?.email) {
-        const { data: byEmail } = await supabase.from('users').select('id').ilike('email', currentUser.email).maybeSingle();
+      const { data: sessionRes } = await supabase.auth.getSession();
+      const sessionEmail = sessionRes?.session?.user?.email || currentUser?.email;
+      if (sessionEmail) {
+        const { data: byEmail } = await supabase
+          .from('users')
+          .select('id')
+          .ilike('email', sessionEmail)
+          .single();
         if (byEmail?.id) return Number(byEmail.id);
       }
-      const category = currentUser?.category || (currentUser?.role === 'reviewer' ? 'INTERNAL' : 'EXTERNAL');
-      const { data: byCat } = await supabase.from('users').select('id').eq('category', category).limit(1).maybeSingle();
-      if (byCat?.id) return Number(byCat.id);
-
-      const { data: anyUser } = await supabase.from('users').select('id').limit(1).maybeSingle();
-      if (anyUser?.id) return Number(anyUser.id);
     }
   } catch (err) {
     console.warn('[ProfileScreen] resolveDatabaseUserId error:', err);
   }
-  return 1;
+  return null;
 }
 
 export function ProfileScreen() {
   const router = useRouter();
   const { t } = useTranslation('settings');
   const { user } = useAuth();
-  const activeUserId = typeof user?.id === 'number' ? user.id : 1;
+  const activeUserId = Number(user?.id) || null;
 
   const [profileImage, setProfileImage] = useState<string | null>(user?.profilePictureUrl || null);
   const [fullName, setFullName] = useState(user?.name || '');
@@ -66,19 +63,47 @@ export function ProfileScreen() {
   }, [user]);
 
   useEffect(() => {
+    if (!activeUserId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { supabase } = require('@/services/supabase/client');
+        if (!supabase) return;
+        const { data } = await supabase
+          .from('users')
+          .select('id, name, phone, email, designation')
+          .eq('id', activeUserId)
+          .single();
+        if (!cancelled && data && Number(data.id) === activeUserId) {
+          setFullName(data.name || '');
+          setPhoneNumber(data.phone || '');
+          setEmail(data.email || '');
+        }
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUserId]);
+
+  useEffect(() => {
     if (user?.profilePictureUrl) {
       setProfileImage(user.profilePictureUrl);
       return;
     }
-    if (!user?.id) {
+    if (!activeUserId) {
       setProfileImage(null);
       return;
     }
     resolveDatabaseUserId(user).then((dbUid) => {
+      if (!dbUid) {
+        setProfileImage(null);
+        return;
+      }
       getProfilePictureUri(dbUid)
         .then((cachedUri) => {
           setProfileImage(cachedUri);
-          if (cachedUri && authStore.user && !authStore.user.profilePictureUrl) {
+          if (cachedUri && authStore.user && Number(authStore.user.id) === dbUid && !authStore.user.profilePictureUrl) {
             authStore.setProfilePictureUrl(cachedUri);
           }
         })
@@ -106,6 +131,10 @@ export function ProfileScreen() {
 
       try {
         const targetUserId = await resolveDatabaseUserId(user);
+        if (!targetUserId) {
+          Alert.alert('Session Required', 'Please sign in again before updating your profile photo.');
+          return;
+        }
         const res = await submissionCoordinator.uploadAvatar({
           userId: targetUserId,
           localUri: pickedUri,
@@ -154,27 +183,28 @@ export function ProfileScreen() {
       return;
     }
 
-    const baseUser: Partial<AuthUser> = authStore.user || user || {
-      id: 1,
-      role: 'reviewer',
-      category: 'INTERNAL',
-    };
+    const baseUser = authStore.user || user;
+    const targetUserId = await resolveDatabaseUserId(baseUser);
+    if (!baseUser || !targetUserId) {
+      Alert.alert('Session Required', 'Please sign in again before saving profile changes.');
+      return;
+    }
 
     const updatedUser: AuthUser = {
-      ...(baseUser as AuthUser),
+      ...baseUser,
+      id: targetUserId,
       name: trimmedName,
       phone: trimmedPhone,
       email: trimmedEmail,
-      profilePictureUrl: profileImage || (baseUser as AuthUser).profilePictureUrl,
+      profilePictureUrl: profileImage || baseUser.profilePictureUrl,
     };
 
     authStore.user = updatedUser;
     updateAuthUser(updatedUser);
 
     try {
-      const targetUserId = await resolveDatabaseUserId(updatedUser);
       const { supabase } = require('@/services/supabase/client');
-      if (supabase && targetUserId) {
+      if (supabase) {
         await supabase
           .from('users')
           .update({

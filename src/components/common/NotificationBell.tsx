@@ -27,6 +27,7 @@ export function NotificationBell({
   const vendorFilter =
     role === 'vendor'
       ? {
+          userId: activeUser?.id,
           vendorProfileId: activeUser?.vendorProfileId,
           vendorName: activeUser?.vendorName,
         }
@@ -47,7 +48,7 @@ export function NotificationBell({
       setLocalCount(fresh);
     });
     return unsubscribe;
-  }, [role, vendorFilter?.vendorName, vendorFilter?.vendorProfileId]);
+  }, [role, vendorFilter?.userId, vendorFilter?.vendorName, vendorFilter?.vendorProfileId]);
 
   const displayCount = localCount;
   const isUnread = displayCount > 0;

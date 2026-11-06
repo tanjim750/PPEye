@@ -7,7 +7,10 @@ import { createRefCountedSubscription } from "@/services/realtime/refCountedSubs
 import { computeReviewsSignature } from "./reviewSignature";
 import { persistCompletedSubmissionReview, persistReviewerDraft } from "./reviewPersistence";
 import { isDemoMode } from "@/constants/devMode";
-import { broadcastReviewVerdictAlert } from "@/services/notifications/notification.service";
+import {
+  broadcastReviewVerdictAlert,
+  isReviewerUser,
+} from "@/services/notifications/notification.service";
 
 export type WorkerReviewVerdict = {
   sequenceNo: number;
@@ -38,6 +41,7 @@ export type ReviewItem = {
   unsafeReasons?: string[];
   vendor: string;
   vendorProfileId?: number;
+  submittedBy?: number | string;
   workers: number;
   workerReviews?: WorkerReviewVerdict[];
   isDraft?: boolean;
@@ -50,7 +54,7 @@ export const unsafeReasonLabels: Record<string, string> = {
   harness: "Full-body harness",
   helmet: "Helmet",
   lanyard: "Lanyard",
-  other: "Other violation",
+  other: "Other",
   shoes: "Safety shoes",
 };
 
@@ -262,6 +266,7 @@ const localCompletedSubmissions = new Map<string, LocalCompletedData>();
 
 let isSyncing = false;
 let hasPendingSync = false;
+let hasPendingForceSync = false;
 let realtimeSubscribed = false;
 let lastReviewsSignature = "";
 let lastSyncTimestamp = 0;
@@ -269,24 +274,36 @@ const REVIEWS_SYNC_COOLDOWN_MS = 6000; // 6-second cooldown for routine focus sy
 let reviewsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let activeReviewsSyncPromise: Promise<void> | null = null;
 
-export function debouncedSyncReviews() {
+export function debouncedSyncReviews(force = false) {
+  if (force) {
+    hasPendingForceSync = true;
+  }
   if (reviewsDebounceTimer) clearTimeout(reviewsDebounceTimer);
   reviewsDebounceTimer = setTimeout(() => {
-    void syncReviewsWhileFocused();
-  }, 400);
+    const shouldForce = hasPendingForceSync;
+    hasPendingForceSync = false;
+    if (shouldForce) {
+      void syncReviewsFromSupabase({ force: true });
+    } else {
+      void syncReviewsWhileFocused();
+    }
+  }, 300);
 }
 
 export async function syncReviewsFromSupabase(options?: { force?: boolean }) {
-  if (authStore.user && authStore.user.category !== "INTERNAL" && authStore.user.role !== "reviewer") return;
+  if (authStore.user && !isReviewerUser(authStore.user)) return;
 
   const now = Date.now();
-  // Throttle routine focus syncs unless explicitly forced (e.g. pull-to-refresh)
+  // Throttle routine focus syncs unless explicitly forced (e.g. pull-to-refresh or live broadcast)
   if (!options?.force && now - lastSyncTimestamp < REVIEWS_SYNC_COOLDOWN_MS) {
     return activeReviewsSyncPromise || Promise.resolve();
   }
 
   if (isSyncing) {
     hasPendingSync = true;
+    if (options?.force) {
+      hasPendingForceSync = true;
+    }
     return activeReviewsSyncPromise || Promise.resolve();
   }
   isSyncing = true;
@@ -300,6 +317,7 @@ export async function syncReviewsFromSupabase(options?: { force?: boolean }) {
         `
         id,
         vendor_profile_id,
+        submitted_by,
         site_name,
         status,
         metadata,
@@ -370,33 +388,30 @@ export async function syncReviewsFromSupabase(options?: { force?: boolean }) {
       const localDraft = localDraftSubmissions.get(String(sub.id));
       const isLocallyDraft = Boolean(localDraft);
 
+      const isCompletedInDb =
+        sub.status === "COMPLETED" ||
+        sub.status === "APPROVED" ||
+        sub.status === "SAFE";
+
       if (localCompleted) {
         // Optimistic completed state is protected against premature sync
         mappedStatus = localCompleted.status;
         isDraft = false;
         // Clean up from local completed map once Supabase DB officially matches COMPLETED status
-        if (
-          sub.status === "COMPLETED" ||
-          sub.status === "APPROVED" ||
-          sub.status === "SAFE"
-        ) {
+        if (isCompletedInDb) {
           localCompletedSubmissions.delete(String(sub.id));
+        }
+      } else if (isCompletedInDb) {
+        if ((liveWorkerReviews.length > 0 && currentUnsafe) || meta.reviewResult === "unsafe" || meta.hasUnsafe) {
+          mappedStatus = "unsafe";
+        } else {
+          mappedStatus = "reviewed";
         }
       } else if (hasSupersededReview) {
         mappedStatus = "waiting";
         isDraft = false;
       } else if (completeLiveReviews) {
         mappedStatus = currentUnsafe ? "unsafe" : "reviewed";
-      } else if (
-        sub.status === "COMPLETED" ||
-        sub.status === "APPROVED" ||
-        sub.status === "SAFE"
-      ) {
-        if ((liveWorkerReviews.length > 0 && currentUnsafe) || meta.reviewResult === "unsafe" || meta.hasUnsafe) {
-          mappedStatus = "unsafe";
-        } else {
-          mappedStatus = "reviewed";
-        }
       } else if (sub.status === "UNSAFE" || sub.status === "ACTION_REQUIRED") {
         mappedStatus = "unsafe";
       } else if (sub.status === "UNDER_REVIEW" || isLocallyDraft) {
@@ -424,6 +439,10 @@ export async function syncReviewsFromSupabase(options?: { force?: boolean }) {
         timestamp: finalTimestamp,
         vendor: vendorName,
         vendorProfileId: sub.vendor_profile_id ? Number(sub.vendor_profile_id) : undefined,
+        submittedBy:
+          sub.submitted_by !== undefined && sub.submitted_by !== null
+            ? Number(sub.submitted_by) || sub.submitted_by
+            : meta.submittedBy ?? undefined,
         workers: workerCount,
         workerReviews: localCompleted?.workerReviews || localDraft?.workerReviews || (liveWorkerReviews.length ? liveWorkerReviews : currentMetadataReviews.length ? currentMetadataReviews : (isDraft ? meta.reviewDraft?.workerReviews : undefined)),
         draftReviewerId: Number(meta.reviewDraft?.reviewerId) || undefined,
@@ -455,6 +474,12 @@ export async function syncReviewsFromSupabase(options?: { force?: boolean }) {
       if (waitingItems.length > 0) {
         const { syncPendingReviewsToNotifications } = require("@/services/notifications/notification.service");
         syncPendingReviewsToNotifications(waitingItems);
+
+        // Proactively warm multi-worker & other evidence media bundles for top pending reviews
+        const { preloadSubmissionMedia } = require("@/services/storage/supabase-storage.client");
+        for (const pendingItem of waitingItems.slice(0, 6)) {
+          preloadSubmissionMedia(pendingItem.id).catch(() => {});
+        }
       }
     } catch {}
   } catch (err) {
@@ -466,9 +491,11 @@ export async function syncReviewsFromSupabase(options?: { force?: boolean }) {
     isSyncing = false;
     activeReviewsSyncPromise = null;
     if (hasPendingSync) {
+      const shouldForceFollowUp = hasPendingForceSync;
       hasPendingSync = false;
+      hasPendingForceSync = false;
       setTimeout(() => {
-        void syncReviewsFromSupabase();
+        void syncReviewsFromSupabase({ force: shouldForceFollowUp });
       }, 100);
     }
   }
@@ -508,25 +535,21 @@ export function getLiveSyncChannel() {
     // Realtime events are debounced so multiple table inserts coalesce into a single sync call!
     liveSyncChannel
       .on("broadcast", { event: "new_submission" }, () => {
-        debouncedSyncReviews();
+        debouncedSyncReviews(true);
       })
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "ppe_submissions" },
-        () => {
-          debouncedSyncReviews();
-        },
-      )
+      .on("broadcast", { event: "review_completed" }, () => {
+        debouncedSyncReviews(true);
+      })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "ppe_images" },
         () => {
-          debouncedSyncReviews();
+          debouncedSyncReviews(true);
         },
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_reviews" }, () => { debouncedSyncReviews(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_review_reasons" }, () => { debouncedSyncReviews(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "submission_reviews" }, () => { debouncedSyncReviews(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_reviews" }, () => { debouncedSyncReviews(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ppe_review_reasons" }, () => { debouncedSyncReviews(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "submission_reviews" }, () => { debouncedSyncReviews(true); })
       .subscribe((status) => {
         console.log("[reviews.service] Live sync channel status:", status);
         if (status === "SUBSCRIBED") void syncReviewsWhileFocused();
@@ -543,16 +566,21 @@ export async function broadcastNewSubmission(
     siteName?: string;
     workerCount?: number;
     vendorName?: string;
+    submittedBy?: number | string;
+    eventType?: "new_submission" | "review_completed";
   }
 ) {
   try {
     const channel = getLiveSyncChannel();
     if (!channel) return;
+    const eventName = meta?.eventType || "new_submission";
     const payload = {
       submissionId,
       siteName: meta?.siteName,
       workerCount: meta?.workerCount,
       vendorName: meta?.vendorName,
+      submittedBy: meta?.submittedBy,
+      submitted_by: meta?.submittedBy,
       timestamp: Date.now(),
     };
 
@@ -565,36 +593,36 @@ export async function broadcastNewSubmission(
       try {
         await channel.send({
           type: "broadcast",
-          event: "new_submission",
+          event: eventName,
           payload,
         });
       } catch (wsErr) {
         if (typeof (channel as any).httpSend === "function") {
-          await (channel as any).httpSend("new_submission", payload).catch(() => {});
+          await (channel as any).httpSend(eventName, payload).catch(() => {});
         }
       }
     } else if (typeof (channel as any).httpSend === "function") {
       // WebSocket is not connected or still connecting: use explicit httpSend to avoid deprecation warning
       try {
-        await (channel as any).httpSend("new_submission", payload);
+        await (channel as any).httpSend(eventName, payload);
       } catch (httpErr) {
         // Fallback to channel.send if httpSend fails
         await channel.send({
           type: "broadcast",
-          event: "new_submission",
+          event: eventName,
           payload,
         }).catch(() => {});
       }
     } else {
       await channel.send({
         type: "broadcast",
-        event: "new_submission",
+        event: eventName,
         payload,
       }).catch(() => {});
     }
 
     // Immediate local sync on sending device
-    syncReviewsFromSupabase();
+    syncReviewsFromSupabase({ force: true });
   } catch (err) {
     console.warn("[reviews.service] Error broadcasting new submission:", err);
   }
@@ -907,21 +935,29 @@ export async function completeSubmissionReview(
           timeDisplay: formatReviewTime({ timestamp: completionTs }),
         }
       : item);
+    const totalWorkers = workerVerdicts.length;
+    const unsafeCount = workerVerdicts.filter((w) => w.status === 'unsafe').length;
+    const safeCount = workerVerdicts.filter((w) => w.status === 'safe').length;
+
     const workerSummary = workerVerdicts
       .map((w) => `Worker #${w.sequenceNo}: ${w.status === 'safe' ? 'Safe' : `Unsafe (${(w.unsafeReasons || []).join(', ') || 'Violation'})`}`)
       .join('; ');
 
     notify();
-    await broadcastNewSubmission(numId);
+    await broadcastNewSubmission(numId, { eventType: "review_completed" });
     const targetRev = reviews.find((r) => r.id === String(id));
     void broadcastReviewVerdictAlert({
       submissionId: numId,
       siteName: targetRev?.location || 'Site',
       vendorName: targetRev?.vendor,
       vendorProfileId: targetRev?.vendorProfileId,
+      submittedBy: targetRev?.submittedBy,
       verdict: verdictStatus,
       hasUnsafe,
-      workerCount: workerVerdicts.length,
+      totalWorkers,
+      unsafeCount,
+      safeCount,
+      workerCount: totalWorkers,
       workerSummary,
       unsafeReasons: allUnsafeReasons,
       notes: combinedNotes,
@@ -936,6 +972,10 @@ export async function completeSubmissionReview(
       otherReasonText: combinedNotes,
       timestamp: completionTs,
     });
+    const totalWorkers = workerVerdicts.length;
+    const unsafeCount = workerVerdicts.filter((w) => w.status === 'unsafe').length;
+    const safeCount = workerVerdicts.filter((w) => w.status === 'safe').length;
+
     const workerSummary = workerVerdicts
       .map((w) => `Worker #${w.sequenceNo}: ${w.status === 'safe' ? 'Safe' : `Unsafe (${(w.unsafeReasons || []).join(', ') || 'Violation'})`}`)
       .join('; ');
@@ -960,9 +1000,13 @@ export async function completeSubmissionReview(
       siteName: localTargetRev?.location || 'Site',
       vendorName: localTargetRev?.vendor,
       vendorProfileId: localTargetRev?.vendorProfileId,
+      submittedBy: localTargetRev?.submittedBy,
       verdict: verdictStatus,
       hasUnsafe,
-      workerCount: workerVerdicts.length,
+      totalWorkers,
+      unsafeCount,
+      safeCount,
+      workerCount: totalWorkers,
       workerSummary,
       unsafeReasons: allUnsafeReasons,
       notes: combinedNotes,
@@ -995,6 +1039,7 @@ export function useReviews(enabled = true) {
   const unsafe = getUnsafeReviews();
   const recentPending = getRecentPendingReviews(5);
   const inProgress = getInProgressReviews();
+  const pendingIdsKey = pending.map((item) => item.id).join(",");
 
   useEffect(() => {
     if (enabled && pending.length > 0) {
@@ -1003,7 +1048,7 @@ export function useReviews(enabled = true) {
         syncPendingReviewsToNotifications(pending);
       } catch {}
     }
-  }, [enabled, pending]);
+  }, [enabled, pendingIdsKey]);
 
   return {
     allReviews: enabled ? getAllReviews() : [],

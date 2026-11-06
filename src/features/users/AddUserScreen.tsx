@@ -82,8 +82,18 @@ export function AddUserScreen() {
           const namesFromDb = data
             .map((item: any) => item.vendor_name?.trim())
             .filter((name: string) => Boolean(name) && name.length >= 2);
-          const merged = Array.from(new Set([...namesFromDb, ...vendorOptions]));
-          setSavedVendors(merged);
+          const uniqueNames: string[] = [];
+          const seen = new Set<string>();
+          for (const n of namesFromDb) {
+            const lower = n.toLowerCase();
+            if (!seen.has(lower)) {
+              seen.add(lower);
+              uniqueNames.push(n);
+            }
+          }
+          setSavedVendors(uniqueNames.length > 0 ? uniqueNames : vendorOptions);
+        } else {
+          setSavedVendors(vendorOptions);
         }
       } catch (err) {
         console.warn('[AddUserScreen] Error fetching vendor_profiles:', err);
@@ -95,10 +105,13 @@ export function AddUserScreen() {
   function handleSelectOrAddVendor(name: string) {
     const trimmed = name.trim();
     if (!trimmed) return;
-    if (!savedVendors.some((v) => v.toLowerCase() === trimmed.toLowerCase())) {
+    const existing = savedVendors.find((v) => v.toLowerCase() === trimmed.toLowerCase());
+    if (existing) {
+      setSelectedVendor(existing);
+    } else {
       setSavedVendors((prev) => [trimmed, ...prev]);
+      setSelectedVendor(trimmed);
     }
-    setSelectedVendor(trimmed);
     setSearchQuery('');
     setIsDropdownOpen(false);
   }
@@ -225,7 +238,7 @@ export function AddUserScreen() {
 
       // 3. If EXTERNAL user, ensure vendor_members is linked to custom or existing vendor_profile
       if (category === 'EXTERNAL' && createdUserId) {
-        // Look up by vendor name (case-insensitive)
+        // Look up by vendor name (case-insensitive) to prevent duplicate profiles
         const { data: matchedVendor } = await supabase
           .from('vendor_profiles')
           .select('id')
@@ -233,6 +246,20 @@ export function AddUserScreen() {
           .maybeSingle();
 
         let vendorProfileId = matchedVendor?.id;
+
+        if (!vendorProfileId) {
+          const { data: allProfiles } = await supabase
+            .from('vendor_profiles')
+            .select('id, vendor_name');
+
+          const found = allProfiles?.find(
+            (p: any) => (p.vendor_name || '').trim().toLowerCase() === trimmedVendor.toLowerCase()
+          );
+
+          if (found?.id) {
+            vendorProfileId = found.id;
+          }
+        }
 
         if (!vendorProfileId) {
           const { data: newVendorProfile, error: createVendorErr } = await supabase

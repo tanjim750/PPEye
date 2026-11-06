@@ -76,7 +76,7 @@
     }
   },
   "internal": {
-    "greeting": "{{timeGreeting}}, {{name}}",
+    "greeting": "{{timeGreeting}},\n{{name}}",
     "role": "EHS Representative",
     "reviewTitle": "PPE Pendings Reviewes",
     "waitingCount": "{{count}} waiting for review",

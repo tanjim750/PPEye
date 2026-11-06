@@ -198,7 +198,7 @@ export function CaptureScreen() {
 
     return () => {
       isMounted = false;
-      if (Platform.OS === 'android') {
+      if (Platform.OS === 'android' && typeof NativeStatusBar.setBackgroundColor === 'function') {
         NativeStatusBar.setBackgroundColor('#FFFFFF', false);
         NativeStatusBar.setBarStyle('dark-content', false);
       }

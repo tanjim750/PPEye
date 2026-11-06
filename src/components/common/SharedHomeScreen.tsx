@@ -19,6 +19,7 @@ import {
 } from '@/features/submissions/services/workerChecks.service';
 import { formatReviewTime, ReviewItem, useReviews } from '@/features/reviews/services/reviews.service';
 import { InProgressLimitModal } from '@/features/reviews/components/InProgressLimitModal';
+import { ExportReportBottomSheet } from '@/features/reviews/components/ExportReportBottomSheet';
 import {
   clearPendingSubmissionReviewCaptures,
   setPendingResubmissionContext,
@@ -142,6 +143,7 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
   const { pendingReviews, recentPendingReviews, inProgressCount, syncReviewsFromSupabase } = useReviews();
   const [isRefreshingReviewer, setIsRefreshingReviewer] = useState(false);
   const [isInProgressLimitModalVisible, setIsInProgressLimitModalVisible] = useState(false);
+  const [isExportBottomSheetVisible, setIsExportBottomSheetVisible] = useState(false);
   const [, setHomeFocusTick] = useState(0);
 
   const activeUser = user || authStore.user;
@@ -389,12 +391,18 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
                     .map((item, index) => {
                       const isSafe = item.status === 'safe';
-                      const statusLabel = t(`external.statuses.${item.status}`);
+                      const statusKey = item.status || 'review';
+                      const statusLabel = t(`external.statuses.${statusKey}`, {
+                        defaultValue: statusKey === 'safe' ? 'Safe' : statusKey === 'unsafe' ? 'Unsafe' : 'Review',
+                      });
+                      const approvedByEhsText = t('external.history.approvedByEhs', {
+                        defaultValue: i18n.language === 'bn' ? 'EHS দ্বারা অনুমোদিত' : 'Approved by EHS',
+                      });
 
                       return (
                         <Pressable
                           accessibilityRole="button"
-                          key={item.id}
+                          key={String(item.id || index)}
                           onPress={() => {
                             setSelectedVendorCheck(item);
                             setIsVendorDetailsModalVisible(true);
@@ -417,15 +425,15 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                             </View>
 
                             {/* Workers count summary text - matches Reviewer side */}
-                            {item.workerReviews && item.workerReviews.length > 0 && (
+                            {Boolean(item.workerReviews && item.workerReviews.length > 0) ? (
                               <Text style={vendorStyles.workerSummaryText}>
                                 {item.status === 'unsafe'
-                                  ? `${item.workerReviews.filter((w) => w.status === 'unsafe').length} of ${item.workerCount || item.workerReviews.length} workers unsafe`
+                                  ? `${item.workerReviews!.filter((w) => w.status === 'unsafe').length} of ${item.totalSubmissionWorkers || item.workerCount || item.workerReviews!.length} ${item.totalSubmissionWorkers === 1 ? 'worker' : 'workers'} unsafe`
                                   : item.status === 'safe'
-                                  ? `${item.workerReviews.filter((w) => w.status === 'safe').length} of ${item.workerCount || item.workerReviews.length} workers safe`
-                                  : `${item.workerCount || item.workerReviews.length} workers pending review`}
+                                  ? `${item.workerReviews!.filter((w) => w.status === 'safe').length} of ${item.totalSubmissionWorkers || item.workerCount || item.workerReviews!.length} ${item.totalSubmissionWorkers === 1 ? 'worker' : 'workers'} safe`
+                                  : `${item.totalSubmissionWorkers || item.workerCount || item.workerReviews!.length} workers pending review`}
                               </Text>
-                            )}
+                            ) : null}
 
                             <View style={vendorStyles.metaRow}>
                               <View
@@ -469,20 +477,43 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
                                     item.status === 'unsafe' && vendorStyles.unsafeText,
                                     item.status === 'review' && vendorStyles.reviewText,
                                   ]}>
-                                  {item.workerReviews && item.workerReviews.length > 1
-                                    ? item.status === 'unsafe'
-                                      ? `${item.workerReviews.filter((w) => w.status === 'unsafe').length} Unsafe`
-                                      : item.status === 'safe'
-                                      ? `${item.workerReviews.filter((w) => w.status === 'safe').length} Safe`
-                                      : statusLabel
+                                  {item.status === 'unsafe'
+                                    ? (i18n.language === 'bn' ? 'অনিরাপদ' : 'Unsafe')
+                                    : item.status === 'safe'
+                                    ? (i18n.language === 'bn' ? 'নিরাপদ' : 'Safe')
                                     : statusLabel}
                                 </Text>
                               </View>
 
                               {isSafe ? (
                                 <Text style={vendorStyles.badgeHint}>
-                                  {t('external.history.approvedByEhs')}
+                                  {approvedByEhsText}
                                 </Text>
+                              ) : null}
+
+                              {/* Resubmit button directly on unsafe card */}
+                              {item.status === 'unsafe' ? (
+                                <Pressable
+                                  accessibilityRole="button"
+                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                  onPress={(e) => {
+                                    e.stopPropagation?.();
+                                    handleVendorFixAndResubmit(item);
+                                  }}
+                                  style={({ pressed }) => [
+                                    vendorStyles.inlineResubmitBtn,
+                                    pressed && { opacity: 0.75 },
+                                  ]}>
+                                  <Icon
+                                    color="#ffffff"
+                                    name={{ ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' }}
+                                    size={12}
+                                    weight="bold"
+                                  />
+                                  <Text style={vendorStyles.inlineResubmitBtnText}>
+                                    {i18n.language === 'bn' ? 'পুনরায় জমা দিন' : 'Resubmit'}
+                                  </Text>
+                                </Pressable>
                               ) : null}
 
                               <Text style={vendorStyles.viewDetailsText}>Tap to view details</Text>
@@ -559,12 +590,38 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
       <View style={[reviewerStyles.shell, { maxWidth: contentMaxWidth }]}>
         <View style={reviewerStyles.header}>
           <View style={{ flex: 1, paddingRight: 12 }}>
-            <Text numberOfLines={1} style={reviewerStyles.greeting}>
+            <Text numberOfLines={2} style={reviewerStyles.greeting}>
               {t('internal.greeting', { timeGreeting, name: userFirstName })}
             </Text>
             <Text style={reviewerStyles.role}>{activeUser?.designation || t('internal.role')}</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Pressable
+              accessibilityLabel="Export Report"
+              accessibilityRole="button"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => setIsExportBottomSheetVisible(true)}
+              style={({ pressed }) => [
+                {
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: '#f1f5f9',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.75 : 1,
+                },
+              ]}>
+              <Icon
+                color="#00376f"
+                name={{
+                  ios: 'square.and.arrow.up',
+                  android: 'file_download',
+                  web: 'download',
+                }}
+                size={20}
+              />
+            </Pressable>
             <NotificationBell role="reviewer" />
             <Pressable
               accessibilityLabel="Profile"
@@ -787,6 +844,11 @@ export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {})
           visible={isInProgressLimitModalVisible}
           inProgressCount={inProgressCount}
           onClose={() => setIsInProgressLimitModalVisible(false)}
+        />
+
+        <ExportReportBottomSheet
+          visible={isExportBottomSheetVisible}
+          onClose={() => setIsExportBottomSheetVisible(false)}
         />
       </View>
     </SafeAreaView>
@@ -1106,6 +1168,20 @@ const vendorStyles = StyleSheet.create({
     color: vendorColors.textMuted,
     fontSize: 11,
     lineHeight: 14,
+  },
+  inlineResubmitBtn: {
+    alignItems: 'center',
+    backgroundColor: '#ba1a1a',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  inlineResubmitBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   emptyFeed: {
     alignItems: 'center',

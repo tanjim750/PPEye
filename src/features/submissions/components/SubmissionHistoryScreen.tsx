@@ -360,10 +360,10 @@ export function SubmissionHistoryScreen() {
                       {item.workerReviews && item.workerReviews.length > 0 && (
                         <Text style={styles.workerSummaryText}>
                           {activeTab === 'unsafe' || (activeTab === 'all' && item.status === 'unsafe' && !item.workerReviews.some(w => w.status === 'safe'))
-                            ? `${item.workerReviews.filter((w) => w.status === 'unsafe').length} of ${item.workerCount || item.workerReviews.length} workers unsafe`
+                            ? `${item.workerReviews.filter((w) => w.status === 'unsafe').length} of ${item.totalSubmissionWorkers || item.workerCount || item.workerReviews.length} ${item.totalSubmissionWorkers === 1 ? 'worker' : 'workers'} unsafe`
                             : activeTab === 'all'
-                            ? `${item.workerReviews.filter((w) => w.status === 'safe').length} of ${item.workerCount || item.workerReviews.length} workers safe`
-                            : `${item.workerCount || item.workerReviews.length} workers pending review`}
+                            ? `${item.workerReviews.filter((w) => w.status === 'safe').length} of ${item.totalSubmissionWorkers || item.workerCount || item.workerReviews.length} ${item.totalSubmissionWorkers === 1 ? 'worker' : 'workers'} safe`
+                            : `${item.totalSubmissionWorkers || item.workerCount || item.workerReviews.length} workers pending review`}
                         </Text>
                       )}
 

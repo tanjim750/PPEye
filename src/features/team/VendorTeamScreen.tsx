@@ -45,7 +45,11 @@ export function VendorTeamScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const permissions = getVendorPermissions(user?.externalType);
+  const isInternalAdmin = user?.category === 'INTERNAL' || user?.role === 'reviewer' || user?.role === 'internal';
+  const permissions = {
+    ...getVendorPermissions(user?.externalType),
+    canManageTeamMembers: isInternalAdmin && getVendorPermissions(user?.externalType).canManageTeamMembers,
+  };
 
   const [members, setMembers] = useState<VendorTeamMemberItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);

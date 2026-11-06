@@ -31,8 +31,14 @@ import { StorageError, StorageErrorCode } from '../storage.errors';
 import {
   clearSignedUrlCache,
   getCachedSignedUrl,
+  getPreloadedSubmissionMediaSync,
   invalidateSubmissionPreloadCache,
   ONE_DAY_SECONDS,
+  prefetchUrlWithRetry,
+  preloadSubmissionMedia,
+  retryWithBackoff,
+  setImagePrefetchOverride,
+  setSupabaseDbClientOverride,
   setSupabaseStorageClientOverride,
   SupabaseStorageService,
 } from '../supabase-storage.client';
@@ -849,6 +855,164 @@ export async function runSupabaseStorageTests(): Promise<{ passed: number; faile
 
   await test('supabase_storage_service NEVER invokes Google Drive', () => {
     assert.strictEqual(googleDriveCallCount, 0, 'Storage service must have zero Google Drive invocations');
+  });
+
+  // =========================================================================
+  // 8. Multi-Worker & Other Evidence Batch Preloading + 2x Backoff Retry
+  // =========================================================================
+  console.log('\n• Suite: Multi-Worker Batch Preloading & 2x Exponential Backoff');
+
+  await test('prefetchUrlWithRetry retries 2x when Image.prefetch returns false or throws', async () => {
+    let attempts = 0;
+    setImagePrefetchOverride(async () => {
+      attempts++;
+      if (attempts < 3) return false;
+      return true;
+    });
+
+    try {
+      const ok = await prefetchUrlWithRetry('https://example.com/worker2_front.jpg', 5);
+      assert.strictEqual(ok, true, 'Should succeed on 2nd retry (3rd total attempt)');
+      assert.strictEqual(attempts, 3, 'Should invoke prefetch 3 times total');
+
+      let failAttempts = 0;
+      setImagePrefetchOverride(async () => {
+        failAttempts++;
+        throw new Error('transient socket error');
+      });
+      const failedOk = await prefetchUrlWithRetry('https://example.com/unreachable.jpg', 5);
+      assert.strictEqual(failedOk, false, 'Should gracefully return false after exhausting 2 retries');
+      assert.strictEqual(failAttempts, 3, 'Should stop after initial + 2 retries');
+    } finally {
+      setImagePrefetchOverride(null);
+    }
+  });
+
+  await test('preloadSubmissionMedia batch-preloads all workers + other photos and reuses cache with 0 DB queries', async () => {
+    clearSignedUrlCache();
+    let preloadDbQueries = 0;
+    const prefetchedUrls: string[] = [];
+    let transientSignFailures = 0;
+
+    const w1Front = 'submissions/777/workers/1/front_a.jpg';
+    const w1Back = 'submissions/777/workers/1/back_a.jpg';
+    const w2Front = 'submissions/777/workers/2/front_b.jpg';
+    const w2Back = 'submissions/777/workers/2/back_b.jpg';
+    const w3Front = 'submissions/777/workers/3/front_c.jpg';
+    const w3Back = 'submissions/777/workers/3/back_c.jpg';
+    const oth1 = 'submissions/777/others/1_site.jpg';
+
+    for (const p of [w1Front, w1Back, w2Front, w2Back, w3Front, w3Back, oth1]) {
+      mockStorageStore.set(`evidence:${p}`, {
+        bucket: 'evidence',
+        path: p,
+        data: new Uint8Array([1, 2, 3]),
+        contentType: 'image/jpeg',
+        size: 3,
+      });
+    }
+
+    const baseMockClient = createMockSupabaseStorageClient();
+    const customStorageMock = {
+      storage: {
+        from: (bucket: StorageBucket) => ({
+          ...baseMockClient.storage.from(bucket),
+          createSignedUrl: async (p: string, exp: number) => {
+            if (p === w2Front && transientSignFailures < 2) {
+              transientSignFailures++;
+              return { data: null, error: { message: 'Temporary 503 network timeout', statusCode: 503 } };
+            }
+            return baseMockClient.storage.from(bucket).createSignedUrl(p, exp);
+          },
+        }),
+      },
+    };
+    setSupabaseStorageClientOverride(customStorageMock);
+
+    setImagePrefetchOverride(async (url, policy) => {
+      assert.strictEqual(policy, 'memory-disk', 'Must prefetch with memory-disk policy');
+      prefetchedUrls.push(url);
+      return true;
+    });
+
+    setSupabaseDbClientOverride({
+      from: (table: string) => ({
+        select: () => ({
+          eq: (_col: string, _val: number) => {
+            preloadDbQueries++;
+            if (table === 'ppe_worker_instances') {
+              return Promise.resolve({
+                data: [
+                  {
+                    id: 102,
+                    sequence_no: 2,
+                    ppe_images: [
+                      { id: 3, side: 'FRONT', files: { provider_file_id: w2Front, storage_provider: 'SUPABASE' } },
+                      { id: 4, side: 'BACK', files: { provider_file_id: w2Back, storage_provider: 'SUPABASE' } },
+                    ],
+                  },
+                  {
+                    id: 101,
+                    sequence_no: 1,
+                    ppe_images: [
+                      { id: 1, side: 'FRONT', files: { provider_file_id: w1Front, storage_provider: 'SUPABASE' } },
+                      { id: 2, side: 'BACK', files: { provider_file_id: w1Back, storage_provider: 'SUPABASE' } },
+                    ],
+                  },
+                  {
+                    id: 103,
+                    sequence_no: 3,
+                    ppe_images: [
+                      { id: 5, side: 'FRONT', files: { provider_file_id: w3Front, storage_provider: 'SUPABASE' } },
+                      { id: 6, side: 'BACK', files: { provider_file_id: w3Back, storage_provider: 'SUPABASE' } },
+                    ],
+                  },
+                ],
+                error: null,
+              });
+            }
+            if (table === 'other_images') {
+              return Promise.resolve({
+                data: [
+                  { id: 501, sequence_no: 1, files: { provider_file_id: oth1, storage_provider: 'SUPABASE' } },
+                ],
+                error: null,
+              });
+            }
+            return {
+              maybeSingle: () =>
+                Promise.resolve({ data: { metadata: { totalWorkers: 3 } }, error: null }),
+            };
+          },
+        }),
+      }),
+    });
+
+    try {
+      const bundle = await preloadSubmissionMedia(777, { retryDelayMs: 5, awaitPrefetch: true });
+      assert.strictEqual(bundle.workers.length, 3, 'All 3 workers resolved up front');
+      assert.strictEqual(bundle.workers[0].sequenceNo, 1, 'Sorted by sequence_no');
+      assert.strictEqual(bundle.workers[1].sequenceNo, 2);
+      assert.strictEqual(bundle.workers[2].sequenceNo, 3);
+      assert.strictEqual(transientSignFailures, 2, 'Recovered Worker 2 front signed URL after 2x backoff retry');
+      assert.strictEqual(bundle.workers[1].frontCandidates.length, 1);
+      assert.strictEqual(bundle.workers[1].frontCandidates[0].cacheKey, w2Front);
+      assert.strictEqual(bundle.otherPhotos.length, 1, 'Other evidence resolved up front');
+      assert.strictEqual(prefetchedUrls.length, 7, 'All 6 worker photos + 1 other photo prefetched into memory-disk');
+      assert.strictEqual(preloadDbQueries, 3, 'Exactly 1 parallel batch of 3 queries');
+
+      // Sync lookup + second async lookup must execute ZERO additional DB queries
+      const syncCached = getPreloadedSubmissionMediaSync(777);
+      assert(syncCached !== null && syncCached.workers.length === 3, 'Sync cache hydrated');
+      const bundleAgain = await preloadSubmissionMedia(777);
+      assert.strictEqual(bundleAgain.workers.length, 3);
+      assert.strictEqual(preloadDbQueries, 3, 'Zero additional DB queries when switching workers or reopening');
+    } finally {
+      setSupabaseDbClientOverride(null);
+      setImagePrefetchOverride(null);
+      setSupabaseStorageClientOverride(null);
+      invalidateSubmissionPreloadCache(777);
+    }
   });
 
   console.log(`\n========================================`);

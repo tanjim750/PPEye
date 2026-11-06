@@ -606,7 +606,7 @@ export function ReviewHistoryScreen() {
                           ).map((r) => (
                             <View key={r} style={styles.reasonTag}>
                               <Text style={styles.reasonTagText}>
-                                {unsafeReasonLabels[r] || r}
+                                {r.toLowerCase().includes('other') ? 'Other' : (unsafeReasonLabels[r] || r)}
                               </Text>
                             </View>
                           ))}
@@ -834,6 +834,7 @@ export function ReviewHistoryScreen() {
                                 <View style={detailsStyles.reasonsGrid}>
                                   {worker.unsafeReasons && worker.unsafeReasons.length > 0 ? (
                                     worker.unsafeReasons.map((r) => {
+                                      const isOther = r.toLowerCase().includes('other');
                                       const iconConfig = reasonIcons[r] || reasonIcons.other;
                                       return (
                                         <View key={r} style={detailsStyles.reasonItem}>
@@ -845,7 +846,7 @@ export function ReviewHistoryScreen() {
                                             />
                                           </View>
                                           <Text style={detailsStyles.reasonItemText}>
-                                            {unsafeReasonLabels[r] || r}
+                                            {isOther ? 'Other' : (unsafeReasonLabels[r] || r)}
                                           </Text>
                                         </View>
                                       );

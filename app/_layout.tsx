@@ -1,15 +1,10 @@
 import "@/i18n";
 
-import { Stack } from "expo-router";
+import { Href, Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
-import { useEffect } from "react";
-import {
-  LogBox,
-  StatusBar as NativeStatusBar,
-  Platform,
-  View,
-} from "react-native";
+import { useEffect, useRef } from "react";
+import { LogBox, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { RealtimeNotificationBanner } from "@/components/common/RealtimeNotificationBanner";
@@ -18,6 +13,11 @@ import {
   initializeRealtimeNotifications,
   requestNotificationPermission,
 } from "@/services/notifications/notification.service";
+import {
+  bindPushDeepLinkNavigation,
+  flushPendingPushDeepLink,
+  initializePushNotificationLifecycle,
+} from "@/services/notifications/pushNotification.service";
 
 LogBox.ignoreLogs([
   "Response.blob() is using React Native's Blob",
@@ -30,23 +30,36 @@ export const unstable_settings = {
 
 function RootNavigator() {
   const { language } = useLanguage();
+  const router = useRouter();
+  const segments = useSegments();
+  const isAuthenticatedShellReadyRef = useRef(false);
+
+  const topGroup = segments[0];
+  isAuthenticatedShellReadyRef.current =
+    topGroup === "(external)" || topGroup === "(internal)" || topGroup === "settings";
 
   useEffect(() => {
-    // Forcefully set status bar to white background and black/dark content
-    if (Platform.OS === "android") {
-      NativeStatusBar.setBackgroundColor("#FFFFFF", false);
-      NativeStatusBar.setBarStyle("dark-content", false);
-    }
     void SystemUI.setBackgroundColorAsync("#FFFFFF");
   }, []);
 
+  useEffect(() => {
+    return bindPushDeepLinkNavigation(
+      (href) => {
+        router.push(href as Href);
+      },
+      () => isAuthenticatedShellReadyRef.current
+    );
+  }, [router]);
+
+  useEffect(() => {
+    if (isAuthenticatedShellReadyRef.current) {
+      flushPendingPushDeepLink();
+    }
+  }, [topGroup]);
+
   return (
     <View key={language} style={{ flex: 1, backgroundColor: "#F7F9FC" }}>
-      <NativeStatusBar
-        backgroundColor="#FFFFFF"
-        barStyle="dark-content"
-        translucent={false}
-      />
+      <StatusBar style="dark" backgroundColor="#FFFFFF" translucent={false} />
       <Stack
         initialRouteName="index"
         screenOptions={{
@@ -69,15 +82,12 @@ function RootNavigator() {
 
 export default function RootLayout() {
   useEffect(() => {
-    if (Platform.OS === "android") {
-      NativeStatusBar.setBackgroundColor("#FFFFFF", false);
-      NativeStatusBar.setBarStyle("dark-content", false);
-    }
     void SystemUI.setBackgroundColorAsync("#FFFFFF");
 
     // Request system / browser notification permission on initial load for OS popup support
     void requestNotificationPermission();
     void initializeRealtimeNotifications();
+    initializePushNotificationLifecycle();
   }, []);
 
   return (

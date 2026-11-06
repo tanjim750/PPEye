@@ -313,7 +313,7 @@ export function SubmissionDetailsActionRequiredScreen() {
             <View style={styles.alertTextContainer}>
               <Text style={styles.alertTitle}>Marked as UNSAFE by Reviewer</Text>
               <Text style={styles.alertLocation}>
-                {`${currentWorker?.siteName || 'Gazipur-ER-102'} • ${timeDisplay}`}
+                {`${siteName || 'Inspection Site'} • ${timeDisplay}`}
               </Text>
             </View>
           </View>
@@ -334,14 +334,7 @@ export function SubmissionDetailsActionRequiredScreen() {
 
                 const iconConfig = reasonIcons[matchedKey] || reasonIcons.other;
                 const isOther = matchedKey === 'other' || r.toLowerCase().includes('other');
-                const isMultiWorker = Boolean(currentWorker?.workerReviews && currentWorker.workerReviews.length > 1);
-                const workerNote =
-                  activeWorkerFromLive?.reasons?.find((reason) => reason.code.toLowerCase().includes('other') || reason.note)?.note ||
-                  currentWorker?.workerReviews?.find((w) => w.sequenceNo === workerNumber)?.otherReasonText ||
-                  (!isMultiWorker ? (currentWorker?.reviewerNote || liveDetail?.reviewerFeedback) : undefined);
-                const label = isOther && workerNote
-                  ? `Other: ${workerNote}`
-                  : (unsafeReasonLabels[matchedKey] || r);
+                const label = isOther ? 'Other' : (unsafeReasonLabels[matchedKey] || r);
 
                 return (
                   <View key={r} style={styles.reasonItem}>

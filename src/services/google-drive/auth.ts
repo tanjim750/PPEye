@@ -70,6 +70,13 @@ function getNativeGoogleSignIn(): IGoogleSignInNativeModule | null {
     return null;
   }
   try {
+    const { TurboModuleRegistry } = require('react-native');
+    if (TurboModuleRegistry && typeof TurboModuleRegistry.get === 'function') {
+      const hasModule = TurboModuleRegistry.get('RNGoogleSignin');
+      if (!hasModule) {
+        return null;
+      }
+    }
     const mod = require('@react-native-google-signin/google-signin');
     return mod?.GoogleSignin ?? mod?.default ?? mod;
   } catch {

@@ -33,7 +33,15 @@ import {
 } from '@/features/reviews/services/reviews.service';
 import { supabase } from '@/services/supabase/client';
 import { getCachedImageUri, getImageUri } from '@/utils/image';
-import { preloadSubmissionSignedUrls } from '@/services/storage/supabase-storage.client';
+import {
+  getPreloadedSubmissionMediaSync,
+  preloadSubmissionMedia,
+  type PreloadedMediaSource,
+  type PreloadedOtherMedia,
+  type PreloadedWorkerMedia,
+} from '@/services/storage/supabase-storage.client';
+
+const PHOTO_BLURHASH = 'L6PZfSi_.AyE_3t7t7R**0o#DgR4';
 
 const colors = {
   background: '#f9f9ff',
@@ -113,7 +121,12 @@ export function ReviewDetailScreen() {
     ? formatReviewDateTime(currentReview)
     : '10:42 AM';
 
-  const [dbWorkerCount, setDbWorkerCount] = useState<number | null>(null);
+  const initialPreloadedBundle = getPreloadedSubmissionMediaSync(submissionId);
+  const [dbWorkerCount, setDbWorkerCount] = useState<number | null>(() =>
+    initialPreloadedBundle && initialPreloadedBundle.workers.length > 0
+      ? initialPreloadedBundle.workers.length
+      : null
+  );
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const totalWorkers = dbWorkerCount || currentReview?.workers || 1;
   const [workerVerdicts, setWorkerVerdicts] = useState<Record<number, WorkerReviewVerdict>>(() => {
@@ -138,6 +151,12 @@ export function ReviewDetailScreen() {
   const verdictsRef = useRef<Record<number, WorkerReviewVerdict>>(workerVerdicts);
   const isCompletedRef = useRef(false);
   const [isExitConfirmVisible, setIsExitConfirmVisible] = useState(false);
+
+  // Other / Site Evidence States for Final 2x2 Inspection
+  const [isOtherStep, setIsOtherStep] = useState(false);
+  const [otherPhotosList, setOtherPhotosList] = useState<PreloadedOtherMedia[]>(
+    () => initialPreloadedBundle?.otherPhotos || []
+  );
 
   useEffect(() => {
     // When reviewer enters, immediately mark as in-progress draft
@@ -196,427 +215,321 @@ export function ReviewDetailScreen() {
     setZoomScale(1);
   }
 
-type AuthImageSource = {
-  uri: string;
-  headers?: Record<string, string>;
-};
+  type AuthImageSource = PreloadedMediaSource;
 
-async function buildImageSourceCandidates(
-  fileIdOrUri?: string | null,
-  forceRefreshAuth?: boolean,
-  storageProvider?: string,
-): Promise<AuthImageSource[]> {
-  if (!fileIdOrUri || !fileIdOrUri.trim()) return [];
-  const clean = fileIdOrUri.trim();
-  if (
-    clean.startsWith('file://') ||
-    clean.startsWith('ph://') ||
-    clean.startsWith('content://')
-  ) {
-    return [{ uri: clean }];
-  }
-
-  const isSupabase =
-    storageProvider === 'SUPABASE' ||
-    clean.startsWith('submissions/') ||
-    clean.startsWith('users/') ||
-    (clean.includes('/') && !clean.startsWith('http://') && !clean.startsWith('https://'));
-
-  if (isSupabase) {
-    const list: AuthImageSource[] = [];
-
-    // 1. Check local disk cache first
-    const localCached = await getCachedImageUri(clean).catch(() => null);
-    if (localCached) {
-      list.push({ uri: localCached });
+  async function buildImageSourceCandidates(
+    fileIdOrUri?: string | null,
+    forceRefreshAuth?: boolean,
+    storageProvider?: string,
+  ): Promise<AuthImageSource[]> {
+    if (!fileIdOrUri || !fileIdOrUri.trim()) return [];
+    const clean = fileIdOrUri.trim();
+    if (
+      clean.startsWith('file://') ||
+      clean.startsWith('ph://') ||
+      clean.startsWith('content://')
+    ) {
+      return [{ uri: clean, cacheKey: clean }];
     }
 
-    // 2. Primary authorized endpoint via Supabase Storage signed URL
-    try {
-      const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
-      const bucket = clean.startsWith('users/') ? 'avatars' : 'evidence';
-      const signedRes = await supabaseStorageService.createSignedUrl(bucket, clean, 86400);
-      const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
-      if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http')) {
-        list.push({ uri: urlStr });
+    const isSupabase =
+      storageProvider === 'SUPABASE' ||
+      clean.startsWith('submissions/') ||
+      clean.startsWith('users/') ||
+      (clean.includes('/') && !clean.startsWith('http://') && !clean.startsWith('https://'));
+
+    if (isSupabase) {
+      const list: AuthImageSource[] = [];
+
+      const localCached = await getCachedImageUri(clean).catch(() => null);
+      if (localCached) {
+        list.push({ uri: localCached, cacheKey: clean });
       }
-    } catch (err) {
-      console.warn('[ReviewDetail] Failed to create Supabase signed URL for:', clean, err);
-    }
 
-    return list;
-  }
-
-  // Google Drive legacy photos are completely removed
-  if (clean.startsWith('http://') || clean.startsWith('https://')) {
-    if (clean.includes('drive.google.com') || clean.includes('googleusercontent.com')) {
-      return [];
-    }
-    return [{ uri: clean }];
-  }
-
-  return [];
-}
-
-  // Private authorized image previews for FRONT and BACK
-  const [frontSource, setFrontSource] = useState<AuthImageSource | null>(null);
-  const [backSource, setBackSource] = useState<AuthImageSource | null>(null);
-  const frontUri = frontSource?.uri || null;
-  const backUri = backSource?.uri || null;
-  const [isLoadingImages, setIsLoadingImages] = useState(false);
-  const [isFrontLoading, setIsFrontLoading] = useState(false);
-  const [isBackLoading, setIsBackLoading] = useState(false);
-  const [frontLoadError, setFrontLoadError] = useState(false);
-  const [backLoadError, setBackLoadError] = useState(false);
-  const [hasFrontRecord, setHasFrontRecord] = useState(true);
-  const [hasBackRecord, setHasBackRecord] = useState(true);
-
-  const frontCandidatesRef = useRef<AuthImageSource[]>([]);
-  const frontCandidateIndexRef = useRef<number>(0);
-  const backCandidatesRef = useRef<AuthImageSource[]>([]);
-  const backCandidateIndexRef = useRef<number>(0);
-  const frontDriveIdRef = useRef<string | null>(null);
-  const backDriveIdRef = useRef<string | null>(null);
-
-  type WorkerCachedData = {
-    frontSource: AuthImageSource | null;
-    backSource: AuthImageSource | null;
-    frontCandidates: AuthImageSource[];
-    backCandidates: AuthImageSource[];
-    frontDriveId: string | null;
-    backDriveId: string | null;
-    hasFrontRecord: boolean;
-    hasBackRecord: boolean;
-  };
-
-  const workerCacheRef = useRef<Record<number, WorkerCachedData>>({});
-  const allWorkerInstancesRef = useRef<any[]>([]);
-
-  const handleFrontImageError = async () => {
-    const candidates = frontCandidatesRef.current;
-    const nextIdx = frontCandidateIndexRef.current + 1;
-    if (nextIdx < candidates.length) {
-      console.log(`[ReviewDetail] Front photo fallback: trying candidate ${nextIdx + 1}/${candidates.length}`);
-      frontCandidateIndexRef.current = nextIdx;
-      setFrontSource(candidates[nextIdx]);
-      setIsFrontLoading(true);
-    } else {
-      console.warn('[ReviewDetail] All front image candidate URLs failed to load');
-      setIsFrontLoading(false);
-      setFrontLoadError(true);
-    }
-  };
-
-  const handleBackImageError = async () => {
-    const candidates = backCandidatesRef.current;
-    const nextIdx = backCandidateIndexRef.current + 1;
-    if (nextIdx < candidates.length) {
-      console.log(`[ReviewDetail] Back photo fallback: trying candidate ${nextIdx + 1}/${candidates.length}`);
-      backCandidateIndexRef.current = nextIdx;
-      setBackSource(candidates[nextIdx]);
-      setIsBackLoading(true);
-    } else {
-      console.warn('[ReviewDetail] All back image candidate URLs failed to load');
-      setIsBackLoading(false);
-      setBackLoadError(true);
-    }
-  };
-
-  const retryFrontImage = async () => {
-    setFrontLoadError(false);
-    setIsFrontLoading(true);
-    const driveId = frontDriveIdRef.current;
-    if (driveId) {
       try {
-        const local = await getImageUri(driveId, { forceRefresh: true });
-        if (local) {
-          setFrontSource({ uri: local });
-          setIsFrontLoading(false);
-          return;
+        const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+        const bucket = clean.startsWith('users/') ? 'avatars' : 'evidence';
+        const signedRes = await supabaseStorageService.createSignedUrl(
+          bucket,
+          clean,
+          86400,
+          { forceRefresh: Boolean(forceRefreshAuth) }
+        );
+        const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
+        if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http')) {
+          list.push({ uri: urlStr, cacheKey: clean });
         }
       } catch (err) {
-        console.warn('[ReviewDetail] retryFrontImage getImageUri error:', err);
+        console.warn('[ReviewDetail] Failed to create Supabase signed URL for:', clean, err);
       }
+
+      return list;
     }
-    const candidates = await buildImageSourceCandidates(driveId, true);
-    frontCandidatesRef.current = candidates;
-    frontCandidateIndexRef.current = 0;
-    if (candidates.length > 0) {
-      setFrontSource(candidates[0]);
-    } else {
-      setIsFrontLoading(false);
-      setFrontLoadError(true);
+
+    if (clean.startsWith('http://') || clean.startsWith('https://')) {
+      if (clean.includes('drive.google.com') || clean.includes('googleusercontent.com')) {
+        return [];
+      }
+      return [{ uri: clean, cacheKey: clean }];
     }
+
+    return [];
+  }
+
+  const [workersMedia, setWorkersMedia] = useState<PreloadedWorkerMedia[]>(
+    () => initialPreloadedBundle?.workers || []
+  );
+  const [isLoadingImages, setIsLoadingImages] = useState<boolean>(() => {
+    const parsed = Number(submissionId);
+    if (!parsed || isNaN(parsed)) return false;
+    return !initialPreloadedBundle || initialPreloadedBundle.workers.length === 0;
+  });
+
+  // Per-photo permanent decode & fallback tracking across all workers and other evidence
+  const [loadedPhotoKeys, setLoadedPhotoKeys] = useState<Record<string, boolean>>({});
+  const [errorPhotoKeys, setErrorPhotoKeys] = useState<Record<string, boolean>>({});
+  const [photoSourceOverride, setPhotoSourceOverride] = useState<Record<string, AuthImageSource>>({});
+  const [photoReloadNonce, setPhotoReloadNonce] = useState<Record<string, number>>({});
+
+  const photoRetryStateRef = useRef<
+    Record<string, { candidateIdx: number; retryAttempt: number; inProgress: boolean }>
+  >({});
+  const isMountedRef = useRef(true);
+  const allWorkerInstancesRef = useRef<any[]>(
+    (initialPreloadedBundle?.workers || []).map((w) => ({
+      id: w.workerId,
+      sequence_no: w.sequenceNo,
+      worker_name: w.workerName,
+    }))
+  );
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const getWorkerPhotoKey = (displayIndex: number, side: 'front' | 'back') =>
+    `w_${displayIndex}_${side}`;
+  const getOtherPhotoKey = (photoId: number) => `other_${photoId}`;
+
+  const resolvePhotoSource = (
+    photoKey: string,
+    candidates: AuthImageSource[]
+  ): AuthImageSource | null => {
+    return photoSourceOverride[photoKey] || candidates[0] || null;
   };
 
-  const retryBackImage = async () => {
-    setBackLoadError(false);
-    setIsBackLoading(true);
-    const driveId = backDriveIdRef.current;
-    if (driveId) {
+  const markPhotoLoaded = (photoKey: string) => {
+    setLoadedPhotoKeys((prev) => (prev[photoKey] ? prev : { ...prev, [photoKey]: true }));
+    setErrorPhotoKeys((prev) => (prev[photoKey] ? { ...prev, [photoKey]: false } : prev));
+  };
+
+  // Automatic 2x exponential-backoff retry before displaying manual "Tap to Retry"
+  const handlePhotoError = async (
+    photoKey: string,
+    storagePath: string | null,
+    baseCandidates: AuthImageSource[]
+  ) => {
+    if (!isMountedRef.current) return;
+    const state = photoRetryStateRef.current[photoKey] || {
+      candidateIdx: 0,
+      retryAttempt: 0,
+      inProgress: false,
+    };
+    if (state.inProgress) return;
+
+    if (state.candidateIdx + 1 < baseCandidates.length) {
+      state.candidateIdx += 1;
+      photoRetryStateRef.current[photoKey] = state;
+      const fallbackSrc = baseCandidates[state.candidateIdx];
+      setPhotoSourceOverride((prev) => ({ ...prev, [photoKey]: fallbackSrc }));
+      setPhotoReloadNonce((prev) => ({ ...prev, [photoKey]: (prev[photoKey] || 0) + 1 }));
+      return;
+    }
+
+    if (state.retryAttempt < 2 && storagePath) {
+      state.inProgress = true;
+      state.retryAttempt += 1;
+      photoRetryStateRef.current[photoKey] = state;
+      const delayMs = 400 * Math.pow(2, state.retryAttempt - 1);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      if (!isMountedRef.current) return;
+
       try {
-        const local = await getImageUri(driveId, { forceRefresh: true });
-        if (local) {
-          setBackSource({ uri: local });
-          setIsBackLoading(false);
+        let nextSrc: AuthImageSource | null = null;
+        const downloaded = await getImageUri(storagePath, {
+          forceRefresh: true,
+          storageProvider: 'SUPABASE',
+        }).catch(() => null);
+        if (downloaded) {
+          nextSrc = { uri: downloaded, cacheKey: storagePath };
+        } else {
+          const fresh = await buildImageSourceCandidates(storagePath, true, 'SUPABASE');
+          nextSrc = fresh[fresh.length - 1] || fresh[0] || null;
+        }
+        state.inProgress = false;
+        if (nextSrc && isMountedRef.current) {
+          setPhotoSourceOverride((prev) => ({ ...prev, [photoKey]: nextSrc! }));
+          setPhotoReloadNonce((prev) => ({ ...prev, [photoKey]: (prev[photoKey] || 0) + 1 }));
           return;
         }
-      } catch (err) {
-        console.warn('[ReviewDetail] retryBackImage getImageUri error:', err);
+      } catch {
+        state.inProgress = false;
       }
     }
-    const candidates = await buildImageSourceCandidates(driveId, true);
-    backCandidatesRef.current = candidates;
-    backCandidateIndexRef.current = 0;
-    if (candidates.length > 0) {
-      setBackSource(candidates[0]);
-    } else {
-      setIsBackLoading(false);
-      setBackLoadError(true);
+
+    if (isMountedRef.current) {
+      setErrorPhotoKeys((prev) => ({ ...prev, [photoKey]: true }));
+      setLoadedPhotoKeys((prev) => ({ ...prev, [photoKey]: true }));
     }
   };
 
-  // 1. Fetch ALL worker instances and pre-cache their inspection photos in parallel
+  const retryPhoto = async (
+    photoKey: string,
+    storagePath: string | null,
+    baseCandidates: AuthImageSource[]
+  ) => {
+    photoRetryStateRef.current[photoKey] = {
+      candidateIdx: 0,
+      retryAttempt: 0,
+      inProgress: false,
+    };
+    setErrorPhotoKeys((prev) => ({ ...prev, [photoKey]: false }));
+    setLoadedPhotoKeys((prev) => ({ ...prev, [photoKey]: false }));
+
+    if (storagePath) {
+      const downloaded = await getImageUri(storagePath, {
+        forceRefresh: true,
+        storageProvider: 'SUPABASE',
+      }).catch(() => null);
+      if (downloaded && isMountedRef.current) {
+        setPhotoSourceOverride((prev) => ({
+          ...prev,
+          [photoKey]: { uri: downloaded, cacheKey: storagePath },
+        }));
+        setPhotoReloadNonce((prev) => ({ ...prev, [photoKey]: (prev[photoKey] || 0) + 1 }));
+        return;
+      }
+      const fresh = await buildImageSourceCandidates(storagePath, true, 'SUPABASE');
+      if (fresh.length > 0 && isMountedRef.current) {
+        setPhotoSourceOverride((prev) => ({ ...prev, [photoKey]: fresh[0] }));
+        setPhotoReloadNonce((prev) => ({ ...prev, [photoKey]: (prev[photoKey] || 0) + 1 }));
+        return;
+      }
+    }
+
+    if (baseCandidates.length > 0) {
+      setPhotoSourceOverride((prev) => ({ ...prev, [photoKey]: baseCandidates[0] }));
+      setPhotoReloadNonce((prev) => ({ ...prev, [photoKey]: (prev[photoKey] || 0) + 1 }));
+    } else {
+      setErrorPhotoKeys((prev) => ({ ...prev, [photoKey]: true }));
+      setLoadedPhotoKeys((prev) => ({ ...prev, [photoKey]: true }));
+    }
+  };
+
+  // Single-batch resolution + eager memory-disk preloading for ALL workers & Other photos on mount
   useEffect(() => {
     let isCancelled = false;
     const parsedSubId = Number(submissionId);
     if (!parsedSubId || isNaN(parsedSubId)) {
       setIsLoadingImages(false);
-      setIsFrontLoading(false);
-      setIsBackLoading(false);
       return;
     }
 
-    workerCacheRef.current = {};
-    setIsLoadingImages(true);
+    photoRetryStateRef.current = {};
+    const cachedSync = getPreloadedSubmissionMediaSync(parsedSubId);
+    if (cachedSync && cachedSync.workers.length > 0) {
+      setWorkersMedia(cachedSync.workers);
+      setOtherPhotosList(cachedSync.otherPhotos);
+      setDbWorkerCount(cachedSync.workers.length);
+      allWorkerInstancesRef.current = cachedSync.workers.map((w) => ({
+        id: w.workerId,
+        sequence_no: w.sequenceNo,
+        worker_name: w.workerName,
+      }));
+      setIsLoadingImages(false);
+    } else {
+      setIsLoadingImages(true);
+    }
 
-    async function loadAndPrecacheAllWorkers() {
+    (async () => {
       try {
-        // Preload and reuse 1-day signed URLs for all images of this submission
-        preloadSubmissionSignedUrls(parsedSubId).catch(() => {});
-
-        const { data: instances, error: instError } = await supabase
-          .from('ppe_worker_instances')
-          .select(`
-            id,
-            sequence_no,
-            ppe_images (
-              id,
-              side,
-              file_id,
-              files (
-                id,
-                file_name,
-                provider_file_id,
-                storage_provider
-              )
-            )
-          `)
-          .eq('submission_id', parsedSubId);
-
-        const instList: any[] = ((instances as any[]) || []).sort(
-          (a, b) => (Number(a.sequence_no) || 0) - (Number(b.sequence_no) || 0)
-        );
-        if (instError || instList.length === 0) {
-          console.warn('[ReviewDetailScreen] No worker instances found for sub:', parsedSubId, instError);
+        let bundle = await preloadSubmissionMedia(parsedSubId);
+        // If vendor just inserted the submission milliseconds ago, retry once with refresh
+        if (!isCancelled && bundle.workers.length === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
           if (!isCancelled) {
-            setIsLoadingImages(false);
-            setIsFrontLoading(false);
-            setIsBackLoading(false);
-            setHasFrontRecord(false);
-            setHasBackRecord(false);
+            bundle = await preloadSubmissionMedia(parsedSubId, { forceRefresh: true });
           }
-          return;
         }
+        if (isCancelled) return;
 
-        if (!isCancelled) {
-          setDbWorkerCount(instList.length);
-          allWorkerInstancesRef.current = instList;
-        }
-
-        // Process all workers in parallel
-        await Promise.all(
-          instList.map(async (worker, idx) => {
-            const displayIndex = idx + 1;
-            const dbSeqNo = Number(worker.sequence_no) || displayIndex;
-            const images = (worker.ppe_images as any[]) || [];
-            const frontImages = images
-              .filter((img) => img.side === 'FRONT')
-              .sort((a, b) => (b.id || 0) - (a.id || 0));
-            const frontImg = frontImages[0];
-
-            const backImages = images
-              .filter((img) => img.side === 'BACK')
-              .sort((a, b) => (b.id || 0) - (a.id || 0));
-            const backImg = backImages[0];
-
-            const frontRawFile = Array.isArray(frontImg?.files) ? frontImg.files[0] : frontImg?.files;
-            let frontProvider = frontRawFile?.storage_provider || (frontRawFile?.provider_file_id?.includes('/') ? 'SUPABASE' : 'GOOGLE_DRIVE');
-            let frontDriveId = frontRawFile?.provider_file_id;
-            if (!frontDriveId && frontImg?.file_id) {
-              const { data: fRow } = await supabase
-                .from('files')
-                .select('provider_file_id, storage_provider')
-                .eq('id', frontImg.file_id)
-                .maybeSingle();
-              frontDriveId = (fRow as any)?.provider_file_id;
-              if ((fRow as any)?.storage_provider) {
-                frontProvider = (fRow as any).storage_provider;
-              }
-            }
-
-            const backRawFile = Array.isArray(backImg?.files) ? backImg.files[0] : backImg?.files;
-            let backProvider = backRawFile?.storage_provider || (backRawFile as any)?.provider_file_id?.includes('/') ? 'SUPABASE' : 'GOOGLE_DRIVE';
-            let backDriveId = backRawFile?.provider_file_id;
-            if (!backDriveId && backImg?.file_id) {
-              const { data: bRow } = await supabase
-                .from('files')
-                .select('provider_file_id, storage_provider')
-                .eq('id', backImg.file_id)
-                .maybeSingle();
-              backDriveId = (bRow as any)?.provider_file_id;
-              if ((bRow as any)?.storage_provider) {
-                backProvider = (bRow as any).storage_provider;
-              }
-            }
-
-            const [frontCandidates, backCandidates] = await Promise.all([
-              frontDriveId ? buildImageSourceCandidates(frontDriveId, false, frontProvider) : Promise.resolve([]),
-              backDriveId ? buildImageSourceCandidates(backDriveId, false, backProvider) : Promise.resolve([]),
-            ]);
-
-            const frontSrc = frontCandidates.length > 0 ? frontCandidates[0] : null;
-            const backSrc = backCandidates.length > 0 ? backCandidates[0] : null;
-
-            // Eagerly prefetch into memory and disk cache with expo-image
-            if (frontSrc?.uri && frontSrc.uri.startsWith('http')) {
-              Image.prefetch(frontSrc.uri, 'memory-disk').catch(() => {});
-            }
-            if (backSrc?.uri && backSrc.uri.startsWith('http')) {
-              Image.prefetch(backSrc.uri, 'memory-disk').catch(() => {});
-            }
-
-            // Also kick off background download into local filesystem disk cache
-            if (frontDriveId) {
-              getImageUri(frontDriveId, { storageProvider: frontProvider as any }).catch(() => {});
-            }
-            if (backDriveId) {
-              getImageUri(backDriveId, { storageProvider: backProvider as any }).catch(() => {});
-            }
-
-            const isFrontSupabase = frontProvider === 'SUPABASE' || frontDriveId?.includes('/');
-            const isBackSupabase = backProvider === 'SUPABASE' || backDriveId?.includes('/');
-
-            const entry: WorkerCachedData = {
-              frontSource: frontSrc,
-              backSource: backSrc,
-              frontCandidates,
-              backCandidates,
-              frontDriveId: isFrontSupabase ? (frontDriveId || null) : null,
-              backDriveId: isBackSupabase ? (backDriveId || null) : null,
-              hasFrontRecord: Boolean(isFrontSupabase && frontDriveId),
-              hasBackRecord: Boolean(isBackSupabase && backDriveId),
-            };
-
-            workerCacheRef.current[displayIndex] = entry;
-            workerCacheRef.current[dbSeqNo] = entry;
-
-            // If this worker is the currently active worker, apply immediately
-            if (!isCancelled && (displayIndex === currentWorkerIndex || dbSeqNo === currentWorkerIndex)) {
-              frontDriveIdRef.current = entry.frontDriveId;
-              backDriveIdRef.current = entry.backDriveId;
-              frontCandidatesRef.current = entry.frontCandidates;
-              backCandidatesRef.current = entry.backCandidates;
-              frontCandidateIndexRef.current = 0;
-              backCandidateIndexRef.current = 0;
-              setFrontSource(entry.frontSource);
-              setBackSource(entry.backSource);
-              setHasFrontRecord(entry.hasFrontRecord);
-              setHasBackRecord(entry.hasBackRecord);
-              setFrontLoadError(!entry.frontSource && entry.hasFrontRecord);
-              setBackLoadError(!entry.backSource && entry.hasBackRecord);
-              setIsFrontLoading(false);
-              setIsBackLoading(false);
-              setIsLoadingImages(false);
-            }
-          })
-        );
-
-        if (!isCancelled) {
-          const currentInst = instList[currentWorkerIndex - 1] || instList[0];
-          const activeEntry =
-            workerCacheRef.current[currentWorkerIndex] ||
-            (currentInst ? workerCacheRef.current[currentInst.sequence_no] : null);
-
-          if (activeEntry) {
-            frontDriveIdRef.current = activeEntry.frontDriveId;
-            backDriveIdRef.current = activeEntry.backDriveId;
-            frontCandidatesRef.current = activeEntry.frontCandidates;
-            backCandidatesRef.current = activeEntry.backCandidates;
-            frontCandidateIndexRef.current = 0;
-            backCandidateIndexRef.current = 0;
-            setFrontSource(activeEntry.frontSource);
-            setBackSource(activeEntry.backSource);
-            setHasFrontRecord(activeEntry.hasFrontRecord);
-            setHasBackRecord(activeEntry.hasBackRecord);
-            setFrontLoadError(!activeEntry.frontSource && activeEntry.hasFrontRecord);
-            setBackLoadError(!activeEntry.backSource && activeEntry.hasBackRecord);
-            setIsFrontLoading(false);
-            setIsBackLoading(false);
-          }
-          setIsLoadingImages(false);
+        setWorkersMedia(bundle.workers);
+        setOtherPhotosList(bundle.otherPhotos);
+        if (bundle.workers.length > 0) {
+          setDbWorkerCount(bundle.workers.length);
+          allWorkerInstancesRef.current = bundle.workers.map((w) => ({
+            id: w.workerId,
+            sequence_no: w.sequenceNo,
+            worker_name: w.workerName,
+          }));
         }
       } catch (err) {
-        console.warn('[ReviewDetailScreen] Error preloading all worker images:', err);
+        console.warn('[ReviewDetailScreen] Error preloading submission media bundle:', err);
       } finally {
         if (!isCancelled) {
           setIsLoadingImages(false);
         }
       }
-    }
-
-    loadAndPrecacheAllWorkers();
+    })();
 
     return () => {
       isCancelled = true;
     };
   }, [submissionId]);
 
-  // 2. When reviewer switches between workers, instantaneously pull from in-memory cache
-  useEffect(() => {
-    const matchedInst = allWorkerInstancesRef.current[currentWorkerIndex - 1];
-    const cached =
-      workerCacheRef.current[currentWorkerIndex] ||
-      (matchedInst ? workerCacheRef.current[matchedInst.sequence_no] : null);
-
-    if (cached) {
-      frontDriveIdRef.current = cached.frontDriveId;
-      backDriveIdRef.current = cached.backDriveId;
-      frontCandidatesRef.current = cached.frontCandidates;
-      backCandidatesRef.current = cached.backCandidates;
-      frontCandidateIndexRef.current = 0;
-      backCandidateIndexRef.current = 0;
-      setFrontSource(cached.frontSource);
-      setBackSource(cached.backSource);
-      setHasFrontRecord(cached.hasFrontRecord);
-      setHasBackRecord(cached.hasBackRecord);
-      setFrontLoadError(false);
-      setBackLoadError(false);
-      setIsFrontLoading(false);
-      setIsBackLoading(false);
-      setIsLoadingImages(false);
-    } else {
-      setFrontSource(null);
-      setBackSource(null);
-      setFrontLoadError(false);
-      setBackLoadError(false);
-      setHasFrontRecord(true);
-      setHasBackRecord(true);
-      setIsFrontLoading(true);
-      setIsBackLoading(true);
-      setIsLoadingImages(true);
-    }
-  }, [currentWorkerIndex]);
+  const activeWorkerMedia =
+    workersMedia[currentWorkerIndex - 1] ||
+    workersMedia.find((w) => w.sequenceNo === currentWorkerIndex) ||
+    null;
+  const activeFrontKey = getWorkerPhotoKey(currentWorkerIndex, 'front');
+  const activeBackKey = getWorkerPhotoKey(currentWorkerIndex, 'back');
+  const frontSource = activeWorkerMedia
+    ? resolvePhotoSource(activeFrontKey, activeWorkerMedia.frontCandidates)
+    : null;
+  const backSource = activeWorkerMedia
+    ? resolvePhotoSource(activeBackKey, activeWorkerMedia.backCandidates)
+    : null;
+  const frontUri = frontSource?.uri || null;
+  const backUri = backSource?.uri || null;
+  const frontDriveIdRef = { current: activeWorkerMedia?.frontPath || null };
+  const backDriveIdRef = { current: activeWorkerMedia?.backPath || null };
+  const hasFrontRecord = activeWorkerMedia ? activeWorkerMedia.hasFrontRecord : !isLoadingImages ? false : true;
+  const hasBackRecord = activeWorkerMedia ? activeWorkerMedia.hasBackRecord : !isLoadingImages ? false : true;
+  const frontLoadError = Boolean(
+    errorPhotoKeys[activeFrontKey] ||
+      (!isLoadingImages && activeWorkerMedia?.hasFrontRecord && !frontSource)
+  );
+  const backLoadError = Boolean(
+    errorPhotoKeys[activeBackKey] ||
+      (!isLoadingImages && activeWorkerMedia?.hasBackRecord && !backSource)
+  );
+  const isFrontLoading = Boolean(frontSource && !loadedPhotoKeys[activeFrontKey] && !frontLoadError);
+  const isBackLoading = Boolean(backSource && !loadedPhotoKeys[activeBackKey] && !backLoadError);
+  const retryFrontImage = () =>
+    retryPhoto(
+      activeFrontKey,
+      activeWorkerMedia?.frontPath || null,
+      activeWorkerMedia?.frontCandidates || []
+    );
+  const retryBackImage = () =>
+    retryPhoto(
+      activeBackKey,
+      activeWorkerMedia?.backPath || null,
+      activeWorkerMedia?.backCandidates || []
+    );
 
   const progressPercent = Math.min(
     100,
@@ -825,6 +738,10 @@ async function buildImageSourceCandidates(
   }
 
   function handlePrevious() {
+    if (isOtherStep) {
+      setIsOtherStep(false);
+      return;
+    }
     if (currentWorkerIndex > 1) {
       setCurrentWorkerIndex((prev) => prev - 1);
     } else {
@@ -833,16 +750,26 @@ async function buildImageSourceCandidates(
   }
 
   function handleNext() {
+    if (isOtherStep) {
+      handleFinalConfirmReview();
+      return;
+    }
+
     if (currentWorkerIndex < totalWorkers) {
       setCurrentWorkerIndex((prev) => prev + 1);
     } else {
-      if (workerVerdicts[currentWorkerIndex]) {
-        handleFinalConfirmReview();
-      } else {
+      if (!workerVerdicts[currentWorkerIndex]) {
         Alert.alert(
           'Decision Required',
-          'Please select SAFE or UNSAFE before confirming the review.'
+          'Please select SAFE or UNSAFE before proceeding.'
         );
+        return;
+      }
+
+      if (otherPhotosList.length > 0) {
+        setIsOtherStep(true);
+      } else {
+        handleFinalConfirmReview();
       }
     }
   }
@@ -891,334 +818,490 @@ async function buildImageSourceCandidates(
           {/* 3. Progress Bar Section */}
           <View style={styles.progressSection}>
             <Text style={styles.progressText}>
-              WORKER {currentWorkerIndex} OF {totalWorkers}
+              {isOtherStep
+                ? 'SITE & ADDITIONAL EVIDENCE (FINAL STEP)'
+                : `WORKER ${currentWorkerIndex} OF ${totalWorkers}`}
             </Text>
             <View style={styles.progressBarTrack}>
-              <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
+              <View
+                style={[
+                  styles.progressBarFill,
+                  { width: isOtherStep ? '100%' : `${progressPercent}%` },
+                ]}
+              />
             </View>
           </View>
 
           {/* 4. Image Gallery Section */}
-          <View style={styles.gallerySection}>
-            {/* FRONT Image Card */}
-            <View style={styles.imageCard}>
-              <View style={styles.badgeContainer}>
-                <Text style={styles.badgeText}>FRONT</Text>
-              </View>
+          {isOtherStep ? (
+            <View style={styles.otherGridSection}>
+              <Text style={styles.otherGridTitle}>Site & Additional Evidence Photos</Text>
+              <Text style={styles.otherGridSubtitle}>
+                Tap any photo to zoom in, pan, and inspect site context.
+              </Text>
 
-              {frontLoadError ? (
-                <View style={styles.errorPhotoContainer}>
-                  <Icon
-                    color={colors.errorRed}
-                    name={{ ios: 'exclamationmark.circle', android: 'error_outline', web: 'error_outline' }}
-                    size={28}
-                  />
-                  <Text style={styles.errorPhotoTitle}>Failed to load</Text>
-                  <Text style={styles.errorPhotoSubtitle}>Network or rate limit</Text>
+              <View style={styles.otherGridContainer}>
+                {otherPhotosList.slice(0, 4).map((photo, pIdx) => {
+                  const otherKey = getOtherPhotoKey(photo.id || pIdx + 1);
+                  const otherSrc = resolvePhotoSource(otherKey, photo.candidates);
+                  const otherHasError = Boolean(errorPhotoKeys[otherKey] || !otherSrc);
+                  return (
+                    <View key={photo.id || pIdx} style={styles.otherGridCell}>
+                      {otherHasError ? (
+                        <View style={styles.errorPhotoContainer}>
+                          <Icon
+                            color={colors.errorRed}
+                            name={{ ios: 'exclamationmark.circle', android: 'error_outline', web: 'error_outline' }}
+                            size={24}
+                          />
+                          <Text style={styles.errorPhotoTitle}>Failed to load</Text>
+                          <Pressable
+                            accessibilityLabel={`Retry loading site photo ${pIdx + 1}`}
+                            accessibilityRole="button"
+                            onPress={() => retryPhoto(otherKey, photo.storagePath, photo.candidates)}
+                            style={styles.retryButton}>
+                            <Text style={styles.retryButtonText}>Tap to Retry</Text>
+                          </Pressable>
+                        </View>
+                      ) : (
+                        <Pressable
+                          accessibilityLabel={`Inspect Site Photo ${pIdx + 1}`}
+                          accessibilityRole="button"
+                          onPress={() =>
+                            openZoomModal(
+                              {
+                                uri: otherSrc!.uri,
+                                headers: otherSrc!.headers,
+                                cacheKey: photo.storagePath || otherSrc!.cacheKey || otherSrc!.uri,
+                              },
+                              `Site & Additional Evidence • Photo ${pIdx + 1}`
+                            )
+                          }
+                          style={styles.otherGridPressable}>
+                          <Image
+                            key={`${otherKey}_${photoReloadNonce[otherKey] || 0}`}
+                            cachePolicy="memory-disk"
+                            contentFit="cover"
+                            loading="eager"
+                            onError={() => handlePhotoError(otherKey, photo.storagePath, photo.candidates)}
+                            onLoad={() => markPhotoLoaded(otherKey)}
+                            placeholder={{ blurhash: PHOTO_BLURHASH }}
+                            placeholderContentFit="cover"
+                            priority="high"
+                            source={{
+                              uri: otherSrc!.uri,
+                              headers: otherSrc!.headers,
+                              cacheKey: photo.storagePath || otherSrc!.cacheKey || otherSrc!.uri,
+                            }}
+                            style={styles.imagePhoto}
+                            transition={loadedPhotoKeys[otherKey] ? 0 : 150}
+                          />
+                          <View style={styles.otherGridBadge}>
+                            <Text style={styles.badgeText}>PHOTO {pIdx + 1}</Text>
+                          </View>
+                          <View style={styles.zoomButton}>
+                            <Icon
+                              color="#ffffff"
+                              name={{ ios: 'arrow.up.left.and.arrow.down.right', android: 'zoom_in', web: 'zoom_in' }}
+                              size={15}
+                              weight="bold"
+                            />
+                          </View>
+                        </Pressable>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ) : (
+            <View style={styles.gallerySection}>
+              {/* Hidden eager pre-decoder for up to 4 Site/Other photos while reviewing workers */}
+              {otherPhotosList.length > 0 && (
+                <View pointerEvents="none" style={styles.hiddenOtherPreloader}>
+                  {otherPhotosList.slice(0, 4).map((photo, pIdx) => {
+                    const otherKey = getOtherPhotoKey(photo.id || pIdx + 1);
+                    const otherSrc = resolvePhotoSource(otherKey, photo.candidates);
+                    if (!otherSrc || errorPhotoKeys[otherKey]) return null;
+                    return (
+                      <Image
+                        key={`preload_${otherKey}_${photoReloadNonce[otherKey] || 0}`}
+                        cachePolicy="memory-disk"
+                        contentFit="cover"
+                        loading="eager"
+                        onError={() => handlePhotoError(otherKey, photo.storagePath, photo.candidates)}
+                        onLoad={() => markPhotoLoaded(otherKey)}
+                        priority="high"
+                        source={{
+                          uri: otherSrc.uri,
+                          headers: otherSrc.headers,
+                          cacheKey: photo.storagePath || otherSrc.cacheKey || otherSrc.uri,
+                        }}
+                        style={styles.imagePhoto}
+                      />
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* FRONT Image Card — Pre-rendered stack for ALL workers */}
+              <View style={styles.imageCard}>
+                <View style={styles.badgeContainer}>
+                  <Text style={styles.badgeText}>FRONT</Text>
+                </View>
+
+                <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+                  {workersMedia.map((w) => {
+                    const wKey = getWorkerPhotoKey(w.displayIndex, 'front');
+                    const wSrc = resolvePhotoSource(wKey, w.frontCandidates);
+                    if (!wSrc) return null;
+                    const isCurrent = w.displayIndex === currentWorkerIndex;
+                    const wErr = Boolean(errorPhotoKeys[wKey]);
+                    const resolvedSource = {
+                      uri: wSrc.uri,
+                      headers: wSrc.headers,
+                      cacheKey: w.frontPath || wSrc.cacheKey || wSrc.uri,
+                    };
+                    return (
+                      <Pressable
+                        key={`${wKey}_${photoReloadNonce[wKey] || 0}`}
+                        accessibilityLabel="Zoom Front Image"
+                        accessibilityRole="button"
+                        onPress={() =>
+                          openZoomModal(resolvedSource, `Worker ${w.displayIndex} • FRONT VIEW`)
+                        }
+                        pointerEvents={isCurrent && !wErr ? 'auto' : 'none'}
+                        style={[
+                          StyleSheet.absoluteFill,
+                          {
+                            opacity: isCurrent && !wErr ? 1 : 0,
+                            zIndex: isCurrent ? 2 : 0,
+                          },
+                        ]}>
+                        <Image
+                          cachePolicy="memory-disk"
+                          contentFit="cover"
+                          loading="eager"
+                          onError={() => handlePhotoError(wKey, w.frontPath, w.frontCandidates)}
+                          onLoad={() => markPhotoLoaded(wKey)}
+                          placeholder={{ blurhash: PHOTO_BLURHASH }}
+                          placeholderContentFit="cover"
+                          priority="high"
+                          source={resolvedSource}
+                          style={styles.imagePhoto}
+                          transition={loadedPhotoKeys[wKey] ? 0 : 150}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {frontLoadError ? (
+                  <View style={[styles.errorPhotoContainer, styles.cardStatusOverlay]}>
+                    <Icon
+                      color={colors.errorRed}
+                      name={{ ios: 'exclamationmark.circle', android: 'error_outline', web: 'error_outline' }}
+                      size={28}
+                    />
+                    <Text style={styles.errorPhotoTitle}>Failed to load</Text>
+                    <Text style={styles.errorPhotoSubtitle}>Network or rate limit</Text>
+                    <Pressable
+                      accessibilityLabel="Retry loading front photo"
+                      accessibilityRole="button"
+                      onPress={retryFrontImage}
+                      style={styles.retryButton}>
+                      <Icon
+                        color="#ffffff"
+                        name={{ ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' }}
+                        size={13}
+                        weight="bold"
+                      />
+                      <Text style={styles.retryButtonText}>Tap to Retry</Text>
+                    </Pressable>
+                  </View>
+                ) : !hasFrontRecord && !isLoadingImages ? (
+                  <View style={[styles.noPhotoContainer, styles.cardStatusOverlay]}>
+                    <Icon
+                      color={colors.textMuted}
+                      name={{ ios: 'camera.badge.ellipsis', android: 'no_photography', web: 'no_photography' }}
+                      size={28}
+                    />
+                    <Text style={styles.noPhotoTitle}>No Front View</Text>
+                    <Text style={styles.noPhotoSubtitle}>Worker submitted without front photo</Text>
+                  </View>
+                ) : (isLoadingImages || isFrontLoading) ? (
+                  <View style={styles.loadingPhotoOverlay}>
+                    <ActivityIndicator color={colors.primary} size="large" />
+                  </View>
+                ) : null}
+
+                {/* Zoom Button on bottom right (only when image is valid) */}
+                {Boolean(frontSource && !frontLoadError) && (
                   <Pressable
-                    accessibilityLabel="Retry loading front photo"
+                    accessibilityLabel="Zoom Front Image"
                     accessibilityRole="button"
-                    onPress={retryFrontImage}
-                    style={styles.retryButton}>
+                    onPress={() => {
+                      if (frontSource) {
+                        openZoomModal(
+                          {
+                            uri: frontSource.uri,
+                            headers: frontSource.headers,
+                            cacheKey: activeWorkerMedia?.frontPath || frontSource.cacheKey || frontSource.uri,
+                          },
+                          `Worker ${currentWorkerIndex} • FRONT VIEW`
+                        );
+                      }
+                    }}
+                    style={({ pressed }) => [
+                      styles.zoomButton,
+                      pressed && styles.pressedOpacity,
+                    ]}>
                     <Icon
                       color="#ffffff"
-                      name={{ ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' }}
-                      size={13}
+                      name={{ ios: 'arrow.up.left.and.arrow.down.right', android: 'zoom_in', web: 'zoom_in' }}
+                      size={16}
                       weight="bold"
                     />
-                    <Text style={styles.retryButtonText}>Tap to Retry</Text>
                   </Pressable>
-                </View>
-              ) : !hasFrontRecord && !isNaN(Number(submissionId)) ? (
-                <View style={styles.noPhotoContainer}>
-                  <Icon
-                    color={colors.textMuted}
-                    name={{ ios: 'camera.badge.ellipsis', android: 'no_photography', web: 'no_photography' }}
-                    size={28}
-                  />
-                  <Text style={styles.noPhotoTitle}>No Front View</Text>
-                  <Text style={styles.noPhotoSubtitle}>Worker submitted without front photo</Text>
-                </View>
-              ) : frontSource ? (
-                <Pressable
-                  accessibilityLabel="Zoom Front Image"
-                  accessibilityRole="button"
-                  onPress={() => {
-                    if (frontSource) {
-                      openZoomModal(frontSource, `Worker ${currentWorkerIndex} • FRONT VIEW`);
-                    }
-                  }}
-                  style={{ flex: 1, width: '100%', height: '100%' }}>
-                  <Image
-                    cachePolicy="memory-disk"
-                    contentFit="cover"
-                    onError={handleFrontImageError}
-                    onLoadEnd={() => setIsFrontLoading(false)}
-                    onLoadStart={() => setIsFrontLoading(true)}
-                    source={frontSource}
-                    style={styles.imagePhoto}
-                  />
-                  {isFrontLoading && (
-                    <View style={styles.loadingPhotoOverlay}>
-                      <ActivityIndicator color={colors.primary} size="large" />
-                    </View>
-                  )}
-                </Pressable>
-              ) : (isLoadingImages || isFrontLoading) ? (
-                <View style={styles.loadingPhotoContainer}>
-                  <ActivityIndicator color={colors.primary} size="large" />
-                </View>
-              ) : (
-                <View style={styles.noPhotoContainer}>
-                  <Icon
-                    color={colors.textMuted}
-                    name={{ ios: 'camera.badge.ellipsis', android: 'no_photography', web: 'no_photography' }}
-                    size={28}
-                  />
-                  <Text style={styles.noPhotoTitle}>No Front View</Text>
-                  <Text style={styles.noPhotoSubtitle}>Worker submitted without front photo</Text>
-                </View>
-              )}
-
-              {/* Zoom Button on bottom right (only when image is valid) */}
-              {Boolean(frontSource && !frontLoadError) && (
-                <Pressable
-                  accessibilityLabel="Zoom Front Image"
-                  accessibilityRole="button"
-                  onPress={() => {
-                    if (frontSource) {
-                      openZoomModal(frontSource, `Worker ${currentWorkerIndex} • FRONT VIEW`);
-                    }
-                  }}
-                  style={({ pressed }) => [
-                    styles.zoomButton,
-                    pressed && styles.pressedOpacity,
-                  ]}>
-                  <Icon
-                    color="#ffffff"
-                    name={{ ios: 'arrow.up.left.and.arrow.down.right', android: 'zoom_in', web: 'zoom_in' }}
-                    size={16}
-                    weight="bold"
-                  />
-                </Pressable>
-              )}
-            </View>
-
-            {/* BACK Image Card */}
-            <View style={styles.imageCard}>
-              <View style={styles.badgeContainer}>
-                <Text style={styles.badgeText}>BACK</Text>
+                )}
               </View>
 
-              {backLoadError ? (
-                <View style={styles.errorPhotoContainer}>
-                  <Icon
-                    color={colors.errorRed}
-                    name={{ ios: 'exclamationmark.circle', android: 'error_outline', web: 'error_outline' }}
-                    size={28}
-                  />
-                  <Text style={styles.errorPhotoTitle}>Failed to load</Text>
-                  <Text style={styles.errorPhotoSubtitle}>Network or rate limit</Text>
+              {/* BACK Image Card — Pre-rendered stack for ALL workers */}
+              <View style={styles.imageCard}>
+                <View style={styles.badgeContainer}>
+                  <Text style={styles.badgeText}>BACK</Text>
+                </View>
+
+                <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+                  {workersMedia.map((w) => {
+                    const wKey = getWorkerPhotoKey(w.displayIndex, 'back');
+                    const wSrc = resolvePhotoSource(wKey, w.backCandidates);
+                    if (!wSrc) return null;
+                    const isCurrent = w.displayIndex === currentWorkerIndex;
+                    const wErr = Boolean(errorPhotoKeys[wKey]);
+                    const resolvedSource = {
+                      uri: wSrc.uri,
+                      headers: wSrc.headers,
+                      cacheKey: w.backPath || wSrc.cacheKey || wSrc.uri,
+                    };
+                    return (
+                      <Pressable
+                        key={`${wKey}_${photoReloadNonce[wKey] || 0}`}
+                        accessibilityLabel="Zoom Back Image"
+                        accessibilityRole="button"
+                        onPress={() =>
+                          openZoomModal(resolvedSource, `Worker ${w.displayIndex} • BACK VIEW`)
+                        }
+                        pointerEvents={isCurrent && !wErr ? 'auto' : 'none'}
+                        style={[
+                          StyleSheet.absoluteFill,
+                          {
+                            opacity: isCurrent && !wErr ? 1 : 0,
+                            zIndex: isCurrent ? 2 : 0,
+                          },
+                        ]}>
+                        <Image
+                          cachePolicy="memory-disk"
+                          contentFit="cover"
+                          loading="eager"
+                          onError={() => handlePhotoError(wKey, w.backPath, w.backCandidates)}
+                          onLoad={() => markPhotoLoaded(wKey)}
+                          placeholder={{ blurhash: PHOTO_BLURHASH }}
+                          placeholderContentFit="cover"
+                          priority="high"
+                          source={resolvedSource}
+                          style={styles.imagePhoto}
+                          transition={loadedPhotoKeys[wKey] ? 0 : 150}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {backLoadError ? (
+                  <View style={[styles.errorPhotoContainer, styles.cardStatusOverlay]}>
+                    <Icon
+                      color={colors.errorRed}
+                      name={{ ios: 'exclamationmark.circle', android: 'error_outline', web: 'error_outline' }}
+                      size={28}
+                    />
+                    <Text style={styles.errorPhotoTitle}>Failed to load</Text>
+                    <Text style={styles.errorPhotoSubtitle}>Network or rate limit</Text>
+                    <Pressable
+                      accessibilityLabel="Retry loading back photo"
+                      accessibilityRole="button"
+                      onPress={retryBackImage}
+                      style={styles.retryButton}>
+                      <Icon
+                        color="#ffffff"
+                        name={{ ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' }}
+                        size={13}
+                        weight="bold"
+                      />
+                      <Text style={styles.retryButtonText}>Tap to Retry</Text>
+                    </Pressable>
+                  </View>
+                ) : !hasBackRecord && !isLoadingImages ? (
+                  <View style={[styles.noPhotoContainer, styles.cardStatusOverlay]}>
+                    <Icon
+                      color={colors.textMuted}
+                      name={{ ios: 'camera.badge.ellipsis', android: 'no_photography', web: 'no_photography' }}
+                      size={28}
+                    />
+                    <Text style={styles.noPhotoTitle}>No Back View</Text>
+                    <Text style={styles.noPhotoSubtitle}>Worker submitted without back photo</Text>
+                  </View>
+                ) : (isLoadingImages || isBackLoading) ? (
+                  <View style={styles.loadingPhotoOverlay}>
+                    <ActivityIndicator color={colors.primary} size="large" />
+                  </View>
+                ) : null}
+
+                {/* Zoom Button on bottom right (only when image is valid) */}
+                {Boolean(backSource && !backLoadError) && (
                   <Pressable
-                    accessibilityLabel="Retry loading back photo"
+                    accessibilityLabel="Zoom Back Image"
                     accessibilityRole="button"
-                    onPress={retryBackImage}
-                    style={styles.retryButton}>
+                    onPress={() => {
+                      if (backSource) {
+                        openZoomModal(
+                          {
+                            uri: backSource.uri,
+                            headers: backSource.headers,
+                            cacheKey: activeWorkerMedia?.backPath || backSource.cacheKey || backSource.uri,
+                          },
+                          `Worker ${currentWorkerIndex} • BACK VIEW`
+                        );
+                      }
+                    }}
+                    style={({ pressed }) => [
+                      styles.zoomButton,
+                      pressed && styles.pressedOpacity,
+                    ]}>
                     <Icon
                       color="#ffffff"
-                      name={{ ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' }}
-                      size={13}
+                      name={{ ios: 'arrow.up.left.and.arrow.down.right', android: 'zoom_in', web: 'zoom_in' }}
+                      size={16}
                       weight="bold"
                     />
-                    <Text style={styles.retryButtonText}>Tap to Retry</Text>
                   </Pressable>
-                </View>
-              ) : !hasBackRecord && !isNaN(Number(submissionId)) ? (
-                <View style={styles.noPhotoContainer}>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* 5. Action Section (Only shown during Worker Review) */}
+          {!isOtherStep && (
+            <View style={styles.actionSection}>
+              {/* Current Worker Verdict Banner (if previously reviewed and navigated back) */}
+              {workerVerdicts[currentWorkerIndex] && (
+                <View
+                  style={[
+                    styles.currentVerdictBanner,
+                    workerVerdicts[currentWorkerIndex]?.status === 'safe'
+                      ? styles.currentVerdictSafe
+                      : styles.currentVerdictUnsafe,
+                  ]}>
                   <Icon
-                    color={colors.textMuted}
-                    name={{ ios: 'camera.badge.ellipsis', android: 'no_photography', web: 'no_photography' }}
-                    size={28}
-                  />
-                  <Text style={styles.noPhotoTitle}>No Back View</Text>
-                  <Text style={styles.noPhotoSubtitle}>Worker submitted without back photo</Text>
-                </View>
-              ) : backSource ? (
-                <Pressable
-                  accessibilityLabel="Zoom Back Image"
-                  accessibilityRole="button"
-                  onPress={() => {
-                    if (backSource) {
-                      openZoomModal(backSource, `Worker ${currentWorkerIndex} • BACK VIEW`);
+                    color={
+                      workerVerdicts[currentWorkerIndex]?.status === 'safe'
+                        ? colors.successGreen
+                        : colors.errorRed
                     }
-                  }}
-                  style={{ flex: 1, width: '100%', height: '100%' }}>
-                  <Image
-                    cachePolicy="memory-disk"
-                    contentFit="cover"
-                    onError={handleBackImageError}
-                    onLoadEnd={() => setIsBackLoading(false)}
-                    onLoadStart={() => setIsBackLoading(true)}
-                    source={backSource}
-                    style={styles.imagePhoto}
+                    name={
+                      workerVerdicts[currentWorkerIndex]?.status === 'safe'
+                        ? { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }
+                        : { ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }
+                    }
+                    size={15}
                   />
-                  {isBackLoading && (
-                    <View style={styles.loadingPhotoOverlay}>
-                      <ActivityIndicator color={colors.primary} size="large" />
-                    </View>
-                  )}
-                </Pressable>
-              ) : (isLoadingImages || isBackLoading) ? (
-                <View style={styles.loadingPhotoContainer}>
-                  <ActivityIndicator color={colors.primary} size="large" />
-                </View>
-              ) : (
-                <View style={styles.noPhotoContainer}>
-                  <Icon
-                    color={colors.textMuted}
-                    name={{ ios: 'camera.badge.ellipsis', android: 'no_photography', web: 'no_photography' }}
-                    size={28}
-                  />
-                  <Text style={styles.noPhotoTitle}>No Back View</Text>
-                  <Text style={styles.noPhotoSubtitle}>Worker submitted without back photo</Text>
+                  <Text
+                    style={[
+                      styles.currentVerdictText,
+                      {
+                        color:
+                          workerVerdicts[currentWorkerIndex]?.status === 'safe'
+                            ? colors.successGreen
+                            : colors.errorRed,
+                      },
+                    ]}>
+                    {workerVerdicts[currentWorkerIndex]?.status === 'safe'
+                      ? 'Current decision: SAFE'
+                      : 'Current decision: UNSAFE'}
+                  </Text>
                 </View>
               )}
 
-              {/* Zoom Button on bottom right (only when image is valid) */}
-              {Boolean(backSource && !backLoadError) && (
+              <Text style={styles.actionQuestion}>Is this worker PPE safe?</Text>
+              <View style={styles.actionButtonsRow}>
+                {/* UNSAFE Button */}
                 <Pressable
-                  accessibilityLabel="Zoom Back Image"
                   accessibilityRole="button"
-                  onPress={() => {
-                    if (backSource) {
-                      openZoomModal(backSource, `Worker ${currentWorkerIndex} • BACK VIEW`);
-                    }
-                  }}
+                  onPress={handleUnsafeClick}
                   style={({ pressed }) => [
-                    styles.zoomButton,
-                    pressed && styles.pressedOpacity,
+                    styles.unsafeButton,
+                    workerVerdicts[currentWorkerIndex]?.status === 'unsafe'
+                      ? styles.unsafeButtonActive
+                      : styles.unsafeButtonInactive,
+                    pressed && styles.buttonPressed,
                   ]}>
                   <Icon
-                    color="#ffffff"
-                    name={{ ios: 'arrow.up.left.and.arrow.down.right', android: 'zoom_in', web: 'zoom_in' }}
-                    size={16}
+                    color={
+                      workerVerdicts[currentWorkerIndex]?.status === 'unsafe'
+                        ? colors.white
+                        : colors.errorRed
+                    }
+                    name={{ ios: 'xmark', android: 'close', web: 'close' }}
+                    size={20}
                     weight="bold"
                   />
+                  <Text
+                    style={[
+                      styles.actionButtonText,
+                      workerVerdicts[currentWorkerIndex]?.status === 'unsafe'
+                        ? styles.actionButtonTextActive
+                        : styles.unsafeTextInactive,
+                    ]}>
+                    {workerVerdicts[currentWorkerIndex]?.status === 'unsafe'
+                      ? 'UNSAFE ✓'
+                      : 'UNSAFE'}
+                  </Text>
                 </Pressable>
-              )}
-            </View>
-          </View>
 
-          {/* 5. Action Section */}
-          <View style={styles.actionSection}>
-            {/* Current Worker Verdict Banner (if previously reviewed and navigated back) */}
-            {workerVerdicts[currentWorkerIndex] && (
-              <View
-                style={[
-                  styles.currentVerdictBanner,
-                  workerVerdicts[currentWorkerIndex]?.status === 'safe'
-                    ? styles.currentVerdictSafe
-                    : styles.currentVerdictUnsafe,
-                ]}>
-                <Icon
-                  color={
+                {/* SAFE Button */}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={handleSafe}
+                  style={({ pressed }) => [
+                    styles.safeButton,
                     workerVerdicts[currentWorkerIndex]?.status === 'safe'
-                      ? colors.successGreen
-                      : colors.errorRed
-                  }
-                  name={
-                    workerVerdicts[currentWorkerIndex]?.status === 'safe'
-                      ? { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }
-                      : { ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }
-                  }
-                  size={15}
-                />
-                <Text
-                  style={[
-                    styles.currentVerdictText,
-                    {
-                      color:
-                        workerVerdicts[currentWorkerIndex]?.status === 'safe'
-                          ? colors.successGreen
-                          : colors.errorRed,
-                    },
+                      ? styles.safeButtonActive
+                      : styles.safeButtonInactive,
+                    pressed && styles.buttonPressed,
                   ]}>
-                  {workerVerdicts[currentWorkerIndex]?.status === 'safe'
-                    ? 'Current decision: SAFE'
-                    : 'Current decision: UNSAFE'}
-                </Text>
+                  <Icon
+                    color={
+                      workerVerdicts[currentWorkerIndex]?.status === 'safe'
+                        ? colors.white
+                        : colors.successGreen
+                    }
+                    name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                    size={20}
+                    weight="bold"
+                  />
+                  <Text
+                    style={[
+                      styles.actionButtonText,
+                      workerVerdicts[currentWorkerIndex]?.status === 'safe'
+                        ? styles.actionButtonTextActive
+                        : styles.safeTextInactive,
+                    ]}>
+                    {workerVerdicts[currentWorkerIndex]?.status === 'safe' ? 'SAFE ✓' : 'SAFE'}
+                  </Text>
+                </Pressable>
               </View>
-            )}
-
-            <Text style={styles.actionQuestion}>Is this worker PPE safe?</Text>
-            <View style={styles.actionButtonsRow}>
-              {/* UNSAFE Button */}
-              <Pressable
-                accessibilityRole="button"
-                onPress={handleUnsafeClick}
-                style={({ pressed }) => [
-                  styles.unsafeButton,
-                  workerVerdicts[currentWorkerIndex]?.status === 'unsafe'
-                    ? styles.unsafeButtonActive
-                    : styles.unsafeButtonInactive,
-                  pressed && styles.buttonPressed,
-                ]}>
-                <Icon
-                  color={
-                    workerVerdicts[currentWorkerIndex]?.status === 'unsafe'
-                      ? colors.white
-                      : colors.errorRed
-                  }
-                  name={{ ios: 'xmark', android: 'close', web: 'close' }}
-                  size={20}
-                  weight="bold"
-                />
-                <Text
-                  style={[
-                    styles.actionButtonText,
-                    workerVerdicts[currentWorkerIndex]?.status === 'unsafe'
-                      ? styles.actionButtonTextActive
-                      : styles.unsafeTextInactive,
-                  ]}>
-                  {workerVerdicts[currentWorkerIndex]?.status === 'unsafe'
-                    ? 'UNSAFE ✓'
-                    : 'UNSAFE'}
-                </Text>
-              </Pressable>
-
-              {/* SAFE Button */}
-              <Pressable
-                accessibilityRole="button"
-                onPress={handleSafe}
-                style={({ pressed }) => [
-                  styles.safeButton,
-                  workerVerdicts[currentWorkerIndex]?.status === 'safe'
-                    ? styles.safeButtonActive
-                    : styles.safeButtonInactive,
-                  pressed && styles.buttonPressed,
-                ]}>
-                <Icon
-                  color={
-                    workerVerdicts[currentWorkerIndex]?.status === 'safe'
-                      ? colors.white
-                      : colors.successGreen
-                  }
-                  name={{ ios: 'checkmark', android: 'check', web: 'check' }}
-                  size={20}
-                  weight="bold"
-                />
-                <Text
-                  style={[
-                    styles.actionButtonText,
-                    workerVerdicts[currentWorkerIndex]?.status === 'safe'
-                      ? styles.actionButtonTextActive
-                      : styles.safeTextInactive,
-                  ]}>
-                  {workerVerdicts[currentWorkerIndex]?.status === 'safe' ? 'SAFE ✓' : 'SAFE'}
-                </Text>
-              </Pressable>
             </View>
-          </View>
+          )}
         </ScrollView>
 
         {/* 6. Footer Navigation: Previous, Next Worker, or Confirm Review */}
@@ -1228,10 +1311,10 @@ async function buildImageSourceCandidates(
             {
               paddingBottom: Math.max(insets.bottom, 12),
               height: 56 + Math.max(insets.bottom, 12),
-              justifyContent: totalWorkers > 1 ? 'space-between' : 'flex-end',
+              justifyContent: (totalWorkers > 1 || isOtherStep) ? 'space-between' : 'flex-end',
             },
           ]}>
-          {totalWorkers > 1 ? (
+          {(totalWorkers > 1 || isOtherStep) ? (
             <Pressable
               accessibilityRole="button"
               onPress={handlePrevious}
@@ -1249,12 +1332,20 @@ async function buildImageSourceCandidates(
 
           <Pressable
             accessibilityRole="button"
-            disabled={!workerVerdicts[currentWorkerIndex] || isSubmittingReview}
+            disabled={
+              isOtherStep
+                ? isSubmittingReview
+                : (!workerVerdicts[currentWorkerIndex] || isSubmittingReview)
+            }
             onPress={handleNext}
             style={({ pressed }) => [
               styles.navButton,
-              currentWorkerIndex === totalWorkers ? styles.navButtonComplete : styles.navButtonNext,
-              (!workerVerdicts[currentWorkerIndex] || isSubmittingReview) && styles.navButtonDisabled,
+              (isOtherStep || (currentWorkerIndex === totalWorkers && otherPhotosList.length === 0))
+                ? styles.navButtonComplete
+                : styles.navButtonNext,
+              (!isOtherStep && !workerVerdicts[currentWorkerIndex]) || isSubmittingReview
+                ? styles.navButtonDisabled
+                : undefined,
               pressed && styles.pressedOpacity,
             ]}>
             {isSubmittingReview ? (
@@ -1268,14 +1359,20 @@ async function buildImageSourceCandidates(
                   style={[
                     styles.navButtonText,
                     styles.navButtonCompleteText,
-                    !workerVerdicts[currentWorkerIndex] && styles.navButtonDisabledText,
+                    (!isOtherStep && !workerVerdicts[currentWorkerIndex]) && styles.navButtonDisabledText,
                   ]}>
-                  {currentWorkerIndex === totalWorkers ? 'Confirm Review' : 'Next Worker'}
+                  {isOtherStep
+                    ? 'Confirm Review'
+                    : currentWorkerIndex === totalWorkers && otherPhotosList.length > 0
+                    ? 'Next: Site Photos'
+                    : currentWorkerIndex === totalWorkers
+                    ? 'Confirm Review'
+                    : 'Next Worker'}
                 </Text>
                 <Icon
-                  color={!workerVerdicts[currentWorkerIndex] ? '#9ca3af' : colors.white}
+                  color={(!isOtherStep && !workerVerdicts[currentWorkerIndex]) ? '#9ca3af' : colors.white}
                   name={
-                    currentWorkerIndex === totalWorkers
+                    (isOtherStep || (currentWorkerIndex === totalWorkers && otherPhotosList.length === 0))
                       ? { ios: 'checkmark', android: 'check', web: 'check' }
                       : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
                   }
@@ -1572,6 +1669,56 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 28,
   },
+  otherGridSection: {
+    marginBottom: 28,
+  },
+  otherGridTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  otherGridSubtitle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginBottom: 14,
+  },
+  otherGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  otherGridCell: {
+    width: '48.5%',
+    aspectRatio: 1,
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  otherGridPressable: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  otherGridBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 6,
+    elevation: 2,
+    left: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    position: 'absolute',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    top: 8,
+    zIndex: 10,
+  },
   imageCard: {
     backgroundColor: colors.card,
     borderColor: colors.border,
@@ -1581,6 +1728,20 @@ const styles = StyleSheet.create({
     height: 280,
     overflow: 'hidden',
     position: 'relative',
+  },
+  hiddenOtherPreloader: {
+    height: 160,
+    left: 0,
+    opacity: 0,
+    overflow: 'hidden',
+    position: 'absolute',
+    top: 0,
+    width: 160,
+    zIndex: -1,
+  },
+  cardStatusOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 6,
   },
   loadingPhotoContainer: {
     alignItems: 'center',

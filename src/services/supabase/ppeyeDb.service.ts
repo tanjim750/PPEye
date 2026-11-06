@@ -167,50 +167,56 @@ export async function createPPESubmissionHeader(
   error?: string;
 }> {
   try {
-    let vendorProfileId = payload.vendorProfileId;
-    let submittedBy = payload.submittedBy;
+    const { authStore } = require("@/stores/auth.store");
+    const activeUser = authStore?.user;
+    const activeUserId = Number(activeUser?.id);
 
-    // Resilient fallback: If vendorProfileId or submittedBy is missing (e.g. testing in dev mode or demo user),
-    // automatically resolve valid IDs from Supabase so data is always persisted to the database.
-    if (!vendorProfileId || !submittedBy) {
-      if (!vendorProfileId) {
-        const { data: firstVendor } = await supabase
-          .from("vendor_profiles")
-          .select("id")
-          .order("id", { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        if (firstVendor?.id) vendorProfileId = firstVendor.id;
-      }
-      if (!submittedBy) {
-        const { data: firstUser } = await supabase
+    let vendorProfileId = payload.vendorProfileId ?? activeUser?.vendorProfileId;
+    let submittedBy =
+      payload.submittedBy ??
+      (Number.isFinite(activeUserId) && activeUserId > 0 ? activeUserId : undefined);
+
+    if (!submittedBy || !Number.isFinite(submittedBy) || submittedBy <= 0) {
+      // Never guess User #1; resolve strictly from the active Supabase Auth session if available
+      const { data: sessionData } = await supabase.auth.getUser();
+      const sessionEmail = sessionData?.user?.email?.trim().toLowerCase();
+      if (sessionEmail) {
+        const { data: matchedUser } = await supabase
           .from("users")
           .select("id")
-          .eq("category", "EXTERNAL")
-          .order("id", { ascending: true })
-          .limit(1)
+          .ilike("email", sessionEmail)
           .maybeSingle();
-        if (firstUser?.id) {
-          submittedBy = firstUser.id;
-        } else {
-          const { data: anyUser } = await supabase
-            .from("users")
-            .select("id")
-            .order("id", { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          if (anyUser?.id) submittedBy = anyUser.id;
+        if (matchedUser?.id) {
+          submittedBy = Number(matchedUser.id);
         }
+      }
+    }
+
+    if (!submittedBy || !Number.isFinite(submittedBy) || submittedBy <= 0) {
+      return {
+        success: false,
+        error: "Authenticated user ID is required to submit PPE evidence.",
+      };
+    }
+
+    if (!vendorProfileId) {
+      const { data: memberRow } = await supabase
+        .from("vendor_members")
+        .select("vendor_profile_id")
+        .eq("user_id", submittedBy)
+        .maybeSingle();
+      if (memberRow?.vendor_profile_id) {
+        vendorProfileId = Number(memberRow.vendor_profile_id);
       }
     }
 
     if (!vendorProfileId || !submittedBy) {
       console.warn(
-        "[PPEye DB] Skipping submission: No registered user or vendor profile found in database.",
+        "[PPEye DB] Skipping submission: User is not linked to a valid vendor profile.",
       );
       return {
         success: false,
-        error: "No registered user or vendor profile found in database",
+        error: "User is not linked to a valid vendor profile",
       };
     }
 
@@ -421,9 +427,21 @@ export async function createPPESubmission(
  */
 export async function listPPESubmissions(filters?: {
   vendorProfileId?: number;
+  submittedBy?: number;
   status?: SubmissionStatus;
 }) {
   try {
+    const { authStore } = require("@/stores/auth.store");
+    const activeUser = authStore?.user;
+    const isExternalSession =
+      activeUser?.category === "EXTERNAL" ||
+      activeUser?.role === "vendor" ||
+      activeUser?.role === "external";
+    const externalUserId = isExternalSession ? Number(activeUser?.id) : undefined;
+    if (isExternalSession && (!externalUserId || !Number.isFinite(externalUserId))) {
+      return [];
+    }
+
     let query = supabase
       .from("ppe_submissions")
       .select(
@@ -443,6 +461,11 @@ export async function listPPESubmissions(filters?: {
 
     if (filters?.vendorProfileId) {
       query = query.eq("vendor_profile_id", filters.vendorProfileId);
+    }
+
+    const effectiveSubmittedBy = externalUserId ?? filters?.submittedBy;
+    if (effectiveSubmittedBy) {
+      query = query.eq("submitted_by", effectiveSubmittedBy);
     }
 
     if (filters?.status) {

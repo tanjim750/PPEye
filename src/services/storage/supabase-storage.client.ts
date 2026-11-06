@@ -53,6 +53,8 @@ function decodeBase64ToArrayBuffer(base64: string): ArrayBuffer {
 }
 
 let storageClientOverride: any = null;
+let dbClientOverride: any = null;
+let imagePrefetchOverride: ((url: string, policy?: 'memory' | 'disk' | 'memory-disk') => Promise<boolean>) | null = null;
 
 export function setSupabaseStorageClientOverride(client: any): void {
   storageClientOverride = client;
@@ -62,11 +64,55 @@ export function getStorageClientOverride(): any {
   return storageClientOverride;
 }
 
+export function setSupabaseDbClientOverride(client: any): void {
+  dbClientOverride = client;
+}
+
+export function setImagePrefetchOverride(
+  fn: ((url: string, policy?: 'memory' | 'disk' | 'memory-disk') => Promise<boolean>) | null
+): void {
+  imagePrefetchOverride = fn;
+}
+
 export const ONE_DAY_SECONDS = 86400; // 24 hours
 
 export interface SignedUrlCacheEntry {
   signedUrl: string;
   expiresAt: number;
+}
+
+export interface PreloadedMediaSource {
+  uri: string;
+  cacheKey?: string;
+  headers?: Record<string, string>;
+}
+
+export interface PreloadedWorkerMedia {
+  workerId: number | null;
+  sequenceNo: number;
+  displayIndex: number;
+  workerName?: string;
+  frontPath: string | null;
+  backPath: string | null;
+  frontCandidates: PreloadedMediaSource[];
+  backCandidates: PreloadedMediaSource[];
+  hasFrontRecord: boolean;
+  hasBackRecord: boolean;
+}
+
+export interface PreloadedOtherMedia {
+  id: number;
+  sequenceNo: number;
+  storagePath: string | null;
+  uri: string;
+  candidates: PreloadedMediaSource[];
+}
+
+export interface SubmissionMediaBundle {
+  submissionId: number;
+  workers: PreloadedWorkerMedia[];
+  otherPhotos: PreloadedOtherMedia[];
+  signedUrls: Record<string, string>;
 }
 
 const signedUrlMemoryCache = new Map<string, SignedUrlCacheEntry>();
@@ -79,8 +125,89 @@ interface SubmissionPreloadCacheEntry {
 const submissionPreloadCache = new Map<number, SubmissionPreloadCacheEntry>();
 const inFlightSubmissionPreloads = new Map<number, Promise<Record<string, string>>>();
 
+interface SubmissionMediaBundleCacheEntry {
+  bundle: SubmissionMediaBundle;
+  expiresAt: number;
+}
+const submissionMediaBundleCache = new Map<number, SubmissionMediaBundleCacheEntry>();
+const inFlightSubmissionMediaBundles = new Map<number, Promise<SubmissionMediaBundle>>();
+
 const submissionWorkerPhotosCache = new Map<number, { photos: Map<string, string>; loadedAt: number }>();
 const inFlightWorkerPhotos = new Map<number, Promise<Map<string, string>>>();
+
+/**
+ * Retries an async operation up to `retries` additional times with exponential backoff.
+ */
+export async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  retries = 2,
+  baseDelayMs = 250
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) {
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        if (delay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Prefetches an image URL into Expo Image memory-disk cache with 2x exponential-backoff retry.
+ * Treats `false` return from `Image.prefetch` as a retryable failure.
+ */
+export async function prefetchUrlWithRetry(
+  url: string,
+  baseDelayMs = 250
+): Promise<boolean> {
+  if (!url || !url.startsWith('http')) return false;
+  let prefetchFn = imagePrefetchOverride;
+  if (!prefetchFn) {
+    try {
+      const { Image } = require('expo-image');
+      if (Image && typeof Image.prefetch === 'function') {
+        prefetchFn = (u: string, policy?: 'memory' | 'disk' | 'memory-disk') => Image.prefetch(u, policy);
+      }
+    } catch {
+      return false;
+    }
+  }
+  if (!prefetchFn) return false;
+
+  try {
+    return await retryWithBackoff(
+      async () => {
+        const ok = await prefetchFn!(url, 'memory-disk');
+        if (!ok) {
+          throw new Error('Image.prefetch returned false');
+        }
+        return true;
+      },
+      2,
+      baseDelayMs
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function getPreloadedSubmissionMediaSync(submissionId?: number | string | null): SubmissionMediaBundle | null {
+  const subIdNum = Number(submissionId);
+  if (isNaN(subIdNum) || subIdNum <= 0) return null;
+  const entry = submissionMediaBundleCache.get(subIdNum);
+  if (entry && Date.now() < entry.expiresAt - 300_000) {
+    return entry.bundle;
+  }
+  return null;
+}
 
 export function getCachedSignedUrl(bucket: StorageBucket, storagePath: string): string | null {
   if (!storagePath) return null;
@@ -112,10 +239,12 @@ export function invalidateSubmissionPreloadCache(submissionId?: number | string)
     const subIdNum = Number(submissionId);
     if (!isNaN(subIdNum)) {
       submissionPreloadCache.delete(subIdNum);
+      submissionMediaBundleCache.delete(subIdNum);
       submissionWorkerPhotosCache.delete(subIdNum);
     }
   } else {
     submissionPreloadCache.clear();
+    submissionMediaBundleCache.clear();
     submissionWorkerPhotosCache.clear();
   }
 }
@@ -125,6 +254,8 @@ export function clearSignedUrlCache(): void {
   inFlightSignedUrls.clear();
   submissionPreloadCache.clear();
   inFlightSubmissionPreloads.clear();
+  submissionMediaBundleCache.clear();
+  inFlightSubmissionMediaBundles.clear();
   submissionWorkerPhotosCache.clear();
   inFlightWorkerPhotos.clear();
 }
@@ -766,6 +897,387 @@ export class SupabaseStorageService implements ISupabaseStorageService {
 
 export const supabaseStorageService = new SupabaseStorageService();
 
+function getSupabaseDbClient(): any {
+  if (dbClientOverride) return dbClientOverride;
+  try {
+    return require('../supabase/client').supabase;
+  } catch {
+    return require('@/services/supabase/client').supabase;
+  }
+}
+
+function getOptionalImageUtils(): {
+  getCachedImageUri?: (path: string) => Promise<string | null>;
+  getImageUri?: (path: string, opts?: any) => Promise<string | null>;
+} {
+  try {
+    return require('../../utils/image');
+  } catch {
+    try {
+      return require('@/utils/image');
+    } catch {
+      return {};
+    }
+  }
+}
+
+function isSupabaseStoragePath(fileId?: string | null, storageProvider?: string | null): boolean {
+  if (!fileId || !fileId.trim()) return false;
+  const clean = fileId.trim();
+  if (clean.includes('drive.google.com') || clean.includes('googleusercontent.com')) return false;
+  return (
+    storageProvider === 'SUPABASE' ||
+    clean.startsWith('submissions/') ||
+    clean.startsWith('users/') ||
+    (clean.includes('/') && !clean.startsWith('http://') && !clean.startsWith('https://'))
+  );
+}
+
+/**
+ * Resolves and pre-fetches the complete multi-worker + other-evidence media bundle for a submission
+ * in a single parallel batch, with 2x exponential-backoff retry and zero-query reuse when cached.
+ */
+export async function preloadSubmissionMedia(
+  submissionId: number | string,
+  options?: {
+    expiresInSeconds?: number;
+    forceRefresh?: boolean;
+    retryDelayMs?: number;
+    awaitPrefetch?: boolean;
+  }
+): Promise<SubmissionMediaBundle> {
+  const subIdNumber = Number(submissionId);
+  const emptyBundle: SubmissionMediaBundle = {
+    submissionId: isNaN(subIdNumber) ? 0 : subIdNumber,
+    workers: [],
+    otherPhotos: [],
+    signedUrls: {},
+  };
+  if (isNaN(subIdNumber) || subIdNumber <= 0) return emptyBundle;
+
+  const expiresIn = options?.expiresInSeconds ?? ONE_DAY_SECONDS;
+  const baseDelayMs = options?.retryDelayMs ?? 250;
+
+  if (!options?.forceRefresh) {
+    const existing = submissionMediaBundleCache.get(subIdNumber);
+    if (existing && Date.now() < existing.expiresAt - 300_000) {
+      return existing.bundle;
+    }
+    const activeInFlight = inFlightSubmissionMediaBundles.get(subIdNumber);
+    if (activeInFlight) {
+      return activeInFlight;
+    }
+  }
+
+  const bundlePromise = (async (): Promise<SubmissionMediaBundle> => {
+    const signedUrls: Record<string, string> = {};
+    const workers: PreloadedWorkerMedia[] = [];
+    const otherPhotos: PreloadedOtherMedia[] = [];
+
+    try {
+      const supabase = getSupabaseDbClient();
+      const imageUtils = getOptionalImageUtils();
+
+      const [{ data: instList }, { data: otherList }, { data: subData }] = await Promise.all([
+        supabase
+          .from('ppe_worker_instances')
+          .select(`
+            id,
+            sequence_no,
+            ppe_images (
+              id,
+              side,
+              file_id,
+              files ( id, file_name, provider_file_id, storage_provider )
+            )
+          `)
+          .eq('submission_id', subIdNumber),
+        supabase
+          .from('other_images')
+          .select(`
+            id,
+            sequence_no,
+            file_id,
+            files ( id, file_name, provider_file_id, storage_provider )
+          `)
+          .eq('submission_id', subIdNumber),
+        supabase
+          .from('ppe_submissions')
+          .select('metadata')
+          .eq('id', subIdNumber)
+          .maybeSingle(),
+      ]);
+
+      const sortedInstList: any[] = ((instList as any[]) || []).slice().sort(
+        (a, b) => (Number(a.sequence_no) || 0) - (Number(b.sequence_no) || 0)
+      );
+      const sortedOtherList: any[] = ((otherList as any[]) || []).slice().sort(
+        (a, b) => (Number(a.sequence_no) || 0) - (Number(b.sequence_no) || 0)
+      );
+
+      // Batch-resolve any missing file rows in 1 query instead of per-worker serial queries
+      const missingFileIds = new Set<number>();
+      for (const inst of sortedInstList) {
+        for (const img of inst.ppe_images || []) {
+          const rawFile = Array.isArray(img.files) ? img.files[0] : img.files;
+          if (!rawFile?.provider_file_id && img.file_id) {
+            missingFileIds.add(Number(img.file_id));
+          }
+        }
+      }
+      for (const oth of sortedOtherList) {
+        const rawFile = Array.isArray(oth.files) ? oth.files[0] : oth.files;
+        if (!rawFile?.provider_file_id && oth.file_id) {
+          missingFileIds.add(Number(oth.file_id));
+        }
+      }
+
+      const fallbackFilesById = new Map<number, { provider_file_id: string; storage_provider?: string }>();
+      if (missingFileIds.size > 0) {
+        try {
+          const { data: fileRows } = await supabase
+            .from('files')
+            .select('id, provider_file_id, storage_provider')
+            .in('id', Array.from(missingFileIds));
+          for (const f of (fileRows as any[]) || []) {
+            if (f?.provider_file_id) {
+              fallbackFilesById.set(Number(f.id), f);
+            }
+          }
+        } catch {}
+      }
+
+      const orderedPaths: string[] = [];
+      const seenPaths = new Set<string>();
+      const addPath = (p?: string | null) => {
+        if (p && !seenPaths.has(p)) {
+          seenPaths.add(p);
+          orderedPaths.push(p);
+        }
+      };
+
+      const workerPhotoMap = new Map<string, string>();
+      const rawWorkers = sortedInstList.map((worker, idx) => {
+        const displayIndex = idx + 1;
+        const seq = Number(worker.sequence_no) || displayIndex;
+        const images = ((worker.ppe_images as any[]) || []).slice();
+
+        const pickLatestSide = (side: 'FRONT' | 'BACK') => {
+          const matches = images
+            .filter((img) => String(img.side || '').toUpperCase() === side)
+            .sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+          const chosen = matches[0];
+          if (!chosen) return { path: null as string | null, valid: false };
+          const raw = Array.isArray(chosen.files) ? chosen.files[0] : chosen.files;
+          const fileMeta = raw?.provider_file_id ? raw : fallbackFilesById.get(Number(chosen.file_id));
+          const fileId: string | null = fileMeta?.provider_file_id || null;
+          const provider: string | null =
+            fileMeta?.storage_provider || (fileId?.includes('/') ? 'SUPABASE' : 'GOOGLE_DRIVE');
+          const valid = isSupabaseStoragePath(fileId, provider);
+          return { path: valid ? fileId : null, valid: Boolean(valid && fileId) };
+        };
+
+        const front = pickLatestSide('FRONT');
+        const back = pickLatestSide('BACK');
+
+        if (front.path) {
+          addPath(front.path);
+          workerPhotoMap.set(`${seq}:FRONT`, front.path);
+          workerPhotoMap.set(`${seq}:front`, front.path);
+          if (!workerPhotoMap.has(String(seq))) workerPhotoMap.set(String(seq), front.path);
+        }
+        if (back.path) {
+          addPath(back.path);
+          workerPhotoMap.set(`${seq}:BACK`, back.path);
+          workerPhotoMap.set(`${seq}:back`, back.path);
+          if (!workerPhotoMap.has(String(seq))) workerPhotoMap.set(String(seq), back.path);
+        }
+
+        return {
+          workerId: worker.id ? Number(worker.id) : null,
+          sequenceNo: seq,
+          displayIndex,
+          workerName: worker.worker_name || undefined,
+          frontPath: front.path,
+          backPath: back.path,
+          hasFrontRecord: front.valid,
+          hasBackRecord: back.valid,
+        };
+      });
+
+      submissionWorkerPhotosCache.set(subIdNumber, {
+        photos: workerPhotoMap,
+        loadedAt: Date.now(),
+      });
+
+      const rawOthers = sortedOtherList.map((oth, idx) => {
+        const raw = Array.isArray(oth.files) ? oth.files[0] : oth.files;
+        const fileMeta = raw?.provider_file_id ? raw : fallbackFilesById.get(Number(oth.file_id));
+        const fileId: string | null = fileMeta?.provider_file_id || null;
+        const provider: string | null =
+          fileMeta?.storage_provider || (fileId?.includes('/') ? 'SUPABASE' : 'GOOGLE_DRIVE');
+        const valid = isSupabaseStoragePath(fileId, provider);
+        if (valid && fileId) addPath(fileId);
+        return {
+          id: Number(oth.id) || idx + 1,
+          sequenceNo: Number(oth.sequence_no) || idx + 1,
+          storagePath: valid ? fileId : null,
+        };
+      });
+
+      const localCachedByPath = new Map<string, string>();
+      await Promise.all(
+        orderedPaths.map(async (path) => {
+          const bucket: StorageBucket = path.startsWith('users/') ? 'avatars' : 'evidence';
+          const [localUri, signedUrl] = await Promise.all([
+            imageUtils.getCachedImageUri
+              ? imageUtils.getCachedImageUri(path).catch(() => null)
+              : Promise.resolve(null),
+            retryWithBackoff(
+              async () => {
+                const signedRes = await supabaseStorageService.createSignedUrl(bucket, path, expiresIn);
+                const url = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
+                if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+                  throw new Error(`Invalid signed URL for ${path}`);
+                }
+                return url;
+              },
+              2,
+              baseDelayMs
+            ).catch((err) => {
+              console.warn('[preloadSubmissionMedia] Signed URL failed after retries for:', path, err);
+              return null;
+            }),
+          ]);
+
+          if (localUri) {
+            localCachedByPath.set(path, localUri);
+          }
+          if (signedUrl) {
+            signedUrls[path] = signedUrl;
+          }
+        })
+      );
+
+      const buildCandidates = (path: string | null): PreloadedMediaSource[] => {
+        if (!path) return [];
+        const list: PreloadedMediaSource[] = [];
+        const local = localCachedByPath.get(path);
+        if (local) {
+          list.push({ uri: local, cacheKey: path });
+        }
+        const remote = signedUrls[path];
+        if (remote) {
+          list.push({ uri: remote, cacheKey: path });
+        }
+        return list;
+      };
+
+      for (const w of rawWorkers) {
+        workers.push({
+          ...w,
+          frontCandidates: buildCandidates(w.frontPath),
+          backCandidates: buildCandidates(w.backPath),
+        });
+      }
+
+      for (const o of rawOthers) {
+        const candidates = buildCandidates(o.storagePath);
+        if (candidates.length > 0) {
+          otherPhotos.push({
+            id: o.id,
+            sequenceNo: o.sequenceNo,
+            storagePath: o.storagePath,
+            uri: candidates[0].uri,
+            candidates,
+          });
+        }
+      }
+
+      // Eagerly prefetch ALL worker & other URLs into memory-disk + local FileSystem disk cache in parallel
+      const prefetchTasks = orderedPaths.map(async (path) => {
+        const remoteUrl = signedUrls[path];
+        const tasks: Promise<unknown>[] = [];
+        if (remoteUrl) {
+          tasks.push(prefetchUrlWithRetry(remoteUrl, baseDelayMs));
+        }
+        if (imageUtils.getImageUri && !localCachedByPath.has(path)) {
+          tasks.push(
+            retryWithBackoff(
+              async () => {
+                const downloadedUri = await imageUtils.getImageUri!(path, { storageProvider: 'SUPABASE' });
+                if (!downloadedUri) throw new Error('Disk cache download returned null');
+                return downloadedUri;
+              },
+              2,
+              baseDelayMs
+            )
+              .then((downloadedUri) => {
+                if (!downloadedUri || !downloadedUri.startsWith('file://')) return;
+                // Prepend downloaded file:// URI into live bundle candidates for instant offline/Flight Mode access
+                for (const w of workers) {
+                  if (w.frontPath === path && !w.frontCandidates.some((c) => c.uri === downloadedUri)) {
+                    w.frontCandidates.unshift({ uri: downloadedUri, cacheKey: path });
+                  }
+                  if (w.backPath === path && !w.backCandidates.some((c) => c.uri === downloadedUri)) {
+                    w.backCandidates.unshift({ uri: downloadedUri, cacheKey: path });
+                  }
+                }
+                for (const o of otherPhotos) {
+                  if (o.storagePath === path && !o.candidates.some((c) => c.uri === downloadedUri)) {
+                    o.candidates.unshift({ uri: downloadedUri, cacheKey: path });
+                    o.uri = downloadedUri;
+                  }
+                }
+              })
+              .catch(() => {})
+          );
+        }
+        await Promise.allSettled(tasks);
+      });
+
+      if (options?.awaitPrefetch) {
+        await Promise.allSettled(prefetchTasks);
+      } else {
+        void Promise.allSettled(prefetchTasks);
+      }
+
+      const bundle: SubmissionMediaBundle = {
+        submissionId: subIdNumber,
+        workers,
+        otherPhotos,
+        signedUrls,
+      };
+
+      const meta = (subData as any)?.metadata;
+      const expectedWorkers = Number(meta?.totalWorkers || meta?.workerCount || 0);
+      const isComplete = expectedWorkers <= 0 || sortedInstList.length >= expectedWorkers;
+      const allPathsResolved = orderedPaths.every((p) => Boolean(signedUrls[p] || localCachedByPath.get(p)));
+
+      if (isComplete && allPathsResolved) {
+        const expiresAt = Date.now() + expiresIn * 1000;
+        submissionMediaBundleCache.set(subIdNumber, { bundle, expiresAt });
+        submissionPreloadCache.set(subIdNumber, { results: signedUrls, expiresAt });
+      }
+
+      return bundle;
+    } catch (err) {
+      console.warn('[preloadSubmissionMedia] Error preloading submission media:', err);
+      return {
+        submissionId: subIdNumber,
+        workers,
+        otherPhotos,
+        signedUrls,
+      };
+    } finally {
+      inFlightSubmissionMediaBundles.delete(subIdNumber);
+    }
+  })();
+
+  inFlightSubmissionMediaBundles.set(subIdNumber, bundlePromise);
+  return bundlePromise;
+}
+
 /**
  * On opening a submission:
  * Creates 1-day signed URLs for all images (worker front/back and other photos) if not existing,
@@ -779,118 +1291,22 @@ export async function preloadSubmissionSignedUrls(
   const subIdNumber = Number(submissionId);
   if (isNaN(subIdNumber) || subIdNumber <= 0) return {};
 
-  const expiresIn = options?.expiresInSeconds ?? ONE_DAY_SECONDS;
-
-  // 1. If not forcing refresh, check cache and REUSE immediately with 0 DB/storage queries
   if (!options?.forceRefresh) {
     const existing = submissionPreloadCache.get(subIdNumber);
     if (existing && Date.now() < existing.expiresAt - 300_000) {
       return existing.results;
     }
-    // Deduplicate concurrent preloads for the same submission
     const activeInFlight = inFlightSubmissionPreloads.get(subIdNumber);
     if (activeInFlight) {
       return activeInFlight;
     }
   }
 
-  const preloadPromise = (async (): Promise<Record<string, string>> => {
-    const results: Record<string, string> = {};
-
-    try {
-      const { supabase } = require('@/services/supabase/client');
-
-      const [{ data: instList }, { data: otherList }] = await Promise.all([
-        supabase
-          .from('ppe_worker_instances')
-          .select(`
-            id,
-            sequence_no,
-            ppe_images (
-              side,
-              files ( provider_file_id, storage_provider )
-            )
-          `)
-          .eq('submission_id', subIdNumber),
-        supabase
-          .from('other_images')
-          .select(`
-            id,
-            files ( provider_file_id, storage_provider )
-          `)
-          .eq('submission_id', subIdNumber),
-      ]);
-
-      const pathsToLoad = new Set<string>();
-      const workerPhotoMap = new Map<string, string>();
-
-      for (const inst of instList || []) {
-        const seq = Number(inst.sequence_no) || 1;
-        for (const img of inst.ppe_images || []) {
-          const rawFile = Array.isArray(img.files) ? img.files[0] : img.files;
-          const fileId = rawFile?.provider_file_id;
-          if (fileId && (rawFile?.storage_provider === 'SUPABASE' || fileId.includes('/'))) {
-            pathsToLoad.add(fileId);
-            if (img.side) {
-              const sUpper = String(img.side).toUpperCase();
-              const sLower = String(img.side).toLowerCase();
-              workerPhotoMap.set(`${seq}:${img.side}`, fileId);
-              workerPhotoMap.set(`${seq}:${sUpper}`, fileId);
-              workerPhotoMap.set(`${seq}:${sLower}`, fileId);
-            }
-          }
-        }
-      }
-
-      // Store in worker photos cache so HistoryInspectionPhoto doesn't re-query DB
-      submissionWorkerPhotosCache.set(subIdNumber, {
-        photos: workerPhotoMap,
-        loadedAt: Date.now(),
-      });
-
-      for (const oth of otherList || []) {
-        const rawFile = Array.isArray(oth.files) ? oth.files[0] : oth.files;
-        const fileId = rawFile?.provider_file_id;
-        if (fileId && (rawFile?.storage_provider === 'SUPABASE' || fileId.includes('/'))) {
-          pathsToLoad.add(fileId);
-        }
-      }
-
-      await Promise.all(
-        Array.from(pathsToLoad).map(async (path) => {
-          try {
-            const bucket = path.startsWith('users/') ? 'avatars' : 'evidence';
-            // Reuses cached signed URL if valid, or generates new 1-day URL
-            const signedRes = await supabaseStorageService.createSignedUrl(bucket, path, expiresIn);
-            const url = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
-            if (url && typeof url === 'string' && url.startsWith('http')) {
-              results[path] = url;
-              // Preload image bytes directly into Expo Image disk and memory cache
-              try {
-                const { Image } = require('expo-image');
-                if (Image && typeof Image.prefetch === 'function') {
-                  Image.prefetch(url, 'memory-disk').catch(() => {});
-                }
-              } catch {}
-            }
-          } catch (err) {
-            console.warn('[preloadSubmissionSignedUrls] Failed for path:', path, err);
-          }
-        })
-      );
-
-      submissionPreloadCache.set(subIdNumber, {
-        results,
-        expiresAt: Date.now() + expiresIn * 1000,
-      });
-    } catch (err) {
-      console.warn('[preloadSubmissionSignedUrls] Error preloading submission signed URLs:', err);
-    } finally {
+  const preloadPromise = preloadSubmissionMedia(submissionId, options)
+    .then((bundle) => bundle.signedUrls)
+    .finally(() => {
       inFlightSubmissionPreloads.delete(subIdNumber);
-    }
-
-    return results;
-  })();
+    });
 
   inFlightSubmissionPreloads.set(subIdNumber, preloadPromise);
   return preloadPromise;

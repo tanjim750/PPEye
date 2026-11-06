@@ -1,13 +1,30 @@
 import { Submission, SubmissionStatus } from '@/features/submissions/types';
 import { supabase } from '@/services/supabase/client';
+import { authStore } from '@/stores/auth.store';
 import type { SubmissionStatus as DbSubmissionStatus } from '@/types/database.types';
 
 export async function listSubmissions(): Promise<Submission[]> {
   try {
-    const { data, error } = await supabase
+    const activeUser = authStore.user;
+    const isExternal =
+      activeUser?.category === 'EXTERNAL' ||
+      activeUser?.role === 'vendor' ||
+      activeUser?.role === 'external';
+    const currentUserId = Number(activeUser?.id);
+    if (isExternal && (!Number.isFinite(currentUserId) || currentUserId <= 0)) {
+      return [];
+    }
+
+    let query = supabase
       .from('ppe_submissions')
-      .select('id, created_at, status, vendor_profile_id')
+      .select('id, created_at, status, vendor_profile_id, submitted_by')
       .order('created_at', { ascending: false });
+
+    if (isExternal) {
+      query = query.eq('submitted_by', currentUserId);
+    }
+
+    const { data, error } = await query;
 
     if (error || !data) {
       return [];
@@ -36,16 +53,22 @@ export async function createSubmission(submission: Omit<Submission, 'createdAt' 
     };
 
     const dbStatus: DbSubmissionStatus = statusMap[submission.status] ?? 'SUBMITTED';
-    let vendorProfileId = submission.vendorId ? parseInt(submission.vendorId, 10) : null;
-    let submittedBy: number | null = null;
+    let vendorProfileId =
+      (submission.vendorId ? parseInt(submission.vendorId, 10) : null) ??
+      authStore.user?.vendorProfileId ??
+      null;
+    const activeUid = Number(authStore.user?.id);
+    let submittedBy: number | null = Number.isFinite(activeUid) && activeUid > 0 ? activeUid : null;
 
     if (!vendorProfileId) {
       const { data: firstVendor } = await supabase.from('vendor_profiles').select('id').limit(1).maybeSingle();
       if (firstVendor) vendorProfileId = firstVendor.id;
     }
 
-    const { data: firstUser } = await supabase.from('users').select('id').limit(1).maybeSingle();
-    if (firstUser) submittedBy = firstUser.id;
+    if (!submittedBy && authStore.user?.category !== 'EXTERNAL') {
+      const { data: firstUser } = await supabase.from('users').select('id').limit(1).maybeSingle();
+      if (firstUser) submittedBy = firstUser.id;
+    }
 
     if (!vendorProfileId || !submittedBy) {
       return {

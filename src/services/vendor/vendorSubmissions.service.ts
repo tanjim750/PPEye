@@ -1,4 +1,5 @@
 import { replacePPEImage } from "@/services/storage/ppe-images";
+import { authStore, subscribeAuthStore } from "@/stores/auth.store";
 import {
   StorageError,
   StorageErrorCode,
@@ -45,6 +46,34 @@ function getDb(): any {
     return supabaseOverride;
   }
   return require("@/services/supabase/client").supabase;
+}
+
+function resolveExternalOwnerScope(explicitUserId?: number): {
+  isExternal: boolean;
+  userId?: number;
+} {
+  const activeUser = authStore.user;
+  const isExternal =
+    activeUser?.category === "EXTERNAL" ||
+    activeUser?.role === "vendor" ||
+    activeUser?.role === "external";
+
+  if (explicitUserId !== undefined && explicitUserId !== null) {
+    const parsedExplicit = Number(explicitUserId);
+    if (Number.isFinite(parsedExplicit) && parsedExplicit > 0) {
+      return { isExternal, userId: parsedExplicit };
+    }
+  }
+
+  if (isExternal) {
+    const parsedActive = Number(activeUser?.id);
+    return {
+      isExternal: true,
+      userId: Number.isFinite(parsedActive) && parsedActive > 0 ? parsedActive : undefined,
+    };
+  }
+
+  return { isExternal: false, userId: undefined };
 }
 
 function resolvePreviewUrl(
@@ -180,13 +209,32 @@ export async function getVendorDashboardStats(
   stats: VendorDashboardStats;
   recentChecks: VendorRecentCheckItem[];
 }> {
+  const emptyResult = {
+    stats: {
+      totalSubmissions: 0,
+      pendingCount: 0,
+      safeCount: 0,
+      unsafeCount: 0,
+      draftCount: 0,
+      todayChecks: 0,
+      complianceRate: 100,
+      activeDraft: null,
+    },
+    recentChecks: [] as VendorRecentCheckItem[],
+  };
   try {
+    const { isExternal, userId: effectiveUserId } = resolveExternalOwnerScope(userId);
+    if (isExternal && !effectiveUserId) {
+      return emptyResult;
+    }
+
     let query = getDb()
       .from("ppe_submissions")
       .select(
         `
         id,
         vendor_profile_id,
+        submitted_by,
         site_name,
         status,
         metadata,
@@ -205,9 +253,9 @@ export async function getVendorDashboardStats(
       .eq("vendor_profile_id", vendorProfileId)
       .order("created_at", { ascending: false });
 
-    // If worker role, restrict to submissions created by or involving this worker
-    if (externalType === "WORKER" && userId) {
-      query = query.eq("submitted_by", userId);
+    // Strict per-user isolation: every external user only sees their own submissions
+    if (effectiveUserId) {
+      query = query.eq("submitted_by", effectiveUserId);
     }
 
     const { data: submissions, error } = await query;
@@ -393,17 +441,23 @@ export async function getVendorDashboardStats(
  */
 export async function listVendorSubmissions(options: {
   vendorProfileId: number;
+  submittedBy?: number;
   statusFilter?: "ALL" | "PENDING" | "SAFE" | "UNSAFE" | "DRAFT";
   limit?: number;
 }): Promise<VendorSubmissionSummaryItem[]> {
   try {
-    const { vendorProfileId, statusFilter = "ALL", limit = 50 } = options;
+    const { vendorProfileId, submittedBy, statusFilter = "ALL", limit = 50 } = options;
+    const { isExternal, userId: effectiveUserId } = resolveExternalOwnerScope(submittedBy);
+    if (isExternal && !effectiveUserId) {
+      return [];
+    }
 
     let query = getDb()
       .from("ppe_submissions")
       .select(
         `
         id,
+        submitted_by,
         site_name,
         status,
         metadata,
@@ -421,6 +475,10 @@ export async function listVendorSubmissions(options: {
       .eq("vendor_profile_id", vendorProfileId)
       .order("created_at", { ascending: false })
       .limit(limit);
+
+    if (effectiveUserId) {
+      query = query.eq("submitted_by", effectiveUserId);
+    }
 
     if (statusFilter === "DRAFT") {
       query = query.eq("status", "DRAFT");
@@ -509,16 +567,25 @@ export async function listVendorSubmissions(options: {
   }
 }
 
-const vendorSubmissionDetailsCache = new Map<number, { data: VendorSubmissionDetail; loadedAt: number }>();
-const inFlightVendorSubmissionDetails = new Map<number, Promise<VendorSubmissionDetail | null>>();
+const vendorSubmissionDetailsCache = new Map<string, { data: VendorSubmissionDetail; loadedAt: number }>();
+const inFlightVendorSubmissionDetails = new Map<string, Promise<VendorSubmissionDetail | null>>();
 
 export function invalidateVendorSubmissionDetailsCache(submissionId?: number): void {
   if (submissionId !== undefined) {
-    vendorSubmissionDetailsCache.delete(submissionId);
+    for (const key of vendorSubmissionDetailsCache.keys()) {
+      if (key.endsWith(`:${submissionId}`)) {
+        vendorSubmissionDetailsCache.delete(key);
+      }
+    }
   } else {
     vendorSubmissionDetailsCache.clear();
+    inFlightVendorSubmissionDetails.clear();
   }
 }
+
+subscribeAuthStore(() => {
+  invalidateVendorSubmissionDetailsCache();
+});
 
 /**
  * Fetches comprehensive details for a specific submission including worker photos,
@@ -527,17 +594,21 @@ export function invalidateVendorSubmissionDetailsCache(submissionId?: number): v
  */
 export async function getVendorSubmissionDetails(
   submissionId: number,
-  options?: { forceRefresh?: boolean }
+  options?: { forceRefresh?: boolean; submittedBy?: number }
 ): Promise<VendorSubmissionDetail | null> {
   const parsedId = Number(submissionId);
   if (isNaN(parsedId) || parsedId <= 0) return null;
 
+  const { isExternal, userId: effectiveUserId } = resolveExternalOwnerScope(options?.submittedBy);
+  if (isExternal && !effectiveUserId) return null;
+  const cacheKey = `${effectiveUserId ?? "all"}:${parsedId}`;
+
   if (!options?.forceRefresh) {
-    const cached = vendorSubmissionDetailsCache.get(parsedId);
+    const cached = vendorSubmissionDetailsCache.get(cacheKey);
     if (cached && Date.now() - cached.loadedAt < 60_000) {
       return cached.data;
     }
-    const inFlight = inFlightVendorSubmissionDetails.get(parsedId);
+    const inFlight = inFlightVendorSubmissionDetails.get(cacheKey);
     if (inFlight) {
       return inFlight;
     }
@@ -545,12 +616,13 @@ export async function getVendorSubmissionDetails(
 
   const fetchPromise = (async (): Promise<VendorSubmissionDetail | null> => {
     try {
-      const { data: sub, error } = await getDb()
+      let query = getDb()
         .from("ppe_submissions")
         .select(
           `
           id,
           vendor_profile_id,
+          submitted_by,
           site_name,
           status,
           metadata,
@@ -589,8 +661,13 @@ export async function getVendorSubmissionDetails(
           )
         `,
         )
-        .eq("id", parsedId)
-        .single();
+        .eq("id", parsedId);
+
+      if (effectiveUserId) {
+        query = query.eq("submitted_by", effectiveUserId);
+      }
+
+      const { data: sub, error } = await query.single();
 
       if (error || !sub) {
         console.warn(
@@ -601,6 +678,9 @@ export async function getVendorSubmissionDetails(
       }
 
       const subData = sub as any;
+      if (effectiveUserId && subData.submitted_by !== undefined && Number(subData.submitted_by) !== effectiveUserId) {
+        return null;
+      }
       const subReview = [...(subData.submission_reviews || [])].sort((a: any, b: any) => new Date(b.reviewed_at).getTime() - new Date(a.reviewed_at).getTime())[0];
       const metadataWorkers = Array.isArray(subData.metadata?.workerReviews) ? subData.metadata.workerReviews : [];
 
@@ -683,7 +763,7 @@ export async function getVendorSubmissionDetails(
         otherPhotos,
       };
 
-      vendorSubmissionDetailsCache.set(parsedId, {
+      vendorSubmissionDetailsCache.set(cacheKey, {
         data: detailResult,
         loadedAt: Date.now(),
       });
@@ -696,11 +776,11 @@ export async function getVendorSubmissionDetails(
       );
       return null;
     } finally {
-      inFlightVendorSubmissionDetails.delete(parsedId);
+      inFlightVendorSubmissionDetails.delete(cacheKey);
     }
   })();
 
-  inFlightVendorSubmissionDetails.set(parsedId, fetchPromise);
+  inFlightVendorSubmissionDetails.set(cacheKey, fetchPromise);
   return fetchPromise;
 }
 
@@ -712,19 +792,33 @@ export async function saveDraftSubmission(
   existingSubmissionId?: number,
 ): Promise<{ success: boolean; submissionId?: number; error?: string }> {
   try {
+    const { isExternal, userId: activeOwnerId } = resolveExternalOwnerScope();
     const vendorProfileId = payload.vendorProfileId;
-    const submittedBy = payload.submittedBy;
+    const submittedBy = isExternal && activeOwnerId ? activeOwnerId : payload.submittedBy;
     if (!vendorProfileId || !submittedBy) {
       throw new Error('Vendor profile and submitting user are required to save a draft.');
     }
+    if (isExternal && activeOwnerId && payload.submittedBy && Number(payload.submittedBy) !== activeOwnerId) {
+      throw new StorageError(
+        StorageErrorCode.PERMISSION_DENIED,
+        "Cannot create or edit a draft on behalf of another vendor user.",
+      );
+    }
 
     if (existingSubmissionId) {
-      // 1. Verify it is still a draft
+      // 1. Verify it is still a draft and belongs to the submitting user
       const { data: current } = await getDb()
         .from("ppe_submissions")
-        .select("status")
+        .select("status, submitted_by")
         .eq("id", existingSubmissionId)
         .single();
+
+      if (current && Number(current.submitted_by) !== Number(submittedBy)) {
+        throw new StorageError(
+          StorageErrorCode.PERMISSION_DENIED,
+          "You do not have permission to edit another user's draft.",
+        );
+      }
 
       if (current && current.status !== "DRAFT") {
         throw new StorageError(
@@ -741,7 +835,8 @@ export async function saveDraftSubmission(
           metadata: payload.metadata ?? {},
           updated_at: new Date().toISOString(),
         })
-        .eq("id", existingSubmissionId);
+        .eq("id", existingSubmissionId)
+        .eq("submitted_by", submittedBy);
 
       return { success: true, submissionId: existingSubmissionId };
     }
@@ -779,6 +874,7 @@ export async function deleteDraftSubmission(
   userId?: number,
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const { userId: effectiveUserId } = resolveExternalOwnerScope(userId);
     const { data: sub, error } = await getDb()
       .from("ppe_submissions")
       .select("id, status, submitted_by")
@@ -789,6 +885,13 @@ export async function deleteDraftSubmission(
       throw new StorageError(
         StorageErrorCode.FILE_NOT_FOUND,
         "Submission not found",
+      );
+    }
+
+    if (effectiveUserId && Number(sub.submitted_by) !== effectiveUserId) {
+      throw new StorageError(
+        StorageErrorCode.PERMISSION_DENIED,
+        "You do not have permission to delete another user's submission.",
       );
     }
 
@@ -848,11 +951,13 @@ export async function submitDraftForReview(
   submissionId: number,
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const { userId: effectiveUserId } = resolveExternalOwnerScope();
     const { data: sub, error } = await getDb()
       .from("ppe_submissions")
       .select(
         `
         id,
+        submitted_by,
         status,
         ppe_worker_instances (
           id,
@@ -872,6 +977,12 @@ export async function submitDraftForReview(
     }
 
     const subData = sub as any;
+    if (effectiveUserId && subData.submitted_by !== undefined && Number(subData.submitted_by) !== effectiveUserId) {
+      throw new StorageError(
+        StorageErrorCode.PERMISSION_DENIED,
+        "You do not have permission to submit another user's draft.",
+      );
+    }
     if (subData.status !== "DRAFT") {
       throw new StorageError(
         StorageErrorCode.INVALID_INPUT,
@@ -934,6 +1045,21 @@ export async function resubmitUnsafeWorker(
   note?: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const { userId: effectiveUserId } = resolveExternalOwnerScope();
+    if (effectiveUserId) {
+      const { data: ownerSub } = await getDb()
+        .from("ppe_submissions")
+        .select("submitted_by")
+        .eq("id", submissionId)
+        .single();
+      if (!ownerSub || Number(ownerSub.submitted_by) !== effectiveUserId) {
+        throw new StorageError(
+          StorageErrorCode.PERMISSION_DENIED,
+          "You do not have permission to resubmit another user's submission.",
+        );
+      }
+    }
+
     // 1. Upload & replace active image reference
     if (replacePPEImageOverride) {
       const replaced = await replacePPEImageOverride({

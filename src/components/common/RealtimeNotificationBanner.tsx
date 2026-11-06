@@ -8,6 +8,7 @@ import { authStore } from '@/stores/auth.store';
 import { useAuth } from '@/hooks/useAuth';
 import {
   AppNotification,
+  isReviewerUser,
   useNotifications,
 } from '@/services/notifications/notification.service';
 import { hapticSelection } from '@/utils/haptics';
@@ -24,12 +25,17 @@ export function RealtimeNotificationBanner({
   const { language } = useLanguage();
   const isBn = language === 'bn';
   const activeUser = user || authStore.user;
-  const isInternal =
-    activeUser?.category === 'INTERNAL' ||
-    activeUser?.role === 'reviewer' ||
-    activeUser?.role === 'internal';
+  const isInternal = isReviewerUser(activeUser);
   const resolvedRole = propRole || (isInternal ? 'reviewer' : 'vendor');
-  const { banner, dismissBanner, markAsRead } = useNotifications(resolvedRole);
+  const vendorFilter =
+    resolvedRole === 'vendor'
+      ? {
+          userId: activeUser?.id,
+          vendorProfileId: activeUser?.vendorProfileId,
+          vendorName: activeUser?.vendorName,
+        }
+      : undefined;
+  const { banner, dismissBanner, markAsRead } = useNotifications(resolvedRole, vendorFilter);
 
   const isVisible = Boolean(banner && banner.recipientRole === resolvedRole);
   if (!isVisible || !banner) return null;
@@ -48,15 +54,20 @@ export function RealtimeNotificationBanner({
       } else {
         const isUnsafe = banner.type === 'REVIEW_UNSAFE';
         const isSafe = banner.type === 'REVIEW_SAFE';
-        const filter = isUnsafe ? 'unsafe' : isSafe ? 'all' : 'pending';
-        const subIdQuery = banner.submissionId ? `&submissionId=${banner.submissionId}` : '';
-        navigate(`/history?filter=${filter}${subIdQuery}`);
+        if (isUnsafe && banner.submissionId) {
+          navigate(`/submission-details?id=${banner.submissionId}`);
+        } else {
+          const filter = isUnsafe ? 'unsafe' : isSafe ? 'all' : 'pending';
+          const subIdQuery = banner.submissionId ? `&submissionId=${banner.submissionId}` : '';
+          navigate(`/history?filter=${filter}${subIdQuery}`);
+        }
       }
     }
   }
 
   const isSafe = banner.type === 'REVIEW_SAFE';
   const isUnsafe = banner.type === 'REVIEW_UNSAFE';
+  const isReview = banner.type === 'NEW_SUBMISSION';
   const iconColor = isSafe ? '#16a34a' : isUnsafe ? '#dc2626' : '#ca8a04';
   const iconName = isSafe
     ? { ios: 'checkmark.seal.fill', android: 'check_circle', web: 'check_circle' }
@@ -71,19 +82,23 @@ export function RealtimeNotificationBanner({
           accessibilityRole="button"
           onPress={handleView}
           {...(Platform.OS === 'web' ? ({ onClick: handleView, cursor: 'pointer' } as any) : {})}
-          style={styles.bannerCard}>
-          {/* Red / Green Glow Left Strip */}
-          <View style={[styles.redStrip, isSafe && styles.greenStrip]} />
+          style={[
+            styles.bannerCard,
+            isSafe && styles.bannerCardSafe,
+            isReview && styles.bannerCardReview,
+          ]}>
+          {/* Red / Green / Yellow Glow Left Strip */}
+          <View style={[styles.redStrip, isSafe && styles.greenStrip, isReview && styles.yellowStrip]} />
 
           {/* Icon */}
-          <View style={[styles.iconCircle, isSafe && styles.greenIconCircle]}>
+          <View style={[styles.iconCircle, isSafe && styles.greenIconCircle, isReview && styles.yellowIconCircle]}>
             <Icon color={iconColor} name={iconName as any} size={20} />
           </View>
 
           {/* Body Copy */}
           <View style={styles.copyContainer}>
             <View style={styles.topRow}>
-              <View style={[styles.redBadge, isSafe && styles.greenBadge]}>
+              <View style={[styles.redBadge, isSafe && styles.greenBadge, isReview && styles.yellowBadge]}>
                 <Text style={styles.redBadgeText}>{isBn ? 'নতুন' : 'NEW'}</Text>
               </View>
               <Text numberOfLines={1} style={styles.title}>
@@ -155,6 +170,14 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     width: '92%',
   },
+  bannerCardSafe: {
+    borderColor: '#bbf7d0',
+    shadowColor: '#16a34a',
+  },
+  bannerCardReview: {
+    borderColor: '#fef08a',
+    shadowColor: '#ca8a04',
+  },
   redStrip: {
     backgroundColor: '#DC2626',
     bottom: 0,
@@ -165,6 +188,9 @@ const styles = StyleSheet.create({
   },
   greenStrip: {
     backgroundColor: '#16a34a',
+  },
+  yellowStrip: {
+    backgroundColor: '#ca8a04',
   },
   iconCircle: {
     alignItems: 'center',
@@ -177,6 +203,9 @@ const styles = StyleSheet.create({
   },
   greenIconCircle: {
     backgroundColor: '#f0fdf4',
+  },
+  yellowIconCircle: {
+    backgroundColor: '#fefce8',
   },
   copyContainer: {
     flex: 1,
@@ -196,6 +225,9 @@ const styles = StyleSheet.create({
   },
   greenBadge: {
     backgroundColor: '#16a34a',
+  },
+  yellowBadge: {
+    backgroundColor: '#ca8a04',
   },
   redBadgeText: {
     color: '#FFFFFF',

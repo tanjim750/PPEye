@@ -4,11 +4,17 @@
  * expo-notifications is completely omitted from the web bundle.
  */
 
+export function registerForegroundPushDeduplicator(
+  _fn: ((notification: any) => boolean) | null
+): void {
+  // No-op on web
+}
+
 export function initNativeNotifications(): void {
   // No-op on web
 }
 
-export async function setupAndroidChannel(_channelId: string): Promise<void> {
+export async function setupAndroidChannel(_channelId?: string): Promise<void> {
   // No-op on web
 }
 
@@ -20,7 +26,8 @@ export async function requestNativeNotificationPermission(): Promise<boolean> {
 export async function scheduleNativeNotification(
   _title: string,
   _body: string,
-  _channelId: string
+  _channelId?: string,
+  _data?: Record<string, any>
 ): Promise<void> {
   // No-op on web (browser Notification API is used in notification.service.ts)
 }

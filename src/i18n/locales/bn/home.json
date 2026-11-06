@@ -76,7 +76,7 @@
     }
   },
   "internal": {
-    "greeting": "{{timeGreeting}}, {{name}}",
+    "greeting": "{{timeGreeting}},\n{{name}}",
     "role": "EHS প্রতিনিধি",
     "reviewTitle": "PPE Pendings Reviewes",
     "waitingCount": "{{count}}টি রিভিউ অপেক্ষমাণ",

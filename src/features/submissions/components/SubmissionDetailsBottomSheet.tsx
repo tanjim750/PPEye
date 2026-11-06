@@ -40,7 +40,7 @@ const unsafeReasonLabels: Record<string, string> = {
   harness: 'No Safety Harness',
   helmet: 'No Safety Helmet',
   lanyard: 'No Safety Lanyard',
-  other: 'Other Violation',
+  other: 'Other',
   shoes: 'No Safety Shoes',
 };
 
@@ -151,29 +151,26 @@ export function SubmissionDetailsBottomSheet({
   const isContextUnsafe = contextTab === 'unsafe';
   const isContextPending = contextTab === 'pending';
 
-  const isUnsafe = isContextUnsafe || (!isContextSafe && item?.status === 'unsafe');
-  const isSafe = isContextSafe || (!isContextUnsafe && item?.status === 'safe');
-  const isPending = isContextPending || (!isContextSafe && !isContextUnsafe && item?.status === 'review');
+  const isUnsafe = item?.status === 'unsafe' || isContextUnsafe;
+  const isSafe = item?.status === 'safe' || (isContextSafe && !isContextUnsafe);
+  const isPending = item?.status === 'review' || (isContextPending && !isContextSafe && !isContextUnsafe);
 
-  const modalTitle = isContextUnsafe
+  const modalTitle = isUnsafe
     ? 'Unsafe Review Details'
-    : isContextSafe
+    : isSafe
       ? 'Safe Review Details'
-      : isUnsafe
-        ? 'Unsafe Review Details'
-        : isSafe
-          ? 'Safe Review Details'
-          : 'Pending Review Details';
+      : isPending
+        ? 'Pending Review Details'
+        : 'Review Details';
 
+  // If the check item is grouped by status, item.workerReviews already holds only that status's workers
   const workersToDisplay =
     item?.workerReviews && item.workerReviews.length > 0
       ? isContextUnsafe
         ? item.workerReviews.filter((w) => w.status === 'unsafe')
-        : isContextSafe
+        : isContextSafe && !isContextUnsafe
           ? item.workerReviews.filter((w) => w.status === 'safe')
-          : isUnsafe
-            ? item.workerReviews.filter((w) => w.status === 'unsafe')
-            : item.workerReviews
+          : item.workerReviews
       : [
           {
             sequenceNo: item?.workerNumber || 1,
@@ -388,9 +385,8 @@ export function SubmissionDetailsBottomSheet({
 
                                 const iconConfig = reasonIcons[matchedKey] || reasonIcons[r] || reasonIcons.other;
                                 const isOther = matchedKey === 'other' || r.toLowerCase().includes('other');
-                                const workerNote = worker.otherReasonText || (workersToDisplay.length === 1 ? item?.reviewerNote : undefined);
-                                const displayLabel = isOther && workerNote
-                                  ? `Other: ${workerNote}`
+                                const displayLabel = isOther
+                                  ? 'Other'
                                   : (unsafeReasonLabels[matchedKey] || unsafeReasonLabels[r] || r);
 
                                 return (
@@ -463,8 +459,8 @@ export function SubmissionDetailsBottomSheet({
               </View>
             </ScrollView>
 
-            {/* Footer Fix & Resubmit Button for Unsafe checks */}
-            {isUnsafe && !isContextSafe && onFixAndResubmit && item && (
+            {/* Footer Fix & Resubmit Button when current item represents unsafe check */}
+            {(isUnsafe || item?.status === 'unsafe' || item?.workerReviews?.some((w) => w.status === 'unsafe')) && onFixAndResubmit && item && (
               <View
                 style={[
                   detailsStyles.footerActionContainer,

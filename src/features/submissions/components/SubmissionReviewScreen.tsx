@@ -42,6 +42,9 @@ import {
 import { supabase } from '@/services/supabase/client';
 import { submissionCoordinator } from '@/services/submission-coordination/submission-coordinator';
 import { cacheImage, uploadSubmissionImages, validateSubmissionImages } from '@/services/storage';
+import { prefetchUrlWithRetry } from '@/services/storage/supabase-storage.client';
+
+const REVIEW_PHOTO_BLURHASH = 'L6PZfSi_.AyE_3t7t7R**0o#DgR4';
 import {
   resubmitUnsafeWorker,
   saveDraftSubmission,
@@ -189,6 +192,20 @@ export function SubmissionReviewScreen() {
   useEffect(() => {
     buildWeatherMetadata();
   }, [buildWeatherMetadata]);
+
+  useEffect(() => {
+    const urls = new Set<string>();
+    for (const w of workerPhotos) {
+      if (w.frontUri?.startsWith('http')) urls.add(w.frontUri);
+      if (w.backUri?.startsWith('http')) urls.add(w.backUri);
+    }
+    for (const o of reviewOtherPhotos) {
+      if (o.uri?.startsWith('http')) urls.add(o.uri);
+    }
+    if (urls.size > 0) {
+      void Promise.allSettled(Array.from(urls).map((u) => prefetchUrlWithRetry(u)));
+    }
+  }, [workerPhotos, reviewOtherPhotos]);
 
   async function turnOnLocationAndBuildWeatherMetadata() {
     setIsBuildingWeatherMetadata(true);
@@ -455,52 +472,52 @@ export function SubmissionReviewScreen() {
             siteName: finalSite,
             workerCount: resubmissionCtx.unsafeWorkers?.length || 1,
             vendorName: user?.vendorName || 'ABC Telecom Ltd',
+            submittedBy: user?.id,
           });
           void broadcastNewSubmissionAlert({
             submissionId: resubmissionCtx.submissionId,
             siteName: finalSite,
             workerCount: resubmissionCtx.unsafeWorkers?.length || 1,
             vendorName: user?.vendorName || 'ABC Telecom Ltd',
+            vendorProfileId: user?.vendorProfileId,
+            submittedBy: user?.id,
+            isResubmission: true,
           });
           return;
         }
 
         // Standard New Submission creation:
-        // Create ONE single DB submission header for the entire inspection batch so all workers belong to the same submission
+        // Create ONE single DB submission header for the entire inspection batch with pre-populated worker instances
         console.log(`[PPEye] Creating DB submission record for ${workerPhotos.length} workers...`);
+        const resolvedSubmittedBy = Number(user?.id);
+        const validNumericSubmittedBy =
+          Number.isFinite(resolvedSubmittedBy) && resolvedSubmittedBy > 0
+            ? resolvedSubmittedBy
+            : undefined;
         const subHeader = await createPPESubmissionHeader({
-          vendorProfileId: user?.vendorProfileId || 1,
-          submittedBy: typeof user?.id === 'number' ? user.id : undefined,
+          vendorProfileId: user?.vendorProfileId,
+          submittedBy: validNumericSubmittedBy,
           siteName: finalSite,
+          workerSequenceNumbers: workerPhotos.map((w) => w.sequenceNo),
           metadata: {
             latitude: submissionMetadata?.location?.latitude ?? null,
             longitude: submissionMetadata?.location?.longitude ?? null,
             weather: submissionMetadata?.weather ?? null,
             workerCount: workerPhotos.length,
+            totalWorkers: workerPhotos.length,
+            submittedBy: validNumericSubmittedBy ?? user?.id ?? null,
+            vendorProfileId: user?.vendorProfileId ?? null,
             capturedAt: Date.now(),
           },
         });
 
-        if (!subHeader.success || !subHeader.submissionId) {
-          console.warn('[PPEye] Failed to create submission header');
+        const submittedBy = subHeader.submittedBy ?? validNumericSubmittedBy;
+        if (!subHeader.success || !subHeader.submissionId || !submittedBy) {
+          console.warn('[PPEye] Failed to create submission header or resolve authenticated user ID');
           return;
         }
 
         const currentSubId = subHeader.submissionId;
-        const submittedBy = subHeader.submittedBy || 1;
-
-        // Broadcast immediately upon header registration so Reviewers and Vendors get realtime alerts without waiting for storage uploads
-        void broadcastNewSubmission(currentSubId, {
-          siteName: finalSite,
-          workerCount: workerPhotos.length,
-          vendorName: user?.vendorName || 'ABC Telecom Ltd',
-        });
-        void broadcastNewSubmissionAlert({
-          submissionId: currentSubId,
-          siteName: finalSite,
-          workerCount: workerPhotos.length,
-          vendorName: user?.vendorName || 'ABC Telecom Ltd',
-        });
 
         // Process all workers under this single submission
         for (let i = 0; i < workerPhotos.length; i++) {
@@ -582,16 +599,20 @@ export function SubmissionReviewScreen() {
         }
 
         // Immediately broadcast the single multi-worker submission to Reviewer phones via Supabase realtime
-        broadcastNewSubmission(currentSubId);
+        void broadcastNewSubmission(currentSubId, {
+          siteName: finalSite,
+          workerCount: workerPhotos.length,
+          vendorName: user?.vendorName || 'ABC Telecom Ltd',
+          submittedBy: validNumericSubmittedBy ?? user?.id,
+        });
         void broadcastNewSubmissionAlert({
           submissionId: currentSubId,
           siteName: finalSite,
           workerCount: workerPhotos.length,
           vendorName: user?.vendorName || 'ABC Telecom Ltd',
+          vendorProfileId: user?.vendorProfileId,
+          submittedBy: validNumericSubmittedBy ?? user?.id,
         });
-
-        // Final broadcast trigger when all worker uploads have settled
-        broadcastNewSubmission();
       } catch (err) {
         console.warn('[PPEye] Pipeline sync error (Drive -> Supabase):', err);
       }
@@ -977,7 +998,18 @@ export function SubmissionReviewScreen() {
               onScrollEndDrag={() => setIsVerticalScrollEnabled(true)}
               showsHorizontalScrollIndicator={false}>
               {reviewOtherPhotos.map((photo) => (
-                <Image key={photo.id} contentFit="cover" source={photo.source} style={styles.otherPhoto} />
+                <Image
+                  key={photo.id}
+                  cachePolicy="memory-disk"
+                  contentFit="cover"
+                  loading="eager"
+                  placeholder={{ blurhash: REVIEW_PHOTO_BLURHASH }}
+                  placeholderContentFit="cover"
+                  priority="high"
+                  source={photo.source}
+                  style={styles.otherPhoto}
+                  transition={150}
+                />
               ))}
               <Pressable
                 accessibilityRole="button"
@@ -1101,19 +1133,40 @@ type ReviewPhotoProps = {
 
 function ReviewPhoto({ label, source }: ReviewPhotoProps) {
   const [hasLoadError, setHasLoadError] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const retryCountRef = useRef(0);
   const hasSource =
     typeof source === 'number' ||
     typeof source === 'string' ||
     (typeof source === 'object' && Boolean(source.uri));
 
+  const handleError = () => {
+    if (retryCountRef.current < 2) {
+      const attempt = retryCountRef.current + 1;
+      retryCountRef.current = attempt;
+      setTimeout(() => {
+        setReloadNonce((n) => n + 1);
+      }, 300 * Math.pow(2, attempt - 1));
+      return;
+    }
+    setHasLoadError(true);
+  };
+
   return (
     <View style={styles.photoFrame}>
       {hasSource && !hasLoadError ? (
         <Image
+          key={reloadNonce}
+          cachePolicy="memory-disk"
           contentFit="cover"
-          onError={() => setHasLoadError(true)}
+          loading="eager"
+          onError={handleError}
+          placeholder={{ blurhash: REVIEW_PHOTO_BLURHASH }}
+          placeholderContentFit="cover"
+          priority="high"
           source={source}
           style={styles.workerPhoto}
+          transition={150}
         />
       ) : (
         <View style={styles.photoFallback}>
