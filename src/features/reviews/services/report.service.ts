@@ -595,7 +595,9 @@ export function buildExcelWorkbookBase64(sections: OrgReportSection[]): string {
       // Data Rows & Cell Formatting
       sec.rows.forEach((rowItem, rIdx) => {
         const dataRow = currentRow;
-        rowHeights[dataRow] = { hpt: 22 };
+        // shortcut: estimates wrapped lines at ~40 chars/line for the 45-wide column, upgrade if fonts/width change
+        const reasonLines = Math.ceil(String(rowItem.reason || '-').length / 40);
+        rowHeights[dataRow] = { hpt: Math.max(22, reasonLines * 13 + 8) };
         const isZebra = rIdx % 2 === 1;
         const bgRgb = isZebra ? COLOR_ZEBRA_LIGHT : COLOR_WHITE;
 
@@ -781,7 +783,7 @@ export function buildExcelWorkbookBase64(sections: OrgReportSection[]): string {
  */
 export async function exportAndShareExcelReport(
   sections: OrgReportSection[],
-  filenamePrefix = 'PPE_Review_Report'
+  filenamePrefix = 'PPEye_Safety_Audit_Report'
 ): Promise<string> {
   const base64Data = buildExcelWorkbookBase64(sections);
   const timestamp = formatDateYMD(new Date()).replace(/-/g, '');
