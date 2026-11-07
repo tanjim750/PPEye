@@ -1,6 +1,6 @@
 import { Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -43,14 +43,39 @@ const reasonIcons: Record<string, { ios: string; android: string; web: string }>
   shoes: { ios: 'shoeprints.fill', android: 'directions_walk', web: 'directions_walk' },
 };
 
-function HistoryCheckThumbnail({ check }: { check: WorkerCheck }) {
+function getInitialHistoryThumb(check: WorkerCheck): { uri: string; cacheKey?: string } | null {
   const directUri = check.image?.uri || check.workerReviews?.find((w) => w.frontUri || w.backUri)?.frontUri || check.workerReviews?.find((w) => w.backUri)?.backUri || null;
-  const [sourceUri, setSourceUri] = useState<string | null>(directUri);
+  if (directUri) return { uri: directUri };
+
+  const subId = check.submissionId || Number(String(check.id).replace(/\D/g, ''));
+  if (subId && !isNaN(subId)) {
+    try {
+      const { getPreloadedSubmissionMediaSync } = require('@/services/storage/supabase-storage.client');
+      const { getCachedImageUriSync } = require('@/utils/image');
+      const bundle = getPreloadedSubmissionMediaSync(subId);
+      if (bundle && bundle.workers.length > 0) {
+        const p = bundle.workers[0]?.frontPath || bundle.workers[0]?.backPath;
+        if (p) {
+          const local = getCachedImageUriSync(p);
+          if (local && (Platform.OS !== 'web' || !local.startsWith('file://'))) {
+            return { uri: local, cacheKey: p };
+          }
+          if (bundle.signedUrls[p]) return { uri: bundle.signedUrls[p], cacheKey: p };
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+const HistoryCheckThumbnail = memo(function HistoryCheckThumbnail({ check }: { check: WorkerCheck }) {
+  const initial = useMemo(() => getInitialHistoryThumb(check), [check.id, check.submissionId, check.image?.uri]);
+  const [sourceData, setSourceData] = useState<{ uri: string; cacheKey?: string } | null>(initial);
 
   useEffect(() => {
     const currentDirect = check.image?.uri || check.workerReviews?.find((w) => w.frontUri || w.backUri)?.frontUri || check.workerReviews?.find((w) => w.backUri)?.backUri || null;
     if (currentDirect) {
-      setSourceUri(currentDirect);
+      setSourceData({ uri: currentDirect });
       return;
     }
     let isCancelled = false;
@@ -69,7 +94,7 @@ function HistoryCheckThumbnail({ check }: { check: WorkerCheck }) {
             const { getCachedImageUriSync } = require('@/utils/image');
             const localCached = getCachedImageUriSync(photoPath);
             if (localCached && (Platform.OS !== 'web' || !localCached.startsWith('file://'))) {
-              setSourceUri(localCached);
+              setSourceData({ uri: localCached, cacheKey: photoPath });
               check.image = { uri: localCached };
               return;
             }
@@ -77,7 +102,7 @@ function HistoryCheckThumbnail({ check }: { check: WorkerCheck }) {
             const signedRes = await supabaseStorageService.createSignedUrl(bucket, photoPath, 86400 * 7);
             const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
             if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http') && !isCancelled) {
-              setSourceUri(urlStr);
+              setSourceData({ uri: urlStr, cacheKey: photoPath });
               check.image = { uri: urlStr };
             }
           }
@@ -90,12 +115,16 @@ function HistoryCheckThumbnail({ check }: { check: WorkerCheck }) {
     };
   }, [check.image?.uri, check.id, check.submissionId]);
 
-  if (sourceUri) {
+  if (sourceData?.uri) {
     return (
       <Image
         cachePolicy="memory-disk"
-        source={{ uri: sourceUri }}
+        contentFit="cover"
+        priority="high"
+        recyclingKey={sourceData.cacheKey || sourceData.uri}
+        source={{ uri: sourceData.uri, cacheKey: sourceData.cacheKey }}
         style={styles.thumbnail}
+        transition={150}
       />
     );
   }
@@ -109,7 +138,7 @@ function HistoryCheckThumbnail({ check }: { check: WorkerCheck }) {
       />
     </View>
   );
-}
+});
 
 export function SubmissionHistoryScreen() {
   const router = useRouter();

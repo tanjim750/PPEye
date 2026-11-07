@@ -1249,16 +1249,9 @@ export async function preloadSubmissionMedia(
         signedUrls,
       };
 
-      const meta = (subData as any)?.metadata;
-      const expectedWorkers = Number(meta?.totalWorkers || meta?.workerCount || 0);
-      const isComplete = expectedWorkers <= 0 || sortedInstList.length >= expectedWorkers;
-      const allPathsResolved = orderedPaths.every((p) => Boolean(signedUrls[p] || localCachedByPath.get(p)));
-
-      if (isComplete && allPathsResolved) {
-        const expiresAt = Date.now() + expiresIn * 1000;
-        submissionMediaBundleCache.set(subIdNumber, { bundle, expiresAt });
-        submissionPreloadCache.set(subIdNumber, { results: signedUrls, expiresAt });
-      }
+      const expiresAt = Date.now() + expiresIn * 1000;
+      submissionMediaBundleCache.set(subIdNumber, { bundle, expiresAt });
+      submissionPreloadCache.set(subIdNumber, { results: signedUrls, expiresAt });
 
       return bundle;
     } catch (err) {
@@ -1324,6 +1317,28 @@ export async function getSubmissionWorkerPhotos(submissionId: number | string): 
   const cached = submissionWorkerPhotosCache.get(subIdNumber);
   if (cached && Date.now() - cached.loadedAt < 600_000) {
     return cached.photos;
+  }
+
+  // 1b. Check synchronous media bundle (0ms instant DB-free hit)
+  const syncBundle = getPreloadedSubmissionMediaSync(subIdNumber);
+  if (syncBundle && syncBundle.workers.length > 0) {
+    const map = new Map<string, string>();
+    for (const w of syncBundle.workers) {
+      if (w.frontPath) {
+        map.set(`${w.sequenceNo}:FRONT`, w.frontPath);
+        map.set(`${w.sequenceNo}:front`, w.frontPath);
+        if (!map.has(String(w.sequenceNo))) map.set(String(w.sequenceNo), w.frontPath);
+      }
+      if (w.backPath) {
+        map.set(`${w.sequenceNo}:BACK`, w.backPath);
+        map.set(`${w.sequenceNo}:back`, w.backPath);
+        if (!map.has(String(w.sequenceNo))) map.set(String(w.sequenceNo), w.backPath);
+      }
+    }
+    if (map.size > 0) {
+      submissionWorkerPhotosCache.set(subIdNumber, { photos: map, loadedAt: Date.now() });
+      return map;
+    }
   }
 
   // 2. Return in-flight query if already running
@@ -1436,6 +1451,36 @@ export async function getSubmissionWorkerPhotos(submissionId: number | string): 
 }
 
 /**
+ * Resolves a specific worker inspection photo path synchronously from cache if already loaded.
+ */
+export function resolveSubmissionWorkerPhotoSync(
+  submissionId: number | string,
+  sequenceNo: number,
+  side: string
+): string | null {
+  const syncBundle = getPreloadedSubmissionMediaSync(submissionId);
+  if (syncBundle && syncBundle.workers.length > 0) {
+    const w = syncBundle.workers.find((item) => item.sequenceNo === sequenceNo);
+    const sideUpper = String(side).toUpperCase();
+    if (sideUpper === 'FRONT' && w?.frontPath) return w.frontPath;
+    if (sideUpper === 'BACK' && w?.backPath) return w.backPath;
+  }
+  const subIdNumber = Number(submissionId);
+  if (!isNaN(subIdNumber)) {
+    const cached = submissionWorkerPhotosCache.get(subIdNumber);
+    if (cached) {
+      const sideUpper = String(side).toUpperCase();
+      return (
+        cached.photos.get(`${sequenceNo}:${sideUpper}`) ||
+        cached.photos.get(`${sequenceNo}:${side.toLowerCase()}`) ||
+        null
+      );
+    }
+  }
+  return null;
+}
+
+/**
  * Resolves a specific worker inspection photo path (FRONT or BACK) with memoization.
  */
 export async function resolveSubmissionWorkerPhoto(
@@ -1443,6 +1488,8 @@ export async function resolveSubmissionWorkerPhoto(
   sequenceNo: number,
   side: string
 ): Promise<string | null> {
+  const syncHit = resolveSubmissionWorkerPhotoSync(submissionId, sequenceNo, side);
+  if (syncHit) return syncHit;
   const photos = await getSubmissionWorkerPhotos(submissionId);
   return photos.get(`${sequenceNo}:${side}`) || null;
 }

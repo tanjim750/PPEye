@@ -216,9 +216,13 @@ export async function fetchReportData(
     .map((o) => o.id)
     .filter((id) => typeof id === 'number');
 
-  // Query submissions in date range (start of day to end of day)
-  const startIso = `${startDate}T00:00:00.000Z`;
-  const endIso = `${endDate}T23:59:59.999Z`;
+  // Query submissions in date range (start of day to end of day in local timezone)
+  const [startY, startM, startD] = startDate.split('-').map(Number);
+  const [endY, endM, endD] = endDate.split('-').map(Number);
+  const startLocal = new Date(startY, (startM || 1) - 1, startD || 1, 0, 0, 0, 0);
+  const endLocal = new Date(endY, (endM || 1) - 1, endD || 1, 23, 59, 59, 999);
+  const startIso = startLocal.toISOString();
+  const endIso = endLocal.toISOString();
 
   let submissionsData: any[] = [];
 
@@ -276,8 +280,8 @@ export async function fetchReportData(
   if (submissionsData.length === 0) {
     const { getAllReviews } = require('@/features/reviews/services/reviews.service');
     const localReviews = getAllReviews();
-    const startMs = new Date(startIso).getTime();
-    const endMs = new Date(endIso).getTime();
+    const startMs = startLocal.getTime();
+    const endMs = endLocal.getTime();
 
     const filtered = localReviews.filter((r: any) => {
       const inDate = r.timestamp >= startMs && r.timestamp <= endMs;

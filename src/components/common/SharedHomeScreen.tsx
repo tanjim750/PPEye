@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, ImageSource } from 'expo-image';
 import { useFocusEffect, useSegments } from 'expo-router';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -64,14 +64,37 @@ function getBdtTimeOfDayKey(): 'morning' | 'afternoon' | 'evening' {
   return 'evening';
 }
 
-function VendorCheckThumbnail({ check }: { check: WorkerCheck }) {
+function getInitialVendorThumb(check: WorkerCheck): { uri: string; cacheKey?: string } | null {
   const directUri = check.image?.uri || check.workerReviews?.find((w) => w.frontUri || w.backUri)?.frontUri || check.workerReviews?.find((w) => w.backUri)?.backUri || null;
-  const [sourceUri, setSourceUri] = useState<string | null>(directUri);
+  if (directUri) return { uri: directUri };
+
+  const subId = check.submissionId || Number(String(check.id).replace(/\D/g, ''));
+  if (subId && !isNaN(subId)) {
+    try {
+      const { getPreloadedSubmissionMediaSync } = require('@/services/storage/supabase-storage.client');
+      const { getCachedImageUriSync } = require('@/utils/image');
+      const bundle = getPreloadedSubmissionMediaSync(subId);
+      if (bundle && bundle.workers.length > 0) {
+        const p = bundle.workers[0]?.frontPath || bundle.workers[0]?.backPath;
+        if (p) {
+          const local = getCachedImageUriSync(p);
+          if (local) return { uri: local, cacheKey: p };
+          if (bundle.signedUrls[p]) return { uri: bundle.signedUrls[p], cacheKey: p };
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+const VendorCheckThumbnail = memo(function VendorCheckThumbnail({ check }: { check: WorkerCheck }) {
+  const initial = useMemo(() => getInitialVendorThumb(check), [check.id, check.submissionId, check.image?.uri]);
+  const [sourceData, setSourceData] = useState<{ uri: string; cacheKey?: string } | null>(initial);
 
   useEffect(() => {
     const currentDirect = check.image?.uri || check.workerReviews?.find((w) => w.frontUri || w.backUri)?.frontUri || check.workerReviews?.find((w) => w.backUri)?.backUri || null;
     if (currentDirect) {
-      setSourceUri(currentDirect);
+      setSourceData({ uri: currentDirect });
       return;
     }
     let isCancelled = false;
@@ -90,7 +113,7 @@ function VendorCheckThumbnail({ check }: { check: WorkerCheck }) {
             const { getCachedImageUriSync } = require('@/utils/image');
             const localCached = getCachedImageUriSync(photoPath);
             if (localCached) {
-              setSourceUri(localCached);
+              setSourceData({ uri: localCached, cacheKey: photoPath });
               check.image = { uri: localCached };
               return;
             }
@@ -98,7 +121,7 @@ function VendorCheckThumbnail({ check }: { check: WorkerCheck }) {
             const signedRes = await supabaseStorageService.createSignedUrl(bucket, photoPath, 86400 * 7);
             const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
             if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http') && !isCancelled) {
-              setSourceUri(urlStr);
+              setSourceData({ uri: urlStr, cacheKey: photoPath });
               check.image = { uri: urlStr };
             }
           }
@@ -111,12 +134,16 @@ function VendorCheckThumbnail({ check }: { check: WorkerCheck }) {
     };
   }, [check.image?.uri, check.id, check.submissionId]);
 
-  if (sourceUri) {
+  if (sourceData?.uri) {
     return (
       <Image
         cachePolicy="memory-disk"
-        source={{ uri: sourceUri }}
+        contentFit="cover"
+        priority="high"
+        recyclingKey={sourceData.cacheKey || sourceData.uri}
+        source={{ uri: sourceData.uri, cacheKey: sourceData.cacheKey }}
         style={vendorStyles.thumbnail}
+        transition={150}
       />
     );
   }
@@ -130,7 +157,7 @@ function VendorCheckThumbnail({ check }: { check: WorkerCheck }) {
       />
     </View>
   );
-}
+});
 
 export function SharedHomeScreen({ role: propRole }: SharedHomeScreenProps = {}) {
   const navigate = useNavigate();

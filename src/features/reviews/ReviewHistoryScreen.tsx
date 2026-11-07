@@ -110,15 +110,52 @@ export function HistoryInspectionPhoto({
   workerTitle,
   onPressZoom,
 }: HistoryInspectionPhotoProps) {
-  const [photoSource, setPhotoSource] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const initialSource = useMemo(() => {
+    if (
+      fileIdOrUri &&
+      (fileIdOrUri.startsWith('file://') ||
+        fileIdOrUri.startsWith('ph://') ||
+        fileIdOrUri.startsWith('content://') ||
+        fileIdOrUri.startsWith('http://') ||
+        fileIdOrUri.startsWith('https://'))
+    ) {
+      return { uri: fileIdOrUri, cacheKey: fileIdOrUri };
+    }
+    const parsedSubId = Number(String(submissionId || '').replace(/\D/g, ''));
+    let targetPath = directDriveId || extractDriveId(fileIdOrUri);
+    if (!targetPath && !isNaN(parsedSubId) && parsedSubId > 0) {
+      try {
+        const { resolveSubmissionWorkerPhotoSync } = require('@/services/storage/supabase-storage.client');
+        targetPath = resolveSubmissionWorkerPhotoSync(parsedSubId, workerSequenceNo || 1, badgeLabel);
+      } catch {}
+    }
+    if (targetPath) {
+      try {
+        const { getCachedImageUriSync } = require('@/utils/image');
+        const local = getCachedImageUriSync(targetPath);
+        if (local && (Platform.OS !== 'web' || !local.startsWith('file://'))) {
+          return { uri: local, cacheKey: targetPath };
+        }
+        const { getCachedSignedUrl } = require('@/services/storage/supabase-storage.client');
+        const bucket = targetPath.startsWith('users/') ? 'avatars' : 'evidence';
+        const cachedSigned = getCachedSignedUrl(bucket, targetPath);
+        if (cachedSigned) return { uri: cachedSigned, cacheKey: targetPath };
+      } catch {}
+    }
+    return null;
+  }, [fileIdOrUri, directDriveId, submissionId, workerSequenceNo, badgeLabel]);
+
+  const [photoSource, setPhotoSource] = useState<any>(initialSource);
+  const [isLoading, setIsLoading] = useState(!initialSource);
   const [hasError, setHasError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const retryCountRef = useRef(0);
 
   useEffect(() => {
     let isCancelled = false;
-    setIsLoading(true);
+    if (!initialSource) {
+      setIsLoading(true);
+    }
     setHasError(false);
 
     async function resolveSource() {
@@ -132,7 +169,7 @@ export function HistoryInspectionPhoto({
           fileIdOrUri.startsWith('https://'))
       ) {
         if (!isCancelled) {
-          setPhotoSource({ uri: fileIdOrUri });
+          setPhotoSource({ uri: fileIdOrUri, cacheKey: fileIdOrUri });
           setIsLoading(false);
         }
         return;
@@ -161,10 +198,27 @@ export function HistoryInspectionPhoto({
         // If already a full URL, use it directly
         if (resolvedDriveId.startsWith('http://') || resolvedDriveId.startsWith('https://')) {
           if (!isCancelled) {
-            setPhotoSource({ uri: resolvedDriveId });
+            setPhotoSource({ uri: resolvedDriveId, cacheKey: resolvedDriveId });
             setIsLoading(false);
           }
           return;
+        }
+
+        // On native platforms, check disk cache first (file:// first for 0ms offline hit)
+        if (Platform.OS !== 'web') {
+          const { getCachedImageUriSync } = require('@/utils/image');
+          const localSync = getCachedImageUriSync(resolvedDriveId);
+          if (localSync && !isCancelled) {
+            setPhotoSource({ uri: localSync, cacheKey: resolvedDriveId });
+            setIsLoading(false);
+            return;
+          }
+          const cached = await getCachedImageUri(resolvedDriveId).catch(() => null);
+          if (cached && !isCancelled) {
+            setPhotoSource({ uri: cached, cacheKey: resolvedDriveId });
+            setIsLoading(false);
+            return;
+          }
         }
 
         const isSupabase =
@@ -175,28 +229,24 @@ export function HistoryInspectionPhoto({
 
         if (isSupabase) {
           try {
-            const { supabaseStorageService } = require('@/services/storage/supabase-storage.client');
+            const { supabaseStorageService, getCachedSignedUrl } = require('@/services/storage/supabase-storage.client');
             const bucket = resolvedDriveId.startsWith('users/') ? 'avatars' : 'evidence';
+            const cachedSigned = getCachedSignedUrl(bucket, resolvedDriveId);
+            if (cachedSigned && !isCancelled) {
+              setPhotoSource({ uri: cachedSigned, cacheKey: resolvedDriveId });
+              setIsLoading(false);
+              return;
+            }
             const signedRes = await supabaseStorageService.createSignedUrl(bucket, resolvedDriveId, 86400);
             const urlStr = typeof signedRes === 'string' ? signedRes : signedRes?.signedUrl;
             if (urlStr && typeof urlStr === 'string' && urlStr.startsWith('http') && !isCancelled) {
-              setPhotoSource({ uri: urlStr });
+              setPhotoSource({ uri: urlStr, cacheKey: resolvedDriveId });
               setIsLoading(false);
               Image.prefetch(urlStr, 'memory-disk').catch(() => {});
               return;
             }
           } catch (supErr) {
             console.warn('[ReviewHistory] Error creating signed URL for:', resolvedDriveId, supErr);
-          }
-        }
-
-        // On native platforms, check disk cache for legacy or local files
-        if (Platform.OS !== 'web') {
-          const cached = await getCachedImageUri(resolvedDriveId).catch(() => null);
-          if (cached && !isCancelled) {
-            setPhotoSource({ uri: cached });
-            setIsLoading(false);
-            return;
           }
         }
 
@@ -225,7 +275,7 @@ export function HistoryInspectionPhoto({
     return () => {
       isCancelled = true;
     };
-  }, [fileIdOrUri, directDriveId, submissionId, workerSequenceNo, badgeLabel, fallbackAsset, retryTick]);
+  }, [fileIdOrUri, directDriveId, submissionId, workerSequenceNo, badgeLabel, fallbackAsset, retryTick, initialSource]);
 
   const handleError = () => {
     setIsLoading(false);
@@ -260,8 +310,11 @@ export function HistoryInspectionPhoto({
           onError={handleError}
           onLoadEnd={() => setIsLoading(false)}
           onLoadStart={() => setIsLoading(true)}
+          priority="high"
+          recyclingKey={photoSource?.cacheKey || undefined}
           source={photoSource}
           style={detailsStyles.photoImg}
+          transition={150}
         />
       ) : hasError ? (
         <View style={detailsStyles.photoPlaceholder}>

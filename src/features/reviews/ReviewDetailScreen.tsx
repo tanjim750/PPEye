@@ -888,6 +888,7 @@ export function ReviewDetailScreen() {
                             placeholder={{ blurhash: PHOTO_BLURHASH }}
                             placeholderContentFit="cover"
                             priority="high"
+                            recyclingKey={photo.storagePath || otherSrc!.cacheKey || otherSrc!.uri}
                             source={{
                               uri: otherSrc!.uri,
                               headers: otherSrc!.headers,
@@ -987,6 +988,7 @@ export function ReviewDetailScreen() {
                           placeholder={{ blurhash: PHOTO_BLURHASH }}
                           placeholderContentFit="cover"
                           priority="high"
+                          recyclingKey={w.frontPath || (resolvedSource as any)?.cacheKey || undefined}
                           source={resolvedSource}
                           style={styles.imagePhoto}
                           transition={loadedPhotoKeys[wKey] ? 0 : 150}
@@ -1109,6 +1111,7 @@ export function ReviewDetailScreen() {
                           placeholder={{ blurhash: PHOTO_BLURHASH }}
                           placeholderContentFit="cover"
                           priority="high"
+                          recyclingKey={w.frontPath || (resolvedSource as any)?.cacheKey || undefined}
                           source={resolvedSource}
                           style={styles.imagePhoto}
                           transition={loadedPhotoKeys[wKey] ? 0 : 150}

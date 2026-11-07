@@ -997,20 +997,31 @@ export function SubmissionReviewScreen() {
               onScrollBeginDrag={() => setIsVerticalScrollEnabled(false)}
               onScrollEndDrag={() => setIsVerticalScrollEnabled(true)}
               showsHorizontalScrollIndicator={false}>
-              {reviewOtherPhotos.map((photo) => (
-                <Image
-                  key={photo.id}
-                  cachePolicy="memory-disk"
-                  contentFit="cover"
-                  loading="eager"
-                  placeholder={{ blurhash: REVIEW_PHOTO_BLURHASH }}
-                  placeholderContentFit="cover"
-                  priority="high"
-                  source={photo.source}
-                  style={styles.otherPhoto}
-                  transition={150}
-                />
-              ))}
+              {reviewOtherPhotos.map((photo) => {
+                const otherKey =
+                  typeof photo.source === 'object' && photo.source && 'uri' in photo.source
+                    ? (photo.source as any).uri
+                    : photo.id;
+                return (
+                  <Image
+                    key={photo.id}
+                    cachePolicy="memory-disk"
+                    contentFit="cover"
+                    loading="eager"
+                    placeholder={{ blurhash: REVIEW_PHOTO_BLURHASH }}
+                    placeholderContentFit="cover"
+                    priority="high"
+                    recyclingKey={String(otherKey || photo.id)}
+                    source={
+                      typeof photo.source === 'object' && photo.source
+                        ? { ...photo.source, cacheKey: String(otherKey) }
+                        : photo.source
+                    }
+                    style={styles.otherPhoto}
+                    transition={150}
+                  />
+                );
+              })}
               <Pressable
                 accessibilityRole="button"
                 onPress={captureOtherPhotos}
@@ -1140,6 +1151,15 @@ function ReviewPhoto({ label, source }: ReviewPhotoProps) {
     typeof source === 'string' ||
     (typeof source === 'object' && Boolean(source.uri));
 
+  const cacheKey =
+    typeof source === 'object' && source && 'cacheKey' in source && (source as any).cacheKey
+      ? (source as any).cacheKey
+      : typeof source === 'object' && source && 'uri' in source && (source as any).uri
+      ? (source as any).uri
+      : typeof source === 'string'
+      ? source
+      : undefined;
+
   const handleError = () => {
     if (retryCountRef.current < 2) {
       const attempt = retryCountRef.current + 1;
@@ -1164,7 +1184,12 @@ function ReviewPhoto({ label, source }: ReviewPhotoProps) {
           placeholder={{ blurhash: REVIEW_PHOTO_BLURHASH }}
           placeholderContentFit="cover"
           priority="high"
-          source={source}
+          recyclingKey={cacheKey}
+          source={
+            typeof source === 'object' && source && 'uri' in source
+              ? { ...source, cacheKey }
+              : source
+          }
           style={styles.workerPhoto}
           transition={150}
         />

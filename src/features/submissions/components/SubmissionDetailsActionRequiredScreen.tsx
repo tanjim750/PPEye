@@ -38,9 +38,12 @@ import {
 } from '@/services/vendor/vendorSubmissions.service';
 import {
   getCachedSignedUrl,
+  getPreloadedSubmissionMediaSync,
+  preloadSubmissionMedia,
   preloadSubmissionSignedUrls,
   supabaseStorageService,
 } from '@/services/storage/supabase-storage.client';
+import { getCachedImageUriSync } from '@/utils/image';
 
 
 
@@ -105,8 +108,22 @@ export function SubmissionDetailsActionRequiredScreen() {
     }
     if (subId && !isNaN(subId)) {
       setTargetSubId(subId);
-      // Preload & cache 1-day signed URLs for all images in this submission
-      preloadSubmissionSignedUrls(subId).catch(() => {});
+      // Synchronous 0ms hydration from global media bundle
+      const cachedBundle = getPreloadedSubmissionMediaSync(subId);
+      if (cachedBundle && cachedBundle.workers.length > 0) {
+        const targetW = (targetWorkerSeq ? cachedBundle.workers.find((w) => w.sequenceNo === targetWorkerSeq) : null) ||
+          cachedBundle.workers[0];
+        if (targetW?.frontPath) {
+          const localFront = getCachedImageUriSync(targetW.frontPath);
+          setFrontSignedUrl(localFront || cachedBundle.signedUrls[targetW.frontPath] || null);
+        }
+        if (targetW?.backPath) {
+          const localBack = getCachedImageUriSync(targetW.backPath);
+          setBackSignedUrl(localBack || cachedBundle.signedUrls[targetW.backPath] || null);
+        }
+      }
+      // Single batched preload: workers + other_images + disk caching
+      preloadSubmissionMedia(subId).catch(() => {});
       getVendorSubmissionDetails(subId).then((res) => {
         if (res) setLiveDetail(res);
       });
@@ -128,16 +145,21 @@ export function SubmissionDetailsActionRequiredScreen() {
         if (rawFront.startsWith('http') || rawFront.startsWith('file://')) {
           setFrontSignedUrl(rawFront);
         } else {
-          const cached = getCachedSignedUrl('evidence', rawFront);
-          if (cached) {
-            setFrontSignedUrl(cached);
+          const local = getCachedImageUriSync(rawFront);
+          if (local) {
+            setFrontSignedUrl(local);
           } else {
-            supabaseStorageService
-              .createSignedUrl('evidence', rawFront, 86400)
-              .then((res) => {
-                if (!isCancelled && res.signedUrl) setFrontSignedUrl(res.signedUrl);
-              })
-              .catch(() => {});
+            const cached = getCachedSignedUrl('evidence', rawFront);
+            if (cached) {
+              setFrontSignedUrl(cached);
+            } else {
+              supabaseStorageService
+                .createSignedUrl('evidence', rawFront, 86400)
+                .then((res) => {
+                  if (!isCancelled && res.signedUrl) setFrontSignedUrl(res.signedUrl);
+                })
+                .catch(() => {});
+            }
           }
         }
       }
@@ -145,16 +167,21 @@ export function SubmissionDetailsActionRequiredScreen() {
         if (rawBack.startsWith('http') || rawBack.startsWith('file://')) {
           setBackSignedUrl(rawBack);
         } else {
-          const cached = getCachedSignedUrl('evidence', rawBack);
-          if (cached) {
-            setBackSignedUrl(cached);
+          const local = getCachedImageUriSync(rawBack);
+          if (local) {
+            setBackSignedUrl(local);
           } else {
-            supabaseStorageService
-              .createSignedUrl('evidence', rawBack, 86400)
-              .then((res) => {
-                if (!isCancelled && res.signedUrl) setBackSignedUrl(res.signedUrl);
-              })
-              .catch(() => {});
+            const cached = getCachedSignedUrl('evidence', rawBack);
+            if (cached) {
+              setBackSignedUrl(cached);
+            } else {
+              supabaseStorageService
+                .createSignedUrl('evidence', rawBack, 86400)
+                .then((res) => {
+                  if (!isCancelled && res.signedUrl) setBackSignedUrl(res.signedUrl);
+                })
+                .catch(() => {});
+            }
           }
         }
       }
@@ -170,8 +197,14 @@ export function SubmissionDetailsActionRequiredScreen() {
   const siteCode = extractSiteCode(siteName);
   const workerNumber =
     activeWorkerFromLive?.sequenceNo || targetWorkerSeq || currentWorker?.workerNumber || 1;
-  const frontPhotoUri = frontSignedUrl || (activeWorkerFromLive?.frontPhoto?.previewUrl?.startsWith('http') ? activeWorkerFromLive.frontPhoto.previewUrl : null);
-  const backPhotoUri = backSignedUrl || (activeWorkerFromLive?.backPhoto?.previewUrl?.startsWith('http') ? activeWorkerFromLive.backPhoto.previewUrl : null);
+  const frontPhotoUri =
+    (rawFront && getCachedImageUriSync(rawFront)) ||
+    frontSignedUrl ||
+    (activeWorkerFromLive?.frontPhoto?.previewUrl?.startsWith('http') ? activeWorkerFromLive.frontPhoto.previewUrl : null);
+  const backPhotoUri =
+    (rawBack && getCachedImageUriSync(rawBack)) ||
+    backSignedUrl ||
+    (activeWorkerFromLive?.backPhoto?.previewUrl?.startsWith('http') ? activeWorkerFromLive.backPhoto.previewUrl : null);
 
   function goBack() {
     if (router.canGoBack()) {
@@ -428,8 +461,11 @@ export function SubmissionDetailsActionRequiredScreen() {
                   <Image
                     cachePolicy="memory-disk"
                     contentFit="cover"
-                    source={{ uri: frontPhotoUri }}
+                    priority="high"
+                    recyclingKey={rawFront || frontPhotoUri}
+                    source={{ uri: frontPhotoUri, cacheKey: rawFront || undefined }}
                     style={styles.photoImg}
+                    transition={150}
                   />
                 ) : (
                   <View style={styles.noPhotoContainer}>
@@ -468,8 +504,11 @@ export function SubmissionDetailsActionRequiredScreen() {
                   <Image
                     cachePolicy="memory-disk"
                     contentFit="cover"
-                    source={{ uri: backPhotoUri }}
+                    priority="high"
+                    recyclingKey={rawBack || backPhotoUri}
+                    source={{ uri: backPhotoUri, cacheKey: rawBack || undefined }}
                     style={styles.photoImg}
+                    transition={150}
                   />
                 ) : (
                   <View style={styles.noPhotoContainer}>

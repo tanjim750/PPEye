@@ -70,16 +70,17 @@ export function ExportReportBottomSheet({
   // Date selection states
   // Default: yesterday as end date, 7 days ago as start date
   const now = new Date();
+  const todayStr = formatDateYMD(now);
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
 
-  const [startDateStr, setStartDateStr] = useState(formatDateYMD(sevenDaysAgo));
-  const [endDateStr, setEndDateStr] = useState(formatDateYMD(yesterday));
-  const [presetSelected, setPresetSelected] = useState<'7d' | '30d' | 'yesterday' | 'custom'>('7d');
+  const [startDateStr, setStartDateStr] = useState(todayStr);
+  const [endDateStr, setEndDateStr] = useState(todayStr);
+  const [presetSelected, setPresetSelected] = useState<'today' | 'yesterday' | '7d' | '30d' | 'custom'>('today');
 
   // Calendar picker state
   const [calendarTarget, setCalendarTarget] = useState<'start' | 'end' | null>(null);
-  const [viewDate, setViewDate] = useState<Date>(() => yesterday);
+  const [viewDate, setViewDate] = useState<Date>(() => now);
 
   // Export progress
   const [isExporting, setIsExporting] = useState(false);
@@ -186,7 +187,7 @@ export function ExportReportBottomSheet({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        const isDragging = Math.abs(gestureState.dy) > 4;
+        const isDragging = Math.abs(gestureState.dy) > 2;
         if (!isDragging) return false;
         if (!isExpandedRef.current) {
           return true; // Sheet must expand or collapse first
@@ -194,7 +195,7 @@ export function ExportReportBottomSheet({
         return gestureState.dy > 0 && scrollOffsetRef.current <= 0;
       },
       onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-        const isDragging = Math.abs(gestureState.dy) > 4;
+        const isDragging = Math.abs(gestureState.dy) > 2;
         if (!isDragging) return false;
         if (!isExpandedRef.current) {
           return true;
@@ -229,8 +230,8 @@ export function ExportReportBottomSheet({
         const currentTargetY = dragStartOffsetRef.current + gestureState.dy;
 
         if (!isExpandedRef.current) {
-          // Dragged up significantly or flicked up -> expand
-          if (gestureState.dy < -10 || gestureState.vy < -0.1 || currentTargetY < COLLAPSED_OFFSET * 0.85) {
+          // Dragged up or flicked up -> expand immediately
+          if (gestureState.dy < -5 || gestureState.vy < -0.05 || currentTargetY < COLLAPSED_OFFSET * 0.95) {
             animateToExpanded();
           } else if (gestureState.vy > 0.5 || currentTargetY > COLLAPSED_OFFSET + 70) {
             handleClose();
@@ -276,6 +277,9 @@ export function ExportReportBottomSheet({
       filteredOrgs.forEach((o) => next.delete(o.id));
     } else {
       filteredOrgs.forEach((o) => next.add(o.id));
+      if (!isExpandedRef.current) {
+        animateToExpanded();
+      }
     }
     setSelectedOrgIds(next);
   }
@@ -286,6 +290,9 @@ export function ExportReportBottomSheet({
       next.delete(id);
     } else {
       next.add(id);
+      if (!isExpandedRef.current) {
+        animateToExpanded();
+      }
     }
     setSelectedOrgIds(next);
   }
@@ -321,9 +328,17 @@ export function ExportReportBottomSheet({
   }
 
   // Preset Date Handlers
-  function applyDatePreset(preset: 'yesterday' | '7d' | '30d') {
+  function applyDatePreset(preset: 'today' | 'yesterday' | '7d' | '30d') {
     setPresetSelected(preset);
     const n = new Date();
+    const todayYmd = formatDateYMD(n);
+
+    if (preset === 'today') {
+      setStartDateStr(todayYmd);
+      setEndDateStr(todayYmd);
+      return;
+    }
+
     const y = new Date(n.getFullYear(), n.getMonth(), n.getDate() - 1);
     const yStr = formatDateYMD(y);
     setEndDateStr(yStr);
@@ -342,11 +357,11 @@ export function ExportReportBottomSheet({
   // Handle Export Execution
   async function handleExport() {
     // Validate date constraints
-    const todayStr = formatDateYMD(new Date());
-    if (startDateStr >= todayStr || endDateStr >= todayStr) {
+    const todayYmd = formatDateYMD(new Date());
+    if (startDateStr > todayYmd || endDateStr > todayYmd) {
       Alert.alert(
         'Invalid Date Selection',
-        "Today's date cannot be selected. Please pick historical past dates only."
+        'Future dates cannot be selected.'
       );
       return;
     }
@@ -398,7 +413,6 @@ export function ExportReportBottomSheet({
   const viewMonth = viewDate.getMonth();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstDayOfWeek = new Date(viewYear, viewMonth, 1).getDay();
-  const todayStr = formatDateYMD(new Date());
 
   const canGoNextMonth = !(
     viewYear > now.getFullYear() ||
@@ -454,7 +468,7 @@ export function ExportReportBottomSheet({
               <Text style={styles.subtitle}>
                 {step === 1
                   ? 'Step 1: Select Vendors / Organizations'
-                  : 'Step 2: Select Date Range (Past Dates)'}
+                  : 'Step 2: Select Date Range'}
               </Text>
             </Pressable>
             <Pressable
@@ -522,7 +536,17 @@ export function ExportReportBottomSheet({
                   placeholderTextColor="#94a3b8"
                   style={styles.searchInput}
                   value={searchQuery}
-                  onChangeText={setSearchQuery}
+                  onFocus={() => {
+                    if (!isExpandedRef.current) {
+                      animateToExpanded();
+                    }
+                  }}
+                  onChangeText={(text) => {
+                    setSearchQuery(text);
+                    if (!isExpandedRef.current && text.length > 0) {
+                      animateToExpanded();
+                    }
+                  }}
                 />
                 {searchQuery.length > 0 && (
                   <Pressable onPress={() => setSearchQuery('')}>
@@ -571,10 +595,15 @@ export function ExportReportBottomSheet({
                 <ScrollView
                   ref={scrollViewRef}
                   scrollEnabled={scrollEnabled}
+                  onTouchStart={() => {
+                    if (!isExpandedRef.current) {
+                      animateToExpanded();
+                    }
+                  }}
                   onScroll={(e) => {
                     const y = e.nativeEvent.contentOffset.y;
                     scrollOffsetRef.current = y;
-                    if (!isExpandedRef.current && y > 2) {
+                    if (!isExpandedRef.current) {
                       animateToExpanded();
                     }
                   }}
@@ -679,9 +708,36 @@ export function ExportReportBottomSheet({
               <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ gap: 12, paddingBottom: 16 }}
+                onTouchStart={() => {
+                  if (!isExpandedRef.current) {
+                    animateToExpanded();
+                  }
+                }}
+                onScroll={(e) => {
+                  const y = e.nativeEvent.contentOffset.y;
+                  scrollOffsetRef.current = y;
+                  if (!isExpandedRef.current) {
+                    animateToExpanded();
+                  }
+                }}
+                scrollEventThrottle={16}
                 style={{ flex: 1 }}>
                 <Text style={styles.sectionLabel}>Date Range Presets</Text>
                 <View style={styles.presetsRow}>
+                  <Pressable
+                    onPress={() => applyDatePreset('today')}
+                    style={[
+                      styles.presetChip,
+                      presetSelected === 'today' && styles.presetChipActive,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        presetSelected === 'today' && styles.presetChipTextActive,
+                      ]}>
+                      Today
+                    </Text>
+                  </Pressable>
                   <Pressable
                     onPress={() => applyDatePreset('yesterday')}
                     style={[
@@ -777,7 +833,7 @@ export function ExportReportBottomSheet({
                   </View>
                 </View>
 
-                {/* Info Note about Today's date exclusion */}
+                {/* Info Note about date selection */}
                 <View style={styles.infoBanner}>
                   <Icon
                     color="#00376f"
@@ -789,7 +845,7 @@ export function ExportReportBottomSheet({
                     size={16}
                   />
                   <Text style={styles.infoBannerText}>
-                    Reports cover finalized historical data. Today's live submissions are excluded.
+                    Reports cover completed and verified review data for the selected range, including today.
                   </Text>
                 </View>
 
@@ -876,7 +932,7 @@ export function ExportReportBottomSheet({
                   <Text style={styles.calendarModalTitle}>
                     {calendarTarget === 'start' ? 'Select Start Date' : 'Select End Date'}
                   </Text>
-                  <Text style={styles.calendarModalSub}>Historical past dates only</Text>
+                  <Text style={styles.calendarModalSub}>Up to today's date</Text>
                 </View>
                 <Pressable
                   accessibilityRole="button"
@@ -938,12 +994,12 @@ export function ExportReportBottomSheet({
                     calendarTarget === 'start'
                       ? dStr === startDateStr
                       : dStr === endDateStr;
-                  const isTodayOrFuture = dStr >= todayStr;
+                  const isFuture = dStr > todayStr;
                   const isInvalidRange =
                     calendarTarget === 'start'
                       ? dStr > endDateStr
                       : dStr < startDateStr;
-                  const isDisabled = isTodayOrFuture || isInvalidRange;
+                  const isDisabled = isFuture || isInvalidRange;
 
                   return (
                     <View key={`day_${d}`} style={styles.dayCell}>
