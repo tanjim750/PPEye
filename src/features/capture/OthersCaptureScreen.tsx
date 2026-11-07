@@ -103,8 +103,8 @@ export function OthersCaptureScreen() {
 
     return () => {
       isMounted = false;
-      if (Platform.OS === 'android' && typeof NativeStatusBar.setBackgroundColor === 'function') {
-        NativeStatusBar.setBackgroundColor('#FFFFFF', false);
+      if (Platform.OS === 'android' && typeof (NativeStatusBar as any).setBackgroundColor === 'function') {
+        (NativeStatusBar as any).setBackgroundColor('#FFFFFF', false);
         NativeStatusBar.setBarStyle('dark-content', false);
       }
     };
@@ -153,7 +153,7 @@ export function OthersCaptureScreen() {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <StatusBar animated style="light" />
-      <NativeStatusBar backgroundColor={colors.controlSurface} barStyle="light-content" />
+      <NativeStatusBar {...({ backgroundColor: colors.controlSurface, barStyle: 'light-content' } as any)} />
       <View style={styles.shell}>
         <View style={styles.topBar}>
           <View style={styles.headerCopy}>

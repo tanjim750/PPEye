@@ -279,7 +279,7 @@ export function SubmissionReviewScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      const unsubscribe = (navigation as any).addListener('beforeRemove', (event: any) => {
         if (isExitingToHomeRef.current || isSubmittingRef.current) {
           return;
         }
@@ -821,7 +821,7 @@ export function SubmissionReviewScreen() {
                   accessibilityLabel={t('reviewScreen.worker', { number: worker.sequenceNo })}
                   accessibilityRole="button"
                   onPress={() => {
-                    carouselRef.current?.scrollTo({ x: index * slideWidth, animated: true });
+                    (carouselRef.current as any)?.scrollTo({ x: index * slideWidth, animated: true });
                     setActiveWorkerIndex(index);
                   }}
                   style={({ pressed }) => [
@@ -835,7 +835,7 @@ export function SubmissionReviewScreen() {
 
             <View style={styles.workerCarousel}>
               <ScrollView
-                ref={carouselRef}
+                ref={carouselRef as any}
                 contentContainerStyle={styles.workerTrack}
                 decelerationRate="fast"
                 directionalLockEnabled

@@ -7,7 +7,9 @@ import { useEffect, useRef } from "react";
 import { LogBox, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { NoInternetScreen } from "@/components/common/NoInternetScreen";
 import { RealtimeNotificationBanner } from "@/components/common/RealtimeNotificationBanner";
+import { useNetworkConnectivity } from "@/hooks/useNetworkConnectivity";
 import { LanguageProvider, useLanguage } from "@/hooks/useLanguage";
 import {
   initializeRealtimeNotifications,
@@ -59,9 +61,8 @@ function RootNavigator() {
 
   return (
     <View key={language} style={{ flex: 1, backgroundColor: "#F7F9FC" }}>
-      <StatusBar style="dark" backgroundColor="#FFFFFF" translucent={false} />
+      <StatusBar style="dark" />
       <Stack
-        initialRouteName="index"
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: "#F7F9FC" },
@@ -81,6 +82,10 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  const { isOnline, status, retry } = useNetworkConnectivity();
+  const hasBeenOnline = useRef(false);
+  if (isOnline) hasBeenOnline.current = true;
+
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync("#FFFFFF");
 
@@ -93,7 +98,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <LanguageProvider>
-        <RootNavigator />
+        {/* Cold start: don't mount the app (auth redirects, Supabase queries) until online once. */}
+        {hasBeenOnline.current ? <RootNavigator /> : <View style={{ flex: 1, backgroundColor: "#1E293B" }} />}
+        <NoInternetScreen visible={isOnline === false} status={status} onRetry={retry} />
       </LanguageProvider>
     </SafeAreaProvider>
   );

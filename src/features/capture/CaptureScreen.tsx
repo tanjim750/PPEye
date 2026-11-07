@@ -155,7 +155,7 @@ export function CaptureScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      const unsubscribe = navigation.addListener("beforeRemove", (event) => {
+      const unsubscribe = (navigation as any).addListener("beforeRemove", (event: any) => {
         if (isExitingToHomeRef.current) {
           return;
         }
@@ -198,8 +198,8 @@ export function CaptureScreen() {
 
     return () => {
       isMounted = false;
-      if (Platform.OS === 'android' && typeof NativeStatusBar.setBackgroundColor === 'function') {
-        NativeStatusBar.setBackgroundColor('#FFFFFF', false);
+      if (Platform.OS === 'android' && typeof (NativeStatusBar as any).setBackgroundColor === 'function') {
+        (NativeStatusBar as any).setBackgroundColor('#FFFFFF', false);
         NativeStatusBar.setBarStyle('dark-content', false);
       }
     };
@@ -262,8 +262,10 @@ export function CaptureScreen() {
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
       <StatusBar animated style="light" />
       <NativeStatusBar
-        backgroundColor={colors.controlSurface}
-        barStyle="light-content"
+        {...({
+          backgroundColor: colors.controlSurface,
+          barStyle: 'light-content',
+        } as any)}
       />
       <View style={styles.shell}>
         <View style={styles.topBar}>

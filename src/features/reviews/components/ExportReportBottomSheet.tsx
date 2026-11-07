@@ -1303,7 +1303,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   calendarOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
